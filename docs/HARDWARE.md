@@ -19,55 +19,84 @@ GitHub Release, not Play.
 
 | Capability | API | Lands in | Notes |
 |---|---|---|---|
-| Autofocus state | `CONTROL_AF_STATE` via Camera2 interop | v0.2-anchor | `FOCUSED_LOCKED` -> `GuidanceEngine.reportFocusLocked(true)`. Replaces the placeholder |
+| Autofocus state | `CONTROL_AF_STATE` via Camera2 interop | v0.2-anchor | `FOCUSED_LOCKED` -> `reportFocusLocked(true)`. **Back camera only** — the front is fixed-focus |
 | Lighting | `SENSOR_SENSITIVITY` + `SENSOR_EXPOSURE_TIME` | v0.2-anchor | Drives the real Lighting status chip |
-| Blur-aware stability | exposure time x angular rate | v0.2-anchor | Pure-Kotlin change in `:guidance`; predicts actual blur, not just hand shake |
-| Lens selection | `CameraControl.setZoomRatio()` on the logical camera | v0.6-scout | HAL picks the physical lens. Do **not** use `getPhysicalCameraIds()` — vivo may gate direct selection |
+| Blur-aware stability | exposure time x angular rate x zoom | v0.2-anchor | Pure-Kotlin change in `:guidance`. Keys off `CONTROL_ZOOM_RATIO`, not lens choice |
+| ~~Lens selection~~ | — | **cancelled** | Measured: only one rear camera is reachable. See below |
 | Haptics | `VibrationEffect` composition primitives | v0.4-lock | `totalError` -> haptic frequency. Check `areAllPrimitivesSupported()` first |
 | Thermal | `PowerManager.getThermalHeadroom()`, `addThermalStatusListener` | v0.5-cool | The actual governor mechanism |
 | Display | `Display.getSupportedModes()` | v0.3-frame | HUD at native refresh |
 | GPU compute | LiteRT / MediaPipe GPU delegate | v0.7-oracle | Adreno, Vulkan 1.3 |
 | GPU shaders | `RuntimeShader` (AGSL) | v0.3-frame | Still needs an API 33 guard |
 
-## The three cameras
+## The cameras — measured, 2026-09-12
 
-Confirmed from the phone's published spec, 2026-09-12. The probe still reads
-these back at runtime — `SENSOR_INFO_PHYSICAL_SIZE`, `LENS_INFO_*` — because
-Camera2 reports *physical* focal length in mm, not the 35mm-equivalent figures
-a spec sheet quotes.
+Probe output: `docs/evidence/capabilities-2026-09-12.txt`. Device reports as
+vivo **I2501**, SoC **QTI SM8850**, Android 16 (API 36).
 
-| | Ultrawide | Main | Periscope tele |
-|---|---|---|---|
-| Equivalent focal | 15mm (~0.6x) | 24mm (1x) | 85mm (~3.5x) |
-| Aperture | f/2.1 | f/1.9 | f/2.6 |
-| Pixel pitch | 0.64 um | 1.0 um | 0.8 um |
-| Sensor | 1/2.76" | 1/1.56" | 1/1.95" |
-| OIS | no | yes | yes |
-| Autofocus | AF | PDAF | PDAF |
-| Resolution | 50 MP | 50 MP | 50 MP |
+**The phone has three rear cameras. An app can reach one of them.**
 
-The spec sheet says "3x optical zoom" while quoting 85mm against a 24mm main,
-which works out at 3.5x. Minor inconsistencies like this are why the probe
-reads `CONTROL_ZOOM_RATIO_RANGE` rather than trusting the number.
+`getCameraIdList()` returns exactly two ids — `0` (back) and `1` (front).
+Camera 0 does **not** advertise `LOGICAL_MULTI_CAMERA`, and its
+`CONTROL_ZOOM_RATIO_RANGE` is `1.00x .. 10.00x` with
+`SCALER_AVAILABLE_MAX_DIGITAL_ZOOM` also `10.00x`. A reachable ultrawide would
+put the lower bound below 1.0; optical tele reach would show up as zoom range
+beyond the digital-zoom figure. Neither does. The 15mm ultrawide and the 85mm
+periscope are reserved for vivo's own camera app, and the 10x is a pure digital
+crop of the main sensor.
 
-### What this forces in the guidance math
+| | Camera 0 (back) | Camera 1 (front) |
+|---|---|---|
+| Sensor | 8.19 x 6.14 mm = 1/1.56" | 4.57 x 3.43 mm = 1/2.80" |
+| Focal | 5.56 mm = **23.5 mm equiv** | 2.80 mm = **21.2 mm equiv** |
+| FOV | 72.7 x 57.8 deg | 78.4 x 62.9 deg |
+| Aperture | f/1.9 | f/2.2 |
+| Output array | 4096 x 3072 (12.6 MP, binned from 50) | 3264 x 2448 (8.0 MP) |
+| OIS | **yes** | no |
+| Autofocus | OFF, AUTO, MACRO, CONT_VIDEO, CONT_PICTURE, EDOF | **OFF only — FIXED FOCUS** |
+| Min focus | 10 diopters = **10 cm** | fixed / infinity |
+| ISO | **72 .. 800** | 50 .. 1600 |
+| Exposure | 1/10577 s .. 18.07 s | 1/19037 s .. 0.42 s |
+| Zoom | 1.00x .. 10.00x, digital only | 1.00x .. 10.00x, digital only |
+| YUV 480x360 | yes | yes |
+| HW face detect | OFF, SIMPLE | OFF, SIMPLE |
+| Hardware level | LEVEL_3 | LEVEL_3 |
 
-- **Blur scales with focal length.** Blur as a fraction of frame is roughly
-  `angular_rate x exposure / FOV`, and FOV runs ~100 / ~74 / ~24 degrees. The
-  same hand shake blurs the periscope about 4x worse than the ultrawide, and
-  the ultrawide has no OIS to help. Blur-aware stability is wrong on two lenses
-  out of three unless focal length feeds it. Derive FOV on device from
-  `SENSOR_INFO_PHYSICAL_SIZE` and focal length; do not hardcode.
-- **85mm is the portrait focal length**, 15mm is the one that stretches faces
-  near the frame edge. A HEADSHOT framed on the ultrawide is the wrong lens
-  regardless of how good the framing is.
-- **The tele is the worst low-light lens** — f/2.6 and 0.8 um pixels against
-  f/1.9 and 1.0 um on the main. Any "switch to 3x" advice must be suppressed
-  when the ISO reading says it is dim, or we trade distortion for noise.
-- **Periscope minimum focus distance is unknown and matters.** Long-throw
-  periscopes often will not focus closer than ~40 cm, so STEP_CLOSER at 3x can
-  hit a wall the coach cannot see. `LENS_INFO_MINIMUM_FOCUS_DISTANCE`, in
-  diopters, settles it. Probe must read it.
+The back sensor's derived 1/1.56" and 23.5 mm match the published main-camera
+spec, which is how we know the probe's arithmetic is sound — and therefore that
+the missing lenses really are missing rather than mis-read.
+
+### What this forces
+
+- **No lens-switch feature.** `SWITCH_LENS` cannot be built. Nothing an app can
+  call will select the ultrawide or the periscope.
+- **Never emit TAP_FOCUS on the front camera.** `CONTROL_AF_AVAILABLE_MODES` is
+  `[OFF]` and focus is fixed, so a tap-to-focus prompt asks for something the
+  hardware cannot do. Front camera is exactly the `mirrored = true` case.
+- **Blur scaling keys off zoom ratio, not lens choice.** Only one rear focal
+  length exists, but 10x digital zoom narrows effective hFOV from 72.7 deg to
+  about 8.4 deg, so the same hand shake is roughly 9x more visible zoomed in.
+  The blur-aware stability work survives intact; its input is
+  `CONTROL_ZOOM_RATIO` instead of focal length.
+- **Lighting thresholds scale to ISO 72..800**, not a generic 100..6400. The
+  back camera's ISO ceiling is low and it reaches for long exposures instead —
+  up to 18 s — which makes exposure time, not ISO, the better low-light signal.
+- **Front camera is the blur-prone one**: no OIS, fixed focus, f/2.2.
+
+### Everything else the probe confirmed
+
+- `TYPE_GAME_ROTATION_VECTOR` present, QTI, **200 Hz**, 0.515 mA. The forbidden
+  `TYPE_ROTATION_VECTOR` is vivo's own at only 100 Hz, so CLAUDE.md's mandate
+  buys double the rate as well as consistency.
+- **All 8 haptic composition primitives supported**, with amplitude control.
+  v0.4-lock has everything it needs. (All report 20 ms, which is uniform enough
+  to look like a vendor default — measure real durations before relying on them.)
+- `getThermalHeadroom()` returns real values (0.398 at idle). v0.5-cool works.
+- Display does **144 Hz** at both 1080x2376 and 1440x3168; it was sitting at
+  120 Hz when probed.
+- No `DEPTH_OUTPUT`, no `ULTRA_HIGH_RESOLUTION_SENSOR` (so no 50 MP mode for
+  apps), but `RAW`, `MANUAL_SENSOR`, `DYNAMIC_RANGE_TEN_BIT` and
+  `STREAM_USE_CASE` are all available.
 
 ## Reachable only through a delegate — build it, but verify on device
 

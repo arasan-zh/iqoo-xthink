@@ -1,0 +1,92 @@
+--------- beginning of main
+---- BEGIN xThink capability report ----
+
+======== DEVICE ========
+manufacturer                vivo
+model                       I2501
+device                      I2501
+SoC                         QTI SM8850
+board                       canoe
+Android                     16 (API 36)
+build                       PD2505F_EX_A_16.0.17.1.W30
+CAMERA permission           granted
+
+======== CAMERAS ========
+camera ids                  0, 1
+
+  ---- camera 0 ----
+  facing                    BACK
+  hardware level            LEVEL_3
+  sensor physical           8.19 x 6.14 mm
+  pixel array               4096 x 3072 (12.6 MP)
+  active array              Rect(0, 0 - 4096, 3072)
+  focal                     5.56 mm physical  ~23 mm equiv  hFOV 72.8 deg  vFOV 57.8 deg
+  aperture                  f/1.9
+  min focus                 10.00 diopters  =  closest 10 cm
+  OIS                       YES
+  zoom ratio range          1.00x .. 10.00x
+  max digital zoom          10.00x
+  ISO range                 72 .. 800
+  exposure range            94545 ns .. 18068406971 ns  (1/10577 s .. 18.07 s)
+  AF modes                  OFF, AUTO, MACRO, CONTINUOUS_VIDEO, CONTINUOUS_PICTURE, EDOF
+  HW face detect            OFF, SIMPLE
+  capabilities              BACKWARD_COMPATIBLE, cap9, RAW, cap7, cap4, cap5, MANUAL_SENSOR, cap6, MANUAL_POST, cap19, cap18, cap20
+  YUV has 480x360           YES
+  YUV smallest              176x144
+  YUV largest               4096x3072
+
+  ---- camera 1 ----
+  facing                    FRONT (preview is mirrored)
+  hardware level            LEVEL_3
+  sensor physical           4.57 x 3.43 mm
+  pixel array               3264 x 2448 (8.0 MP)
+  active array              Rect(0, 0 - 3264, 2448)
+  focal                     2.80 mm physical  ~21 mm equiv  hFOV 78.4 deg  vFOV 62.9 deg
+  aperture                  f/2.2
+  min focus                 fixed focus / infinity
+  OIS                       no (modes 0)
+  zoom ratio range          1.00x .. 10.00x
+  max digital zoom          10.00x
+  ISO range                 50 .. 1600
+  exposure range            52528 ns .. 418964348 ns  (1/19037 s .. 0.42 s)
+  AF modes                  OFF
+  HW face detect            OFF, SIMPLE
+  capabilities              BACKWARD_COMPATIBLE, RAW, cap7, cap4, cap5, MANUAL_SENSOR, cap6, MANUAL_POST, cap19, cap18, cap20
+  YUV has 480x360           YES
+  YUV smallest              176x144
+  YUV largest               3264x2448
+
+======== SENSORS ========
+GAME_ROTATION_VECTOR (the one we use)  Game Rotation Vector  Non-wakeup / QTI  200 Hz max  0.515 mA
+ROTATION_VECTOR (forbidden by CLAUDE.md)  rotation_vector  Non-wakeup / vivo  100 Hz max  0.001 mA
+GYROSCOPE                   vsen_gyro Gyroscope Non-wakeup / vivo  200 Hz max  0.001 mA
+ACCELEROMETER               lsm6dsvx Accelerometer Non-wakeup / ST  200 Hz max  0.001 mA
+
+======== HAPTICS ========
+has vibrator                true
+amplitude control           true
+  CLICK                     supported (20 ms)
+  TICK                      supported (20 ms)
+  LOW_TICK                  supported (20 ms)
+  THUD                      supported (20 ms)
+  SPIN                      supported (20 ms)
+  QUICK_RISE                supported (20 ms)
+  SLOW_RISE                 supported (20 ms)
+  QUICK_FALL                supported (20 ms)
+
+======== THERMAL ========
+thermal status              NONE
+headroom (now)              0.398  (1.0 = at throttling point)
+
+======== DISPLAY ========
+current mode                1080 x 2376 @ 120.0 Hz
+  mode 2                    1440 x 3168 @ 144.0 Hz
+  mode 6                    1080 x 2376 @ 144.0 Hz
+  mode 1                    1440 x 3168 @ 120.0 Hz
+  mode 5                    1080 x 2376 @ 120.0 Hz
+  mode 3                    1440 x 3168 @ 90.0 Hz
+  mode 7                    1080 x 2376 @ 90.0 Hz
+  mode 4                    1440 x 3168 @ 60.0 Hz
+  mode 8                    1080 x 2376 @ 60.0 Hz
+
+---- END xThink capability report ----

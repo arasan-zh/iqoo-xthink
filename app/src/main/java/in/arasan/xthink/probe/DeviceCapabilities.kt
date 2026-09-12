@@ -148,8 +148,12 @@ object DeviceCapabilities {
             line("  OIS", if (on) "YES" else "no (modes ${ois.joinToString(",")})")
         }
 
+        // A lower bound below 1.0 means an ultrawide is reachable through the
+        // logical camera. Exactly 1.0 means it is not: this phone keeps its
+        // ultrawide and periscope for the vendor camera app.
         c.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE)?.let { r: Range<Float> ->
-            line("  zoom ratio range", "%.2fx .. %.2fx".format(r.lower, r.upper))
+            val optical = if (r.lower < 1.0f) "  (sub-1.0 => ultrawide reachable)" else "  (starts at 1.0 => no ultrawide)"
+            line("  zoom ratio range", "%.2fx .. %.2fx%s".format(r.lower, r.upper, optical))
         }
         c.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM)?.let {
             line("  max digital zoom", "%.2fx".format(it))
@@ -166,8 +170,14 @@ object DeviceCapabilities {
             )
         }
 
+        // AF modes of [OFF] alone means fixed focus: a TAP_FOCUS instruction on
+        // this camera would be telling the user to do something impossible.
         c.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)?.let { modes ->
-            line("  AF modes", modes.joinToString(", ") { afMode(it) })
+            val fixed = modes.size == 1 && modes[0] == CameraCharacteristics.CONTROL_AF_MODE_OFF
+            line(
+                "  AF modes",
+                modes.joinToString(", ") { afMode(it) } + if (fixed) "  (FIXED FOCUS - no tap-to-focus)" else "",
+            )
         }
         c.get(CameraCharacteristics.STATISTICS_INFO_AVAILABLE_FACE_DETECT_MODES)?.let { modes ->
             line("  HW face detect", modes.joinToString(", ") { faceMode(it) })
@@ -377,15 +387,31 @@ object DeviceCapabilities {
         else -> "mode$v"
     }
 
+    // The constant names, not the raw ints. LOGICAL_MULTI_CAMERA is the one
+    // that matters most: its absence is what tells us the ultrawide and
+    // periscope are not reachable from a third-party app.
     private fun capability(v: Int): String = when (v) {
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE -> "BACKWARD_COMPATIBLE"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR -> "MANUAL_SENSOR"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_POST_PROCESSING -> "MANUAL_POST"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW -> "RAW"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_LOGICAL_MULTI_CAMERA -> "LOGICAL_MULTI_CAMERA"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MOTION_TRACKING -> "MOTION_TRACKING"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MONOCHROME -> "MONOCHROME"
-        CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_SECURE_IMAGE_DATA -> "SECURE_IMAGE_DATA"
+        0 -> "BACKWARD_COMPATIBLE"
+        1 -> "MANUAL_SENSOR"
+        2 -> "MANUAL_POST_PROCESSING"
+        3 -> "RAW"
+        4 -> "PRIVATE_REPROCESSING"
+        5 -> "READ_SENSOR_SETTINGS"
+        6 -> "BURST_CAPTURE"
+        7 -> "YUV_REPROCESSING"
+        8 -> "DEPTH_OUTPUT"
+        9 -> "CONSTRAINED_HIGH_SPEED_VIDEO"
+        10 -> "MOTION_TRACKING"
+        11 -> "LOGICAL_MULTI_CAMERA"
+        12 -> "MONOCHROME"
+        13 -> "SECURE_IMAGE_DATA"
+        14 -> "SYSTEM_CAMERA"
+        15 -> "OFFLINE_PROCESSING"
+        16 -> "ULTRA_HIGH_RESOLUTION_SENSOR"
+        17 -> "REMOSAIC_REPROCESSING"
+        18 -> "DYNAMIC_RANGE_TEN_BIT"
+        19 -> "STREAM_USE_CASE"
+        20 -> "COLOR_SPACE_PROFILES"
         else -> "cap$v"
     }
 
