@@ -70,6 +70,7 @@ fun GuidanceOverlay(
     onGallery: () -> Unit,
     onModeSelected: (CoachMode) -> Unit,
     onFlip: () -> Unit,
+    onHome: () -> Unit,
     onTap: (x: Float, y: Float) -> Unit,
     onReviewChooseEnhanced: (Boolean) -> Unit,
     onReviewChooseLook: (Int) -> Unit,
@@ -203,6 +204,7 @@ fun GuidanceOverlay(
                             .padding(end = 8.dp)
                             .horizontalScroll(rememberScrollState()),
                     ) {
+                        HomeChip(onClick = onHome)
                         if (state.recording) RecordingChip(ms = state.recordingMs)
                         if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode && !state.signsMode) {
                             ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)

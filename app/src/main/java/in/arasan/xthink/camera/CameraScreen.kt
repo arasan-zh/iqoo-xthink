@@ -169,7 +169,13 @@ private const val ANALYSIS_HEIGHT = 360
  * that the guidance overlay be a separate composable layer.
  */
 @Composable
-fun CameraScreen(debugEnhanceUri: String? = null, debugGenius: String? = null, debugAsk: String? = null) {
+fun CameraScreen(
+    debugEnhanceUri: String? = null,
+    debugGenius: String? = null,
+    debugAsk: String? = null,
+    startIn: String? = null,
+    onHome: () -> Unit = {},
+) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasCameraPermission(context)) }
 
@@ -182,7 +188,7 @@ fun CameraScreen(debugEnhanceUri: String? = null, debugGenius: String? = null, d
     }
 
     if (granted) {
-        CameraAndGuidance(debugEnhanceUri, debugGenius, debugAsk)
+        CameraAndGuidance(debugEnhanceUri, debugGenius, debugAsk, startIn, onHome)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -205,7 +211,13 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 
 @OptIn(ExperimentalCamera2Interop::class)
 @Composable
-private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: String? = null, debugAsk: String? = null) {
+private fun CameraAndGuidance(
+    debugEnhanceUri: String? = null,
+    debugGenius: String? = null,
+    debugAsk: String? = null,
+    startIn: String? = null,
+    onHome: () -> Unit = {},
+) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -1378,13 +1390,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        GuidanceOverlay(
-            state = overlayState,
-            onZoomSelected = { requested ->
-                val ratio = requested.coerceAtMost(zoomCapFor(overlayState.shotStyle))
-                cameraControl?.cameraControl?.setZoomRatio(ratio)
-            },
-            onTypeMode = {
+    // Ways in, shared by the tabs and the home page's cards.
+    fun enterSteve() {
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (askMode) { askMode = false; overlayState = overlayState.copy(askMode = false, ask = null) }
@@ -1404,43 +1411,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                         bluetoothLauncher.launch(keyboard.permissions)
                     }
                 }
-            },
-            onPairMac = {
-                when (keyboardState) {
-                    MacKeyboard.State.NEEDS_PERMISSION -> bluetoothLauncher.launch(keyboard.permissions)
-                    else -> {
-                        if (keyboardState != MacKeyboard.State.READY && keyboardState != MacKeyboard.State.CONNECTING) {
-                            keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshGenius() }
-                        }
-                        discoverableLauncher.launch(keyboard.discoverableIntent())
-                        keyboard.connectBonded()
-                    }
-                }
-            },
-            onFitMode = {
-                if (!fitMode) {
-                    if (videoMode) { stopRecording(); videoMode = false }
-                    if (typeMode) { keyboard.cancelled = true; typeMode = false }
-                    askMode = false
-                    fitMode = true
-                    repCounter = RepCounter(if (fitPick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
-                    fitGesture = null
-                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, askMode = false, ask = null)
-                    applyFitPick()
-                    refreshFit()
-                    Log.i(TAG, "mode -> FIT ($fitPick)")
-                }
-            },
-            onFitPick = { pick ->
-                fitPick = pick
-                repCounter = RepCounter(if (pick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
-                fitGesture = null
-                applyFitPick()
-                refreshFit()
-                Log.i(TAG, "fit -> $pick")
-            },
-            onFitReset = { repCounter.reset(); haptics.play(HapticCue.TICK, 0.4f); refreshFit() },
-            onScanMode = {
+    }
+
+    fun enterScan() {
                 if (!askMode || !scanMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
@@ -1453,9 +1426,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     ensureCoach()
                     Log.i(TAG, "mode -> SCAN")
                 }
-            },
-            onAskScan = { askScan() },
-            onAskMode = {
+    }
+
+    fun enterTranslate() {
                 if (!askMode || scanMode) {
                     scanMode = false
                     overlayState = overlayState.copy(scanMode = false)
@@ -1471,7 +1444,65 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     ensureCoach()
                     Log.i(TAG, "mode -> TRANSLATE")
                 }
+    }
+
+    fun enterFit() {
+                if (!fitMode) {
+                    if (videoMode) { stopRecording(); videoMode = false }
+                    if (typeMode) { keyboard.cancelled = true; typeMode = false }
+                    askMode = false
+                    fitMode = true
+                    repCounter = RepCounter(if (fitPick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
+                    fitGesture = null
+                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, askMode = false, ask = null)
+                    applyFitPick()
+                    refreshFit()
+                    Log.i(TAG, "mode -> FIT ($fitPick)")
+                }
+    }
+
+    LaunchedEffect(startIn) {
+        when (startIn) {
+            "STEVE" -> enterSteve()
+            "TRANSLATE" -> enterTranslate()
+            "SCAN" -> enterScan()
+            "FIT" -> enterFit()
+        }
+    }
+
+
+        GuidanceOverlay(
+            state = overlayState,
+            onZoomSelected = { requested ->
+                val ratio = requested.coerceAtMost(zoomCapFor(overlayState.shotStyle))
+                cameraControl?.cameraControl?.setZoomRatio(ratio)
             },
+            onTypeMode = { enterSteve() },
+            onPairMac = {
+                when (keyboardState) {
+                    MacKeyboard.State.NEEDS_PERMISSION -> bluetoothLauncher.launch(keyboard.permissions)
+                    else -> {
+                        if (keyboardState != MacKeyboard.State.READY && keyboardState != MacKeyboard.State.CONNECTING) {
+                            keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshGenius() }
+                        }
+                        discoverableLauncher.launch(keyboard.discoverableIntent())
+                        keyboard.connectBonded()
+                    }
+                }
+            },
+            onFitMode = { enterFit() },
+            onFitPick = { pick ->
+                fitPick = pick
+                repCounter = RepCounter(if (pick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
+                fitGesture = null
+                applyFitPick()
+                refreshFit()
+                Log.i(TAG, "fit -> $pick")
+            },
+            onFitReset = { repCounter.reset(); haptics.play(HapticCue.TICK, 0.4f); refreshFit() },
+            onScanMode = { enterScan() },
+            onAskScan = { askScan() },
+            onAskMode = { enterTranslate() },
             onAskTranslate = { askTranslate() },
             onAskCopy = { askCopy() },
             onAskSave = { askSave() },
@@ -1586,6 +1617,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 haptics.play(HapticCue.TICK, if (on) 0.6f else 0.3f)
                 Log.i(TAG, "easy shot ${if (on) "on" else "off"}")
             },
+            onHome = onHome,
             onFlip = {
                 val toFront = lensFacing == CameraSelector.LENS_FACING_BACK
                 lensFacing = if (toFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK

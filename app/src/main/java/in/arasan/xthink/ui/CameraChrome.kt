@@ -821,3 +821,20 @@ fun ShotsRow(style: ShotType?, onPick: (ShotType?) -> Unit, modifier: Modifier =
         }
     }
 }
+
+/** Back to the front door. */
+@Composable
+fun HomeChip(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(XT.Chip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) { Glyph("home", XT.OnChip, 20.dp) }
+}
