@@ -10,6 +10,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import android.util.Size
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.annotation.OptIn
@@ -17,7 +18,11 @@ import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCaseGroup
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
@@ -26,8 +31,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
@@ -53,20 +58,19 @@ import `in`.arasan.xthink.guidance.CompositionProfile
 import `in`.arasan.xthink.guidance.GuidanceEngine
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.ShotType
+import java.util.concurrent.Executors
 
 private const val TAG = "xThink"
+private const val HEARTBEAT_MS = 1000L
+private const val ANALYSIS_WIDTH = 480
+private const val ANALYSIS_HEIGHT = 360
 
 /**
- * v0.2-anchor: rear camera preview, real device attitude, and the guidance
- * engine actually running.
- *
- * There is no subject detection yet, so the engine is fed `subject = null` on a
- * LANDSCAPE profile. That exercises the top of the priority ladder for real -
- * roll, then pitch, then the lock dwell - which is enough to prove the whole
- * chain from sensor to instruction on the phone.
+ * v0.2-anchor: rear camera preview, real device attitude, ML Kit face
+ * detection, and the full guidance ladder running on the phone.
  *
  * Deliberately unstyled. The stock-camera look in CLAUDE.md lands in
- * v0.3-frame, as a separate overlay layer over this same camera code.
+ * v0.3-frame as a separate overlay layer over this same camera code.
  */
 @Composable
 fun CameraScreen() {
@@ -111,57 +115,31 @@ private fun CameraAndGuidance() {
 
     var instruction by remember { mutableStateOf<Instruction?>(null) }
     var sample by remember { mutableStateOf<AttitudeSample?>(null) }
+    var faces by remember { mutableStateOf<FaceResult?>(null) }
     var telemetry by remember { mutableStateOf(CameraTelemetry()) }
     var totalError by remember { mutableStateOf(0f) }
     var sensorMissing by remember { mutableStateOf(false) }
 
-    // No subject detection yet, so compose against LANDSCAPE: it is the profile
-    // with no size target, which is exactly the "nothing to frame" case.
-    val engine = remember {
-        GuidanceEngine(loadProfile(context, ShotType.LANDSCAPE))
-    }
+    val profiles = remember { loadProfiles(context) }
+    val engine = remember { GuidanceEngine(profiles.getValue(ShotType.LANDSCAPE)) }
 
-    // --- sensor -> engine ------------------------------------------------
-    // Events are delivered on the main looper and the camera callback posts
-    // there too, so the engine is only ever touched by one thread. That is
-    // cheaper and less error-prone than locking it.
+    // The most recent attitude, held rather than acted on. See the analyser
+    // comment below for why the sensor does not drive the engine.
+    val latestAttitude = remember { arrayOfNulls<AttitudeSample>(1) }
+
+    // --- sensor ----------------------------------------------------------
     DisposableEffect(engine) {
         val sensor = AttitudeSensor(context)
-        var lastUiUpdate = 0L
-        var lastHeartbeat = 0L
-
         val started = sensor.start { s ->
-            // The engine sees every sample; the UI is throttled, because
-            // recomposing a text block at 100 Hz is pure waste.
-            val next = engine.update(s.attitude, null, null, s.dtMs)
-            val now = SystemClock.uptimeMillis()
-            if (now - lastUiUpdate >= UI_THROTTLE_MS) {
-                lastUiUpdate = now
-                sample = s
-                instruction = next
-                totalError = engine.totalError
-            }
-            // Once a second, so the whole chain can be watched over
-            // `scripts/dev.sh log` with the phone face down or the screen off.
-            if (now - lastHeartbeat >= HEARTBEAT_MS) {
-                lastHeartbeat = now
-                Log.i(
-                    TAG,
-                    "roll=%+.1f pitch=%+.1f imu=%.0fHz err=%.3f lock=%.2f -> %s".format(
-                        s.attitude.rollDeg, s.attitude.pitchDeg, s.hz,
-                        engine.totalError, engine.lockProgress, next.text,
-                    ),
-                )
-            }
+            latestAttitude[0] = s
+            sample = s
         }
         sensorMissing = !started
-        if (!started) {
-            Log.w(TAG, "TYPE_GAME_ROTATION_VECTOR unavailable; guidance cannot run")
-        }
+        if (!started) Log.w(TAG, "TYPE_GAME_ROTATION_VECTOR unavailable; guidance cannot run")
         onDispose { sensor.stop() }
     }
 
-    // --- camera ----------------------------------------------------------
+    // --- camera + analysis -----------------------------------------------
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.PERFORMANCE
@@ -171,8 +149,45 @@ private fun CameraAndGuidance() {
 
     DisposableEffect(lifecycleOwner) {
         val mainHandler = Handler(Looper.getMainLooper())
-        val future = ProcessCameraProvider.getInstance(context)
+        val analysisExecutor = Executors.newSingleThreadExecutor()
+        var lastHeartbeat = 0L
 
+        // IMPORTANT: the ANALYSER drives the engine, not the sensor.
+        //
+        // The box EMA in :guidance smooths at alpha 0.25 per update. Ticking
+        // the engine at the sensor's 111 Hz while handing it the same face box
+        // over and over would drive that filter onto the raw value almost
+        // immediately and throw away the anti-jitter CLAUDE.md specifies. One
+        // engine tick per new measurement keeps the smoothing constants
+        // meaning what they say.
+        //
+        // ML Kit delivers its callback on the main thread and the capture
+        // callback posts there, so the engine still only ever sees one thread.
+        val analyzer = FaceAnalyzer { result ->
+            faces = result
+
+            val attitude = latestAttitude[0] ?: return@FaceAnalyzer
+            engine.setProfile(profiles.getValue(result.shotType))
+            val next = engine.update(attitude.attitude, result.subject, result.eyes, result.dtMs)
+
+            instruction = next
+            totalError = engine.totalError
+
+            val now = SystemClock.uptimeMillis()
+            if (now - lastHeartbeat >= HEARTBEAT_MS) {
+                lastHeartbeat = now
+                Log.i(
+                    TAG,
+                    "roll=%+.1f pitch=%+.1f faces=%d %s det=%dms err=%.3f lock=%.2f -> %s".format(
+                        attitude.attitude.rollDeg, attitude.attitude.pitchDeg,
+                        result.faceCount, result.shotType, result.detectMs,
+                        engine.totalError, engine.lockProgress, next.text,
+                    ),
+                )
+            }
+        }
+
+        val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
             val provider = runCatching { future.get() }.getOrElse {
                 Log.e(TAG, "could not get the camera provider", it)
@@ -180,10 +195,6 @@ private fun CameraAndGuidance() {
             }
 
             val previewBuilder = Preview.Builder()
-
-            // Camera2 interop is how we read what the ISP is doing. Continuous
-            // picture AF keeps CONTROL_AF_STATE meaningful without us having to
-            // drive a focus routine ourselves.
             Camera2Interop.Extender(previewBuilder)
                 .setCaptureRequestOption(
                     CaptureRequest.CONTROL_AF_MODE,
@@ -195,7 +206,6 @@ private fun CameraAndGuidance() {
                         request: CaptureRequest,
                         result: TotalCaptureResult,
                     ) {
-                        // Hop to the main thread so the engine stays single-threaded.
                         mainHandler.post {
                             val next = CameraTelemetry.from(telemetry, result)
                             telemetry = next
@@ -209,34 +219,62 @@ private fun CameraAndGuidance() {
                 it.surfaceProvider = previewView.surfaceProvider
             }
 
-            runCatching {
-                provider.unbindAll()
-                // Rear camera only. No flip button in this step.
-                val camera = provider.bindToLifecycle(
-                    lifecycleOwner,
-                    CameraSelector.DEFAULT_BACK_CAMERA,
-                    preview,
+            val analysis = ImageAnalysis.Builder()
+                .setResolutionSelector(
+                    ResolutionSelector.Builder()
+                        .setResolutionStrategy(
+                            ResolutionStrategy(
+                                Size(ANALYSIS_WIDTH, ANALYSIS_HEIGHT),
+                                ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER,
+                            )
+                        )
+                        .build()
                 )
-                val characteristics = Camera2CameraInfo.extractCameraCharacteristics(camera.cameraInfo)
-                val statics = CameraTelemetry.fromCharacteristics(characteristics)
-                mainHandler.post {
+                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                .build()
+                .also { it.setAnalyzer(analysisExecutor, analyzer) }
+
+            // Bind preview and analysis through one ViewPort so they share a
+            // crop rect. Without it "6% of frame" would mean six percent of a
+            // 4:3 buffer while the photographer looks at a taller crop of it.
+            previewView.post {
+                val group = UseCaseGroup.Builder()
+                    .addUseCase(preview)
+                    .addUseCase(analysis)
+                    .apply { previewView.viewPort?.let { setViewPort(it) } }
+                    .build()
+
+                runCatching {
+                    provider.unbindAll()
+                    // Rear camera only.
+                    val camera = provider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        group,
+                    )
+                    val characteristics =
+                        Camera2CameraInfo.extractCameraCharacteristics(camera.cameraInfo)
+                    val statics = CameraTelemetry.fromCharacteristics(characteristics)
                     telemetry = telemetry.copy(
                         maxZoomRatio = statics.maxZoomRatio,
                         minFocusCm = statics.minFocusCm,
                         hasAutofocus = statics.hasAutofocus,
                     )
                     engine.reportZoom(telemetry.zoomRatio, statics.maxZoomRatio)
-                }
-                Log.i(
-                    TAG,
-                    "bound rear camera: autofocus=${statics.hasAutofocus} " +
-                        "zoom<=${statics.maxZoomRatio}x minFocus=${statics.minFocusCm}cm",
-                )
-            }.onFailure { Log.e(TAG, "bindToLifecycle failed", it) }
+                    Log.i(
+                        TAG,
+                        "bound rear camera: autofocus=${statics.hasAutofocus} " +
+                            "zoom<=${statics.maxZoomRatio}x minFocus=${statics.minFocusCm}cm " +
+                            "viewPort=${previewView.viewPort != null}",
+                    )
+                }.onFailure { Log.e(TAG, "bindToLifecycle failed", it) }
+            }
         }, ContextCompat.getMainExecutor(context))
 
         onDispose {
             runCatching { future.get().unbindAll() }
+            analyzer.close()
+            analysisExecutor.shutdown()
         }
     }
 
@@ -245,6 +283,7 @@ private fun CameraAndGuidance() {
         DebugReadout(
             instruction = instruction,
             sample = sample,
+            faces = faces,
             telemetry = telemetry,
             totalError = totalError,
             sensorMissing = sensorMissing,
@@ -262,6 +301,7 @@ private fun CameraAndGuidance() {
 private fun DebugReadout(
     instruction: Instruction?,
     sample: AttitudeSample?,
+    faces: FaceResult?,
     telemetry: CameraTelemetry,
     totalError: Float,
     sensorMissing: Boolean,
@@ -285,7 +325,7 @@ private fun DebugReadout(
         }
 
         Text(
-            text = instruction?.text ?: "waiting for the sensor...",
+            text = instruction?.text ?: "waiting for a frame...",
             color = Color(0xFF4ADE80),
             fontFamily = FontFamily.Monospace,
             fontSize = 20.sp,
@@ -294,16 +334,24 @@ private fun DebugReadout(
 
         val lines = buildList {
             instruction?.let { add("verb     ${it.verb}  ${it.magnitude}") }
+            faces?.let { f ->
+                add("faces    ${f.faceCount}  ${f.shotType}  det ${f.detectMs}ms")
+                f.subject?.let { b ->
+                    add("subject  cx %.3f cy %.3f h %.3f".format(b.cx, b.cy, b.h))
+                }
+                f.eyes?.let { e ->
+                    add("eyes     y %.3f  gaze %+.2f".format(e.y, e.gazeDx))
+                }
+            }
             sample?.let {
-                add("roll     %+.2f deg%s".format(it.attitude.rollDeg, if (it.rollReliable) "" else "  (unreliable)"))
+                add("roll     %+.2f deg%s".format(it.attitude.rollDeg, if (it.rollReliable) "" else " (bad)"))
                 add("pitch    %+.2f deg".format(it.attitude.pitchDeg))
-                add("imu      %.0f Hz  dt %d ms".format(it.hz, it.dtMs))
+                add("imu      %.0f Hz".format(it.hz))
             }
             add("error    %.3f".format(totalError))
             add("af       ${telemetry.afText}${if (telemetry.focusLocked) "  LOCKED" else ""}")
             add("iso      ${telemetry.iso ?: "-"}   shutter ${telemetry.shutterText}")
             add("zoom     %.2fx / %.2fx".format(telemetry.zoomRatio, telemetry.maxZoomRatio))
-            add("focus    ${telemetry.minFocusCm?.let { "%.0f cm min".format(it) } ?: "fixed"}")
             add("frames   ${telemetry.frames}")
         }
         for (l in lines) {
@@ -311,9 +359,6 @@ private fun DebugReadout(
         }
     }
 }
-
-private const val UI_THROTTLE_MS = 33L // ~30 Hz is plenty for reading numbers
-private const val HEARTBEAT_MS = 1000L
 
 private fun hasCameraPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
@@ -323,9 +368,9 @@ private fun hasCameraPermission(context: Context): Boolean =
  * Reads `assets/composition_profiles.json` and hands the text to :guidance,
  * which parses it. The asset API stays on this side of the module boundary.
  */
-private fun loadProfile(context: Context, shotType: ShotType): CompositionProfile {
+private fun loadProfiles(context: Context): Map<ShotType, CompositionProfile> {
     val json = context.assets.open("composition_profiles.json")
         .bufferedReader()
         .use { it.readText() }
-    return CompositionProfile.parse(json, shotType)
+    return CompositionProfile.parseAll(json)
 }
