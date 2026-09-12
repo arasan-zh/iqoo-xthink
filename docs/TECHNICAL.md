@@ -389,3 +389,9 @@ piece device-verified on the iQOO 15 before it was committed.
   The gate is 0.35 of a fast-decaying reference. SCENE never crops to a
   person, is forgiven off-centre framing (2× deadzone) and needs no focus
   tap. The status rail is icons only.
+- **FIT**: squats and push-ups counted from ML Kit Pose in stream mode by
+  the knee or elbow angle (`RepCounter`, pure Kotlin: DOWN under the
+  floor, UP over the ceiling, 250 ms at the bottom, no half reps); each
+  rep a thud and the count spoken. Hand signs from MediaPipe's gesture
+  model (seven signs, bundled 8 MB); thumbs up takes the photo. Not sign
+  language - and not claimed to be.
