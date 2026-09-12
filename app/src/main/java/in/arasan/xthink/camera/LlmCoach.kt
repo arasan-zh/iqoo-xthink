@@ -314,10 +314,13 @@ class LlmCoach(private val context: Context) {
         }
 
         /** A spoken turn, answered in the same language, briefly. */
-        fun voicePrompt(heard: String, language: String): String = """
-            You are a friendly assistant on a phone. Reply in $language, in one to three short sentences, plainly. No preamble, no markdown.
-            The person said: $heard
-        """.trimIndent()
+        fun voicePrompt(heard: String, language: String, history: List<Pair<Boolean, String>> = emptyList()): String {
+            val context = history.takeLast(6).joinToString("\n") { (mine, text) -> (if (mine) "User: " else "Assistant: ") + text.trim().take(300) }
+            return """
+                You are a friendly assistant on a phone. Reply in $language, in one to three short sentences, plainly. No preamble, no markdown.
+                ${if (context.isNotBlank()) "Earlier in this conversation:\n$context\n" else ""}User: $heard
+            """.trimIndent()
+        }
 
         /** A question about what the camera sees. */
         fun askPrompt(question: String): String = """

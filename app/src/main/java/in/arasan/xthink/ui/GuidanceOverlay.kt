@@ -71,6 +71,8 @@ fun GuidanceOverlay(
     onModeSelected: (CoachMode) -> Unit,
     onFlip: () -> Unit,
     onHome: () -> Unit,
+    onOpenRoom: (String) -> Unit = {},
+    onToggleTune: () -> Unit = {},
     onTap: (x: Float, y: Float) -> Unit,
     onReviewChooseEnhanced: (Boolean) -> Unit,
     onReviewChooseLook: (Int) -> Unit,
@@ -201,33 +203,40 @@ fun GuidanceOverlay(
                 .padding(horizontal = XT.Gutter),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // --- top: the chips and the install QR. The coach never speaks
-            //     here; it only names the crop after the shutter. ---
+            // --- top: the mark (install QR) on the left; Chat, Voice, Steve
+            //     and the tune switch on the right. The tune chips drop below
+            //     only when asked for, so the viewfinder stays clean. ---
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TopIcon("mark", onClick = { showQr = true })
+                        if (state.recording) RecordingChip(ms = state.recordingMs)
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        TopIcon("chat", onClick = { onOpenRoom("CHAT") })
+                        TopIcon("voice", onClick = { onOpenRoom("VOICE") })
+                        if (!state.mirrored) TopIcon("mac", onClick = onTypeMode, tint = if (state.typeMode) XT.Gold else XT.OnChip)
+                        if (!state.videoMode) TopIcon("tune", onClick = onToggleTune, tint = if (state.showTune) XT.Gold else XT.OnChip)
+                    }
+                }
+                if (state.showTune && !state.videoMode) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .weight(1f)
-                            .padding(end = 8.dp)
-                            .horizontalScroll(rememberScrollState()),
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     ) {
-                        HomeChip(onClick = onHome)
-                        if (state.recording) RecordingChip(ms = state.recordingMs)
-                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode && !state.signsMode) {
+                        if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode) {
                             ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)
                         }
-                        if (state.assisted && !state.videoMode) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
+                        if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
                         if (state.assisted && state.guideMuted) GuideMutedChip()
                         else if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
                     }
-                    QrButton(onClick = { showQr = true })
                 }
             }
 
@@ -297,16 +306,7 @@ fun GuidanceOverlay(
                         mode = state.mode,
                         onModeSelected = onModeSelected,
                         portraitOnly = state.mirrored,
-                        videoMode = state.videoMode,
-                        onVideo = onVideoMode,
-                        typeMode = state.typeMode,
-                        onType = onTypeMode,
-                        askMode = state.askMode,
-                        onAsk = onAskMode,
-                        scanMode = state.scanMode,
-                        onScan = onScanMode,
-                        fitMode = state.fitMode,
-                        onFit = onFitMode,
+                        photo = !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode,
                     )
                     BottomBar(
                         locked = state.isLocked,
@@ -316,6 +316,8 @@ fun GuidanceOverlay(
                         onFlip = onFlip,
                         video = state.videoMode,
                         recording = state.recording,
+                        onPhoto = { if (state.videoMode) onModeSelected(state.mode) },
+                        onVideo = { if (!state.videoMode) onVideoMode() },
                     )
                 }
             }

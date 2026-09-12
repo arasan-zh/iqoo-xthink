@@ -27,6 +27,11 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInParent
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.runtime.setValue
 import kotlin.math.exp
 import kotlin.math.ln
@@ -88,61 +93,44 @@ fun ZoomBar(
 ) {
     val maxLog = ln(maxZoomRatio.coerceAtLeast(1.01f))
     var dragging by remember { mutableStateOf(false) }
+    val onStop = ZOOM_STOPS.any { abs(zoomRatio - it) < 0.15f }
     Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
-        val mm = (baseFocalMm * zoomRatio).roundToInt()
-        Text(
-            text = "%.1fx  \u00b7  %d mm".format(zoomRatio, mm),
-            color = if (dragging) XT.Gold else XT.OnChip,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.SemiBold,
-            letterSpacing = 0.5.sp,
-            modifier = Modifier
-                .padding(bottom = 6.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(XT.Chip)
-                .padding(horizontal = 10.dp, vertical = 4.dp),
-        )
-        Box(
-            modifier = Modifier
-                .width(300.dp)
-                .clip(RoundedCornerShape(XT.Corner))
-                .background(XT.Chip)
-                .pointerInput(maxZoomRatio) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { dragging = true },
-                        onDragEnd = { dragging = false },
-                        onDragCancel = { dragging = false },
-                    ) { change, _ ->
-                        change.consume()
-                        val t = ((change.position.x - BAR_PAD_PX) / (size.width - 2 * BAR_PAD_PX)).coerceIn(0f, 1f)
-                        onZoomSelected(exp(t * maxLog).coerceIn(1f, maxZoomRatio))
-                    }
+        // The exact figure only while it matters: between the stops, or under a finger.
+        if (dragging || !onStop) {
+            val mm = (baseFocalMm * zoomRatio).roundToInt()
+            Text(
+                text = "%.1fx  \u00b7  %d mm".format(zoomRatio, mm),
+                color = XT.OnChip,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                letterSpacing = 0.5.sp,
+                modifier = Modifier
+                    .padding(bottom = 8.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(XT.Chip)
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
+            )
+        }
+        // Round pills, as a camera app draws them; a drag across the row reaches the values between.
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.pointerInput(maxZoomRatio) {
+                detectHorizontalDragGestures(
+                    onDragStart = { dragging = true },
+                    onDragEnd = { dragging = false },
+                    onDragCancel = { dragging = false },
+                ) { change, _ ->
+                    change.consume()
+                    val t = (change.position.x / size.width).coerceIn(0f, 1f)
+                    onZoomSelected(exp(t * maxLog).coerceIn(1f, maxZoomRatio))
                 }
-                .padding(horizontal = 10.dp, vertical = 5.dp),
+            },
         ) {
-            // Stops sit at their log position along the bar.
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(34.dp)) {
-                val w = maxWidth
-                ZOOM_STOPS.forEach { stop ->
-                    val reachable = stop <= maxZoomRatio + 0.01f
-                    val t = (ln(stop) / maxLog).coerceIn(0f, 1f)
-                    val active = abs(zoomRatio - stop) < 0.15f
-                    ZoomStop(
-                        stop = stop,
-                        active = active,
-                        reachable = reachable,
-                        modifier = Modifier.offset(x = (w - 34.dp) * t),
-                    ) { if (reachable) onZoomSelected(stop) }
-                }
-                // The thumb: where the zoom is right now, between stops.
-                val tt = (ln(zoomRatio.coerceAtLeast(1f)) / maxLog).coerceIn(0f, 1f)
-                Box(
-                    modifier = Modifier
-                        .offset(x = (w - 6.dp) * tt, y = 30.dp)
-                        .size(width = 6.dp, height = 3.dp)
-                        .clip(RoundedCornerShape(2.dp))
-                        .background(XT.Gold),
-                )
+            ZOOM_STOPS.forEach { stop ->
+                val reachable = stop <= maxZoomRatio + 0.01f
+                val active = abs(zoomRatio - stop) < 0.15f
+                ZoomStop(stop = stop, active = active, reachable = reachable) { if (reachable) onZoomSelected(stop) }
             }
         }
     }
@@ -161,12 +149,13 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, modifier:
         animationSpec = tween(180),
         label = "zoomTint",
     )
-    val label = if (stop == 1f) "1x" else stop.toInt().toString()
+    val label = if (stop == 1f) "1x" else "${stop.toInt()}x"
+    val diameter by animateDpAsState(if (active) 44.dp else 38.dp, tween(180), label = "zoomPill")
     Box(
         modifier = modifier
-            .size(34.dp)
+            .size(diameter)
             .clip(CircleShape)
-            .background(if (active) XT.Gold else Color.Transparent)
+            .background(if (active) Color.White else Color.Black.copy(alpha = 0.32f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -195,41 +184,42 @@ fun ModeTabs(
     onModeSelected: (CoachMode) -> Unit,
     modifier: Modifier = Modifier,
     portraitOnly: Boolean = false,
-    videoMode: Boolean = false,
-    onVideo: () -> Unit = {},
-    typeMode: Boolean = false,
-    onType: () -> Unit = {},
-    askMode: Boolean = false,
-    onAsk: () -> Unit = {},
-    scanMode: Boolean = false,
-    onScan: () -> Unit = {},
-    fitMode: Boolean = false,
-    onFit: () -> Unit = {},
+    photo: Boolean = true,
 ) {
-    // Six tabs do not all fit a phone's width at a readable size, so the
-    // row scrolls; the selected tab is scrolled into view when it changes.
+    // A carousel: the chosen mode sits in the middle of the screen and the
+    // others fall away to either side. Tap one to bring it to the centre.
+    val items: List<Pair<String, CoachMode>> = if (portraitOnly) listOf("PORTRAIT" to CoachMode.PORTRAIT) else listOf(
+        "PORTRAIT" to CoachMode.PORTRAIT,
+        "SCENE" to CoachMode.WIDE,
+        "OBJECT" to CoachMode.OBJECT,
+        "CREATIVE" to CoachMode.CREATIVE,
+    )
+    val selected = if (photo) items.indexOfFirst { it.second == mode } else -1
     val scroll = rememberScrollState()
-    LaunchedEffect(mode, videoMode, typeMode, askMode, fitMode) {
-        if (typeMode || askMode || fitMode) scroll.animateScrollTo(scroll.maxValue) else if (!videoMode && mode == CoachMode.PORTRAIT) scroll.animateScrollTo(0)
-    }
-    Row(
-        modifier = modifier.horizontalScroll(scroll),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        val photo = !videoMode && !typeMode && !askMode && !fitMode
-        ModeTab("PORTRAIT", photo && mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
-        // The selfie lens is for people: the other modes stay on the rear camera.
-        if (!portraitOnly) {
-            ModeTab("SCENE", photo && mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
-            ModeTab("OBJECT", photo && mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
-            ModeTab("CREATIVE", photo && mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
+    val centres = remember { mutableStateMapOf<Int, Float>() }
+    BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
+        val half = maxWidth / 2
+        val halfPx = with(LocalDensity.current) { half.toPx() }
+        val target = centres[selected]
+        LaunchedEffect(selected, target, halfPx) {
+            if (selected >= 0 && target != null) scroll.animateScrollTo((target - halfPx).roundToInt().coerceIn(0, scroll.maxValue))
         }
-        ModeTab("VIDEO", videoMode, onClick = onVideo)
-        ModeTab("FIT", fitMode, onClick = onFit)
-        ModeTab("SCAN", askMode && scanMode, onClick = onScan)
-        ModeTab("TRANSLATE", askMode && !scanMode, onClick = onAsk)
-        if (!portraitOnly) ModeTab("STEVE", typeMode, onClick = onType)
+        Row(
+            modifier = Modifier.horizontalScroll(scroll),
+            horizontalArrangement = Arrangement.spacedBy(26.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Spacer(Modifier.width(half))
+            items.forEachIndexed { i, (label, m) ->
+                Box(
+                    modifier = Modifier.onGloballyPositioned { c ->
+                        // Centre within the scrolling row: the row's own offset plus the scroll already applied.
+                        centres[i] = c.positionInParent().x + c.size.width / 2f
+                    },
+                ) { ModeTab(label, i == selected) { onModeSelected(m) } }
+            }
+            Spacer(Modifier.width(half))
+        }
     }
 }
 
@@ -266,7 +256,7 @@ fun RecordingChip(ms: Long, modifier: Modifier = Modifier) {
 @Composable
 private fun ModeTab(label: String, active: Boolean, onClick: () -> Unit) {
     val tint by animateColorAsState(
-        targetValue = if (active) XT.Gold else XT.OnChip.copy(alpha = 0.8f),
+        targetValue = if (active) XT.Gold else XT.OnChip.copy(alpha = 0.5f),
         animationSpec = tween(180),
         label = "modeTab",
     )
@@ -313,55 +303,120 @@ fun BottomBar(
     modifier: Modifier = Modifier,
     video: Boolean = false,
     recording: Boolean = false,
+    onPhoto: () -> Unit = {},
+    onVideo: () -> Unit = {},
 ) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 28.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // Gallery: the most recent capture, or a placeholder until there is
-        // one. Tapping opens it in the phone's viewer.
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(RoundedCornerShape(XT.CornerSmall))
-                .background(Color.White.copy(alpha = 0.14f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onGallery,
-                ),
-            contentAlignment = Alignment.Center,
+    // The shutter is centred whatever sits beside it: the gallery and the
+    // photo|video pill on the left, the flip on the right.
+    Box(modifier = modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+        Row(
+            modifier = Modifier.align(Alignment.CenterStart),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            if (thumbnail != null) {
-                Image(
-                    bitmap = thumbnail,
-                    contentDescription = "Last photo",
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(46.dp),
-                )
-            } else Canvas(modifier = Modifier.size(20.dp)) {
-                drawRoundRect(
-                    color = XT.Inert,
-                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
-                    style = Stroke(1.5f.dp.toPx()),
-                )
-                drawCircle(XT.Inert, size.minDimension * 0.12f, Offset(size.width * 0.33f, size.height * 0.34f))
-                drawLine(
-                    XT.Inert,
-                    Offset(size.width * 0.16f, size.height * 0.78f),
-                    Offset(size.width * 0.5f, size.height * 0.42f),
-                    1.5f.dp.toPx(),
-                    StrokeCap.Round,
-                )
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.14f))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onGallery,
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (thumbnail != null) {
+                    Image(
+                        bitmap = thumbnail,
+                        contentDescription = "Last photo",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.size(40.dp),
+                    )
+                } else Canvas(modifier = Modifier.size(18.dp)) {
+                    drawRoundRect(
+                        color = XT.Inert,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
+                        style = Stroke(1.5f.dp.toPx()),
+                    )
+                    drawCircle(XT.Inert, size.minDimension * 0.12f, Offset(size.width * 0.33f, size.height * 0.34f))
+                    drawLine(
+                        XT.Inert,
+                        Offset(size.width * 0.16f, size.height * 0.78f),
+                        Offset(size.width * 0.5f, size.height * 0.42f),
+                        1.5f.dp.toPx(),
+                        StrokeCap.Round,
+                    )
+                }
             }
+            PhotoVideoToggle(video = video, onPhoto = onPhoto, onVideo = onVideo)
         }
 
-        Shutter(locked = locked, video = video, recording = recording, onClick = onShutter)
+        Box(modifier = Modifier.align(Alignment.Center)) {
+            Shutter(locked = locked, video = video, recording = recording, onClick = onShutter)
+        }
 
-        // Flip - where a camera app keeps it.
-        FlipButton(onClick = onFlip, diameter = 46.dp, background = Color.White.copy(alpha = 0.14f))
+        FlipButton(
+            onClick = onFlip,
+            diameter = 44.dp,
+            background = Color.Black.copy(alpha = 0.32f),
+            modifier = Modifier.align(Alignment.CenterEnd),
+        )
     }
+}
+
+/** Photo | video: the pill from the reference, a white disc on the one in use. */
+@Composable
+fun PhotoVideoToggle(video: Boolean, onPhoto: () -> Unit, onVideo: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(Color.Black.copy(alpha = 0.32f))
+            .padding(4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (!video) Color.White else Color.Transparent)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onPhoto),
+            contentAlignment = Alignment.Center,
+        ) { Glyph("camera", if (!video) Color.Black else XT.OnChip, 18.dp) }
+        Box(
+            modifier = Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (video) Color.White else Color.Transparent)
+                .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onVideo),
+            contentAlignment = Alignment.Center,
+        ) {
+            val c = if (video) Color.Black else XT.OnChip
+            Canvas(modifier = Modifier.size(18.dp)) {
+                val w = size.width
+                val h = size.height
+                val st = 1.7f.dp.toPx()
+                drawRoundRect(c, Offset(0f, h * 0.24f), Size(w * 0.62f, h * 0.52f), androidx.compose.ui.geometry.CornerRadius(w * 0.1f), style = Stroke(st))
+                drawLine(c, Offset(w * 0.64f, h * 0.44f), Offset(w * 0.96f, h * 0.28f), st, StrokeCap.Round)
+                drawLine(c, Offset(w * 0.96f, h * 0.28f), Offset(w * 0.96f, h * 0.72f), st, StrokeCap.Round)
+                drawLine(c, Offset(w * 0.96f, h * 0.72f), Offset(w * 0.64f, h * 0.56f), st, StrokeCap.Round)
+            }
+        }
+    }
+}
+
+/** A round glass icon for the top row: the mark, a room, a switch. */
+@Composable
+fun TopIcon(name: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = XT.OnChip) {
+    Box(
+        modifier = modifier
+            .size(42.dp)
+            .clip(CircleShape)
+            .background(XT.Chip)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { if (name == "mark") Mark(size = 20.dp, color = tint) else Glyph(name, tint, 20.dp) }
 }
 
 /** Install link: anyone at the demo scans it and gets the latest build. */
@@ -409,7 +464,7 @@ private fun Shutter(locked: Boolean, video: Boolean, recording: Boolean, onClick
         targetValue = when {
             video -> XT.Record
             locked -> XT.Green
-            else -> XT.Gold
+            else -> Color.White
         },
         animationSpec = tween(260),
         label = "shutterInner",
@@ -439,8 +494,8 @@ private fun Shutter(locked: Boolean, video: Boolean, recording: Boolean, onClick
                 cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius),
             )
         } else {
-            drawCircle(inner.copy(alpha = 0.9f), c - 10.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
-            if (locked) drawCircle(XT.Green.copy(alpha = 0.12f), c - 11.dp.toPx(), Offset(c, c))
+            // A white disc, as every camera's; it turns green when the coach says now.
+            drawCircle(inner, c - 9.dp.toPx(), Offset(c, c))
         }
     }
 }

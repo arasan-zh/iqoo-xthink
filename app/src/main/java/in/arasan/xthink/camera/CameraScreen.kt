@@ -176,6 +176,7 @@ fun CameraScreen(
     debugAsk: String? = null,
     startIn: String? = null,
     onHome: () -> Unit = {},
+    onOpenRoom: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasCameraPermission(context)) }
@@ -189,7 +190,7 @@ fun CameraScreen(
     }
 
     if (granted) {
-        CameraAndGuidance(coach, debugEnhanceUri, debugGenius, debugAsk, startIn, onHome)
+        CameraAndGuidance(coach, debugEnhanceUri, debugGenius, debugAsk, startIn, onHome, onOpenRoom)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -219,6 +220,7 @@ private fun CameraAndGuidance(
     debugAsk: String? = null,
     startIn: String? = null,
     onHome: () -> Unit = {},
+    onOpenRoom: (String) -> Unit = {},
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -1164,6 +1166,7 @@ private fun CameraAndGuidance(
                 showLooks = overlayState.showLooks,
                 lookPreview = overlayState.lookPreview,
                 showGuide = overlayState.showGuide,
+                showTune = overlayState.showTune,
                 baseFocalMm = overlayState.baseFocalMm,
                 shotStyle = overlayState.shotStyle,
                 showShots = overlayState.showShots,
@@ -1620,6 +1623,8 @@ private fun CameraAndGuidance(
                 Log.i(TAG, "easy shot ${if (on) "on" else "off"}")
             },
             onHome = onHome,
+            onOpenRoom = onOpenRoom,
+            onToggleTune = { overlayState = overlayState.copy(showTune = !overlayState.showTune, showShots = false, showLooks = false) },
             onFlip = {
                 val toFront = lensFacing == CameraSelector.LENS_FACING_BACK
                 lensFacing = if (toFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
@@ -1668,6 +1673,7 @@ private fun buildOverlayState(
     showLooks: Boolean,
     lookPreview: ImageBitmap?,
     showGuide: Boolean,
+    showTune: Boolean,
     baseFocalMm: Float,
     shotStyle: ShotType?,
     showShots: Boolean,
@@ -1727,6 +1733,7 @@ private fun buildOverlayState(
         showLooks = showLooks,
         lookPreview = lookPreview,
         showGuide = showGuide,
+        showTune = showTune,
         baseFocalMm = baseFocalMm,
         shotStyle = shotStyle,
         showShots = showShots,

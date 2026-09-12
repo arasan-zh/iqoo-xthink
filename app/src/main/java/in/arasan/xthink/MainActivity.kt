@@ -20,11 +20,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import `in`.arasan.xthink.camera.CameraScreen
+import `in`.arasan.xthink.camera.Conversation
 import `in`.arasan.xthink.camera.LlmCoach
 import `in`.arasan.xthink.camera.SpeechInput
 import `in`.arasan.xthink.ui.ChatScreen
 import `in`.arasan.xthink.ui.ChatTurn
-import `in`.arasan.xthink.ui.HomeScreen
 import `in`.arasan.xthink.ui.Splash
 import `in`.arasan.xthink.ui.VOICE_LANGUAGES
 import `in`.arasan.xthink.ui.VoiceScreen
@@ -45,9 +45,10 @@ class MainActivity : ComponentActivity() {
                 val coach = remember { LlmCoach(context) }
                 DisposableEffect(coach) { onDispose { coach.close() } }
                 val hooked = intent.getStringExtra("enhance") != null || intent.getStringExtra("genius") != null || intent.getStringExtra("ask") != null
-                var screen by remember { mutableStateOf(if (hooked) "CAMERA" else "HOME") }
+                var screen by remember { mutableStateOf("CAMERA") }
                 var startIn by remember { mutableStateOf<String?>(null) }
                 var splash by remember { mutableStateOf(true) }
+                val conversation = remember { Conversation() }
 
                 // Voice
                 var vLang by remember { mutableStateOf(0) }
@@ -84,8 +85,12 @@ class MainActivity : ComponentActivity() {
                             vHeard = heard
                             if (coachState != LlmCoach.State.READY) { vPhase = "FAILED"; vNote = "Gemma is still loading - a moment"; return@listen }
                             vPhase = "THINKING"
-                            val ok = coach.askText(LlmCoach.Kind.VOICE, LlmCoach.voicePrompt(heard, lang.name), main) { text, done ->
+                            val history = conversation.history()
+                            conversation.add(true, heard)
+                            val replyIndex = conversation.add(false, "")
+                            val ok = coach.askText(LlmCoach.Kind.VOICE, LlmCoach.voicePrompt(heard, lang.name, history), main) { text, done ->
                                 vReply = text
+                                conversation.set(replyIndex, text)
                                 if (done) {
                                     vPhase = "SPEAKING"
                                     runCatching {
@@ -106,7 +111,7 @@ class MainActivity : ComponentActivity() {
                 }
 
                 // Chat
-                val chat = remember { androidx.compose.runtime.mutableStateListOf<ChatTurn>() }
+                val chat = conversation.turns
                 var chatDraft by remember { mutableStateOf("") }
                 var chatBusy by remember { mutableStateOf(false) }
                 var chatListening by remember { mutableStateOf(false) }
@@ -158,15 +163,14 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Leaving a room silences it: no reading on into the next screen.
+                androidx.compose.runtime.LaunchedEffect(screen) {
+                    if (screen != "VOICE") { speech.stop(); runCatching { tts?.stop() }; if (vPhase == "SPEAKING" || vPhase == "LISTENING") vPhase = "READY" }
+                    if (screen != "CHAT") { chatListening = false }
+                }
+
                 Box {
                     when (screen) {
-                        "HOME" -> HomeScreen(status = "Everything here runs on the phone.", onOpen = { id ->
-                            when (id) {
-                        "VOICE" -> { screen = "VOICE"; ensureCoach() }
-                                "CHAT" -> { screen = "CHAT"; ensureCoach() }
-                                else -> { startIn = if (id == "CAMERA") null else id; screen = "CAMERA" }
-                            }
-                        })
                         "CHAT" -> {
                             ChatScreen(
                                 turns = chat,
@@ -184,30 +188,9 @@ class MainActivity : ComponentActivity() {
                                 onDraft = { chatDraft = it },
                                 onSend = { chatSend(chatDraft) },
                                 onMic = { chatMic() },
-                                onHome = { speech.stop(); screen = "HOME" },
+                                onHome = { speech.stop(); screen = "CAMERA" },
                             )
-                            BackHandler { screen = "HOME" }
-                        }
-                        "CHAT" -> {
-                            ChatScreen(
-                                turns = chat,
-                                draft = chatDraft,
-                                busy = chatBusy,
-                                listening = chatListening,
-                                attachment = chatImage?.let { it.asImageBitmap() },
-                                onAttach = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                                onClearAttach = { chatImage = null },
-                                modelLine = when (coachState) {
-                                    LlmCoach.State.READY -> "Gemma 3n · on the phone"
-                                    LlmCoach.State.LOADING -> "loading the model\u2026"
-                                    else -> if (coach.modelFile() == null) "no model on this phone" else "loading the model\u2026"
-                                },
-                                onDraft = { chatDraft = it },
-                                onSend = { chatSend(chatDraft) },
-                                onMic = { chatMic() },
-                                onHome = { speech.stop(); screen = "HOME" },
-                            )
-                            BackHandler { screen = "HOME" }
+                            BackHandler { screen = "CAMERA" }
                         }
                         "VOICE" -> {
                             VoiceScreen(
@@ -224,9 +207,9 @@ class MainActivity : ComponentActivity() {
                                 onLanguage = { vLang = it },
                                 onMic = { voiceTurn() },
                                 onStop = { speech.stop(); runCatching { tts?.stop() }; vPhase = "READY" },
-                                onHome = { speech.stop(); runCatching { tts?.stop() }; screen = "HOME" },
+                                onHome = { speech.stop(); runCatching { tts?.stop() }; screen = "CAMERA" },
                             )
-                            BackHandler { screen = "HOME" }
+                            BackHandler { screen = "CAMERA" }
                         }
                         else -> {
                             CameraScreen(
@@ -235,9 +218,9 @@ class MainActivity : ComponentActivity() {
                                 debugGenius = intent.getStringExtra("genius"),
                                 debugAsk = intent.getStringExtra("ask"),
                                 startIn = startIn,
-                                onHome = { screen = "HOME" },
+                                onHome = { },
+                                onOpenRoom = { id -> if (id == "VOICE" || id == "CHAT") { screen = id; ensureCoach() } },
                             )
-                            BackHandler { screen = "HOME" }
                         }
                     }
                     if (splash) Splash(onDone = { splash = false })

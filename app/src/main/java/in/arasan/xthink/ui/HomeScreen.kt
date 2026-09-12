@@ -195,6 +195,14 @@ fun Glyph(name: String, color: Color, size: androidx.compose.ui.unit.Dp) {
                 drawLine(color, Offset(w * 0.3f, h * 0.72f), Offset(w * 0.22f, h * 0.9f), st, StrokeCap.Round)
                 drawLine(color, Offset(w * 0.22f, h * 0.9f), Offset(w * 0.45f, h * 0.72f), st, StrokeCap.Round)
             }
+            "tune" -> {
+                for (i in 0 until 3) {
+                    val y = h * (0.25f + 0.25f * i)
+                    drawLine(color, Offset(w * 0.12f, y), Offset(w * 0.88f, y), st, StrokeCap.Round)
+                    val kx = w * listOf(0.62f, 0.34f, 0.5f)[i]
+                    drawCircle(color, w * 0.09f, Offset(kx, y))
+                }
+            }
             "home" -> {
                 drawLine(color, Offset(w * 0.1f, h * 0.5f), Offset(w * 0.5f, h * 0.14f), st, StrokeCap.Round)
                 drawLine(color, Offset(w * 0.5f, h * 0.14f), Offset(w * 0.9f, h * 0.5f), st, StrokeCap.Round)
