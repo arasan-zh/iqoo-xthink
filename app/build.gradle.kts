@@ -11,7 +11,7 @@ android {
 
     defaultConfig {
         applicationId = "in.arasan.xthink"
-        minSdk = 26
+        minSdk = 31
         targetSdk = 37
         versionCode = 1
         versionName = "1.0"
