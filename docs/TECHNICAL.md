@@ -395,3 +395,16 @@ piece device-verified on the iQOO 15 before it was committed.
   rep a thud and the count spoken. Hand signs from MediaPipe's gesture
   model (seven signs, bundled 8 MB); thumbs up takes the photo. Not sign
   language - and not claimed to be.
+
+### The camera is the app; the retouch; Steve's eyes (build-38 → 39)
+
+- **One room**: xThink opens on the viewfinder. Chat, Voice and Steve are
+  round icons in the top row (Steve's is gold, the one that reaches the
+  Mac); a tune switch hides the Shot / Easy shot / Guide / Look chips,
+  shown by default. The mode strip is a carousel that keeps the chosen
+  mode at the centre of the screen; zoom is round pills (1x 2x 3x 10x)
+  with the mm readout only between stops or under a finger; the shutter
+  is a white disc that turns green on lock; photo|video is a pill by the
+  gallery. Translate, Scan and Fit lost their tabs (the deep links still
+  reach them). Voice and Chat share one `Conversation`, so a follow-up
+  knows what was said; leaving a room stops the speech.

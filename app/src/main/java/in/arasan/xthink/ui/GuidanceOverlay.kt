@@ -219,7 +219,7 @@ fun GuidanceOverlay(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TopIcon("chat", onClick = { onOpenRoom("CHAT") })
                         TopIcon("voice", onClick = { onOpenRoom("VOICE") })
-                        if (!state.mirrored) TopIcon("mac", onClick = onTypeMode, tint = if (state.typeMode) XT.Gold else XT.OnChip)
+                        if (!state.mirrored) TopIcon("mac", onClick = onTypeMode, tint = Color(0xFF1A1508), accent = true)
                         if (!state.videoMode) TopIcon("tune", onClick = onToggleTune, tint = if (state.showTune) XT.Gold else XT.OnChip)
                     }
                 }

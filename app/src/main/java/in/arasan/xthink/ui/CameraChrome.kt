@@ -57,6 +57,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.border
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.StrokeCap
@@ -406,14 +408,18 @@ fun PhotoVideoToggle(video: Boolean, onPhoto: () -> Unit, onVideo: () -> Unit, m
     }
 }
 
-/** A round glass icon for the top row: the mark, a room, a switch. */
+/**
+ * A round glass icon for the top row: the mark, a room, a switch. [accent]
+ * fills it with Steve's gold so the one that reaches the Mac stands apart.
+ */
 @Composable
-fun TopIcon(name: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = XT.OnChip) {
+fun TopIcon(name: String, onClick: () -> Unit, modifier: Modifier = Modifier, tint: Color = XT.OnChip, accent: Boolean = false) {
     Box(
         modifier = modifier
             .size(42.dp)
             .clip(CircleShape)
-            .background(XT.Chip)
+            .background(if (accent) Brush.linearGradient(listOf(Color(0xFFF1CB7A), Color(0xFFC9963F))) else Brush.linearGradient(listOf(XT.Chip, XT.Chip)))
+            .then(if (accent) Modifier.border(1.dp, Color.White.copy(alpha = 0.35f), CircleShape) else Modifier)
             .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) { if (name == "mark") Mark(size = 20.dp, color = tint) else Glyph(name, tint, 20.dp) }

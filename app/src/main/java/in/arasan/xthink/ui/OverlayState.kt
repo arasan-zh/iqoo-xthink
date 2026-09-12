@@ -59,8 +59,8 @@ data class OverlayState(
     val recordingMs: Long = 0L,
     /** The guidance card (the words). Off by default: the reticle and the arrows guide. */
     val showGuide: Boolean = false,
-    /** The tune chips (Shot, Easy shot, Guide, Look). Hidden by default: a clean viewfinder. */
-    val showTune: Boolean = false,
+    /** The tune chips (Shot, Easy shot, Guide, Look). Shown by default; the switch hides them. */
+    val showTune: Boolean = true,
     /** Focal length of the lens at 1x, 35mm-equivalent, for the zoom readout. */
     val baseFocalMm: Float = 23.5f,
     /** A shot style the photographer picked (PORTRAIT only), or null for the automatic ladder. */
