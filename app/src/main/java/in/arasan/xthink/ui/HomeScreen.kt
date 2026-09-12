@@ -44,6 +44,7 @@ data class HomeCard(val id: String, val title: String, val line: String, val tin
 val HOME_CARDS: List<HomeCard> = listOf(
     HomeCard("CAMERA", "Camera", "Guided shots, portraits, scenes, video.", Palette.Mint, "camera"),
     HomeCard("VOICE", "Voice", "Talk with the phone, in your language.", Palette.Peach, "voice"),
+    HomeCard("CHAT", "Chat", "Ask anything. It stays on the phone.", Palette.Sky, "chat"),
     HomeCard("STEVE", "Steve", "Say it. Your Mac does it.", Palette.Lavender, "mac"),
     HomeCard("TRANSLATE", "Translate", "Any script in view, into English.", Palette.Peach, "translate"),
     HomeCard("SCAN", "Scan", "A page to clean, copyable text.", Palette.Sky, "scan"),
@@ -188,6 +189,11 @@ fun Glyph(name: String, color: Color, size: androidx.compose.ui.unit.Dp) {
                 drawLine(color, Offset(w * 0.5f, h * 0.72f), Offset(w * 0.5f, h * 0.9f), st, StrokeCap.Round)
                 drawLine(color, Offset(w * 0.32f, h * 0.9f), Offset(w * 0.68f, h * 0.9f), st, StrokeCap.Round)
                 drawLine(color, Offset(w * 0.2f, h * 0.5f), Offset(w * 0.8f, h * 0.5f), st, StrokeCap.Round)
+            }
+            "chat" -> {
+                drawRoundRect(color, Offset(w * 0.08f, h * 0.14f), Size(w * 0.84f, h * 0.58f), androidx.compose.ui.geometry.CornerRadius(w * 0.2f), style = Stroke(st))
+                drawLine(color, Offset(w * 0.3f, h * 0.72f), Offset(w * 0.22f, h * 0.9f), st, StrokeCap.Round)
+                drawLine(color, Offset(w * 0.22f, h * 0.9f), Offset(w * 0.45f, h * 0.72f), st, StrokeCap.Round)
             }
             "home" -> {
                 drawLine(color, Offset(w * 0.1f, h * 0.5f), Offset(w * 0.5f, h * 0.14f), st, StrokeCap.Round)

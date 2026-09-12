@@ -21,6 +21,8 @@ import androidx.core.content.ContextCompat
 import `in`.arasan.xthink.camera.CameraScreen
 import `in`.arasan.xthink.camera.LlmCoach
 import `in`.arasan.xthink.camera.SpeechInput
+import `in`.arasan.xthink.ui.ChatScreen
+import `in`.arasan.xthink.ui.ChatTurn
 import `in`.arasan.xthink.ui.HomeScreen
 import `in`.arasan.xthink.ui.Splash
 import `in`.arasan.xthink.ui.VOICE_LANGUAGES
@@ -102,14 +104,86 @@ class MainActivity : ComponentActivity() {
                     )
                 }
 
+                // Chat
+                val chat = remember { androidx.compose.runtime.mutableStateListOf<ChatTurn>() }
+                var chatDraft by remember { mutableStateOf("") }
+                var chatBusy by remember { mutableStateOf(false) }
+                var chatListening by remember { mutableStateOf(false) }
+                fun chatSend(text: String) {
+                    val msg = text.trim()
+                    if (msg.isEmpty() || chatBusy) return
+                    if (coachState != LlmCoach.State.READY) { chat.add(ChatTurn(true, msg)); chat.add(ChatTurn(false, "Gemma is still loading - a moment, then ask again.")); chatDraft = ""; return }
+                    val history = chat.map { it.mine to it.text }
+                    chat.add(ChatTurn(true, msg))
+                    chat.add(ChatTurn(false, ""))
+                    chatDraft = ""
+                    chatBusy = true
+                    val idx = chat.size - 1
+                    val ok = coach.askText(LlmCoach.Kind.CHAT, LlmCoach.chatPrompt(history, msg), main) { reply, done ->
+                        if (idx < chat.size) chat[idx] = ChatTurn(false, reply)
+                        if (done) chatBusy = false
+                    }
+                    if (!ok) { chat[idx] = ChatTurn(false, "Busy - try again in a moment."); chatBusy = false }
+                }
+                fun chatMic() {
+                    if (chatListening) { speech.stop(); return }
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+                        micLauncher.launch(Manifest.permission.RECORD_AUDIO); return
+                    }
+                    speech.language = "en-US"
+                    chatListening = true
+                    speech.listen(
+                        onPartial = { chatDraft = it },
+                        onResult = { heard -> chatListening = false; if (heard.isNotBlank()) chatSend(heard) },
+                        onDone = { chatListening = false },
+                    )
+                }
+
                 Box {
                     when (screen) {
                         "HOME" -> HomeScreen(status = "Everything here runs on the phone.", onOpen = { id ->
                             when (id) {
-                                "VOICE" -> { screen = "VOICE"; ensureCoach() }
+                        "VOICE" -> { screen = "VOICE"; ensureCoach() }
+                                "CHAT" -> { screen = "CHAT"; ensureCoach() }
                                 else -> { startIn = if (id == "CAMERA") null else id; screen = "CAMERA" }
                             }
                         })
+                        "CHAT" -> {
+                            ChatScreen(
+                                turns = chat,
+                                draft = chatDraft,
+                                busy = chatBusy,
+                                listening = chatListening,
+                                modelLine = when (coachState) {
+                                    LlmCoach.State.READY -> "Gemma 3n · on the phone"
+                                    LlmCoach.State.LOADING -> "loading the model\u2026"
+                                    else -> if (coach.modelFile() == null) "no model on this phone" else "loading the model\u2026"
+                                },
+                                onDraft = { chatDraft = it },
+                                onSend = { chatSend(chatDraft) },
+                                onMic = { chatMic() },
+                                onHome = { speech.stop(); screen = "HOME" },
+                            )
+                            BackHandler { screen = "HOME" }
+                        }
+                        "CHAT" -> {
+                            ChatScreen(
+                                turns = chat,
+                                draft = chatDraft,
+                                busy = chatBusy,
+                                listening = chatListening,
+                                modelLine = when (coachState) {
+                                    LlmCoach.State.READY -> "Gemma 3n · on the phone"
+                                    LlmCoach.State.LOADING -> "loading the model\u2026"
+                                    else -> if (coach.modelFile() == null) "no model on this phone" else "loading the model\u2026"
+                                },
+                                onDraft = { chatDraft = it },
+                                onSend = { chatSend(chatDraft) },
+                                onMic = { chatMic() },
+                                onHome = { speech.stop(); screen = "HOME" },
+                            )
+                            BackHandler { screen = "HOME" }
+                        }
                         "VOICE" -> {
                             VoiceScreen(
                                 state = VoiceState(

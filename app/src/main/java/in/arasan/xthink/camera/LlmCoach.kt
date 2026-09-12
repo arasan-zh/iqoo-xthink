@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -303,6 +303,15 @@ class LlmCoach(private val context: Context) {
             If the request appears done or the Mac is doing it, reply exactly: DONE
             Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
         """.trimIndent()
+
+        /** A chat turn with the last few turns in mind. [history] alternates user/assistant, oldest first. */
+        fun chatPrompt(history: List<Pair<Boolean, String>>, message: String): String {
+            val context = history.takeLast(6).joinToString("\n") { (mine, text) -> (if (mine) "User: " else "Assistant: ") + text.trim().take(400) }
+            return """
+                You are a helpful, concise assistant on a phone. Answer in the language the user writes in. Plain text, no markdown.
+                ${if (context.isNotBlank()) "Earlier:\n$context\n" else ""}User: $message
+            """.trimIndent()
+        }
 
         /** A spoken turn, answered in the same language, briefly. */
         fun voicePrompt(heard: String, language: String): String = """
