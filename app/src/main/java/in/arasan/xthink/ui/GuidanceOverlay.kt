@@ -78,6 +78,7 @@ fun GuidanceOverlay(
     onToggleLooks: () -> Unit,
     onPickLook: (Int) -> Unit,
     onToggleGuide: () -> Unit,
+    onVideoMode: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -184,7 +185,8 @@ fun GuidanceOverlay(
                             .padding(end = 8.dp)
                             .horizontalScroll(rememberScrollState()),
                     ) {
-                        if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
+                        if (state.recording) RecordingChip(ms = state.recordingMs)
+                        if (state.assisted && !state.videoMode) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
                         if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
                     }
@@ -236,13 +238,21 @@ fun GuidanceOverlay(
                         onZoomSelected = onZoomSelected,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
-                    ModeTabs(mode = state.mode, onModeSelected = onModeSelected, portraitOnly = state.mirrored)
+                    ModeTabs(
+                        mode = state.mode,
+                        onModeSelected = onModeSelected,
+                        portraitOnly = state.mirrored,
+                        videoMode = state.videoMode,
+                        onVideo = onVideoMode,
+                    )
                     BottomBar(
                         locked = state.isLocked,
                         thumbnail = state.thumbnail,
                         onShutter = onShutter,
                         onGallery = onGallery,
                         onFlip = onFlip,
+                        video = state.videoMode,
+                        recording = state.recording,
                     )
                 }
             }

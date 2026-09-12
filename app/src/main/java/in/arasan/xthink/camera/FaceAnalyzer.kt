@@ -93,6 +93,13 @@ class FaceAnalyzer(
     @Volatile
     var focusY: Float = 0.5f
 
+    /** Uptime of the last tap, so a fresh tap picks the face under it. */
+    @Volatile
+    var focusTapMs: Long = 0L
+
+    /** Where the chosen face was last frame, analysis space; keeps the same person between frames. */
+    private var lastFace: SubjectBox? = null
+
     /**
      * Variance of the 4-neighbour Laplacian on the Y plane, every 4th pixel
      * each way: ~11k samples of a 480x360 frame, well under a millisecond.
@@ -273,6 +280,7 @@ class FaceAnalyzer(
         dtMs: Long,
     ): FaceResult {
         if (faces.isEmpty()) {
+            lastFace = null
             return FaceResult(null, null, 0, detectMs, dtMs)
         }
 
@@ -299,18 +307,39 @@ class FaceAnalyzer(
             )
         }
 
-        // PORTRAIT (or a group of one): the largest face wins. The nearest
-        // person is almost always who the photographer means, and size is the
-        // most stable signal ML Kit gives - "most central" hands the subject
-        // back and forth as the phone pans.
-        val i = faces.indices.maxBy { faces[it].boundingBox.width().toLong() * faces[it].boundingBox.height() }
+        // PORTRAIT (or a group of one). A fresh tap picks the face under the
+        // finger; otherwise the face nearest where the chosen one was last
+        // frame keeps the same person through a pan or a video; failing
+        // both, the largest - the nearest person is almost always who the
+        // photographer means.
+        val boxes = rects.map { FrameMapping.normalize(it, crop) }
+        val fx = if (mirrored) 1f - focusX else focusX
+        val fy = focusY
+        val tapped = SystemClock.uptimeMillis() - focusTapMs < TAP_PICKS_MS
+        val prev = lastFace
+        val i = when {
+            tapped -> boxes.indices.minBy { (boxes[it].cx - fx).let { d -> d * d } + (boxes[it].cy - fy).let { d -> d * d } }
+            prev != null && boxes.indices.any { near(boxes[it], prev) } ->
+                boxes.indices.filter { near(boxes[it], prev) }
+                    .minBy { (boxes[it].cx - prev.cx).let { d -> d * d } + (boxes[it].cy - prev.cy).let { d -> d * d } }
+            else -> faces.indices.maxBy { faces[it].boundingBox.width().toLong() * faces[it].boundingBox.height() }
+        }
+        lastFace = boxes[i]
         return FaceResult(
-            subject = FrameMapping.normalize(rects[i], crop),
+            subject = boxes[i],
             eyes = eyeLineOf(faces[i], rects[i], crop),
             faceCount = faces.size,
             detectMs = detectMs,
             dtMs = dtMs,
         )
+    }
+
+    /** Same person, probably: centres within a face-width of each other. */
+    private fun near(a: SubjectBox, b: SubjectBox): Boolean {
+        val dx = a.cx - b.cx
+        val dy = a.cy - b.cy
+        val reach = maxOf(a.w, b.w, 0.08f) * 1.5f
+        return dx * dx + dy * dy <= reach * reach
     }
 
     private fun eyeLineOf(face: Face, rect: FrameRect, crop: FrameRect) = EyeLine(
@@ -346,6 +375,8 @@ class FaceAnalyzer(
     companion object {
         /** ~30 Hz. Faster buys nothing the EMA would not smooth away. */
         const val SHARPNESS_STEP = 4
+        /** A tap chooses the face under it for this long. */
+        const val TAP_PICKS_MS = 1_500L
         const val MIN_INTERVAL_MS = 33L
 
         /** A backgrounded app must not return with a dt that instantly locks. */

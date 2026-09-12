@@ -78,6 +78,7 @@ dependencies {
     implementation(libs.androidx.camera.camera2)
     implementation(libs.androidx.camera.lifecycle)
     implementation(libs.androidx.camera.view)
+    implementation(libs.androidx.camera.video)
     // Bundled, not Play-Services-backed: the APK is sideloaded at a venue and
     // must detect faces the instant it installs, with no model download.
     implementation(libs.mlkit.face.detection)

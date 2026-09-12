@@ -24,6 +24,8 @@ object XT {
 
     /** The stock-camera active-mode colour from the reference. */
     val Gold = Color(0xFFF5A524)
+    /** Recording red. */
+    val Record = Color(0xFFEF4444)
 
     val Chip = Color.Black.copy(alpha = 0.55f)
     val ChipStrong = Color.Black.copy(alpha = 0.72f)

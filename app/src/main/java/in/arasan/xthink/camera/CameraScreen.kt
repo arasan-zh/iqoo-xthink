@@ -45,6 +45,15 @@ import androidx.compose.material3.Text
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.compose.ui.graphics.ImageBitmap
 import kotlinx.coroutines.delay
+import androidx.camera.video.FallbackStrategy
+import androidx.camera.video.MediaStoreOutputOptions
+import androidx.camera.video.Quality
+import androidx.camera.video.QualitySelector
+import androidx.camera.video.Recorder
+import androidx.camera.video.Recording
+import androidx.camera.video.VideoCapture
+import androidx.camera.video.VideoRecordEvent
+import kotlin.math.abs
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -106,6 +115,15 @@ private const val SHARP_FRACTION = 0.55f
 /** 35mm-equivalent focal lengths at 1x, measured in docs/HARDWARE.md. */
 private const val REAR_FOCAL_MM = 23.5f
 private const val FRONT_FOCAL_MM = 21.2f
+
+/** Video focus tracking: re-aim no more often than this... */
+private const val TRACK_INTERVAL_MS = 500L
+
+/** ...and only when the subject has moved this far (fraction of the frame). */
+private const val TRACK_MOVE = 0.04f
+
+/** Subject gone this long: back to continuous AF. */
+private const val TRACK_LOST_MS = 1_500L
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -195,7 +213,84 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
             .build()
     }
     val autoCapture = remember { AutoCapturePolicy() }
-    val shutterSound = remember { MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) } }
+    val shutterSound = remember {
+        MediaActionSound().apply {
+            load(MediaActionSound.SHUTTER_CLICK)
+            load(MediaActionSound.START_VIDEO_RECORDING)
+            load(MediaActionSound.STOP_VIDEO_RECORDING)
+        }
+    }
+
+    // --- video ------------------------------------------------------------
+    // VIDEO swaps ImageCapture for VideoCapture in the bound group (the
+    // analysis stays: guidance keeps running, and it is what focus follows).
+    var videoMode by remember { mutableStateOf(false) }
+    val recorder = remember {
+        Recorder.Builder()
+            .setQualitySelector(
+                QualitySelector.from(Quality.FHD, FallbackStrategy.lowerQualityOrHigherThan(Quality.HD)),
+            )
+            .build()
+    }
+    val videoCapture = remember { VideoCapture.withOutput(recorder) }
+    var activeRecording by remember { mutableStateOf<Recording?>(null) }
+    val lastTrack = remember { floatArrayOf(-1f, -1f) } // x, y of the last focus move
+    val lastTrackMs = remember { longArrayOf(0L) }
+    val audioLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        Log.i(TAG, "video: microphone ${if (granted) "granted" else "denied - clips will be silent"}")
+    }
+
+    fun stopRecording() {
+        activeRecording?.stop()
+        activeRecording = null
+    }
+
+    fun startRecording() {
+        if (activeRecording != null) return
+        val name = "xthink_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
+        val values = ContentValues().apply {
+            put(MediaStore.Video.Media.DISPLAY_NAME, name)
+            put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+            put(MediaStore.Video.Media.RELATIVE_PATH, "DCIM/xThink")
+        }
+        val output = MediaStoreOutputOptions
+            .Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
+            .setContentValues(values)
+            .build()
+        val withAudio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        val pending = recorder.prepareRecording(context, output).apply { if (withAudio) withAudioEnabled() }
+        activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
+            when (event) {
+                is VideoRecordEvent.Start -> {
+                    shutterSound.play(MediaActionSound.START_VIDEO_RECORDING)
+                    overlayState = overlayState.copy(recording = true, recordingMs = 0L)
+                    Log.i(TAG, "video: recording (audio=$withAudio)")
+                }
+                is VideoRecordEvent.Status -> {
+                    overlayState = overlayState.copy(recordingMs = event.recordingStats.recordedDurationNanos / 1_000_000L)
+                }
+                is VideoRecordEvent.Finalize -> {
+                    shutterSound.play(MediaActionSound.STOP_VIDEO_RECORDING)
+                    activeRecording = null
+                    val uri = event.outputResults.outputUri
+                    if (event.hasError()) {
+                        Log.e(TAG, "video: finalize error ${event.error}", event.cause)
+                    } else {
+                        lastCaptureUri = uri
+                        Log.i(TAG, "video: saved ${event.recordingStats.recordedDurationNanos / 1_000_000L} ms -> $uri")
+                    }
+                    val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(160, 160), null) }.getOrNull()
+                    overlayState = overlayState.copy(
+                        recording = false,
+                        thumbnail = thumb?.asImageBitmap() ?: overlayState.thumbnail,
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { stopRecording() } }
     DisposableEffect(shutterSound) { onDispose { shutterSound.release() } }
 
     // After the shutter: the photographer's crop, offered, never imposed.
@@ -373,7 +468,12 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
 
     // --- camera + analysis -----------------------------------------------
 
-    fun selectMode(mode: CoachMode) {
+    fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
+        if (videoMode && leaveVideo) {
+            videoMode = false
+            overlayState = overlayState.copy(videoMode = false, recording = false)
+            Log.i(TAG, "mode -> photo")
+        }
         if (overlayState.mode == mode) return
         shotTypes.setMode(mode)
         analyzerRef[0]?.mode = mode
@@ -402,8 +502,10 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
         runCatching { context.startActivity(intent) }.onFailure { Log.w(TAG, "no viewer for the gallery", it) }
     }
 
-    DisposableEffect(lifecycleOwner, lensFacing) {
+    DisposableEffect(lifecycleOwner, lensFacing, videoMode) {
+        stopRecording()
         val isFront = lensFacing == CameraSelector.LENS_FACING_FRONT
+        val forVideo = videoMode
         val mainHandler = Handler(Looper.getMainLooper())
         val analysisExecutor = Executors.newSingleThreadExecutor()
         var telemetry = CameraTelemetry()
@@ -450,6 +552,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 lookPreview = overlayState.lookPreview,
                 showGuide = overlayState.showGuide,
                 baseFocalMm = overlayState.baseFocalMm,
+                videoMode = overlayState.videoMode,
+                recording = overlayState.recording,
+                recordingMs = overlayState.recordingMs,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -462,6 +567,32 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
             // The coach said "now". Take the picture - unless the phone is
             // too hot for a JPEG encode to be a good idea. The policy still
             // ticks so its cooldown clock stays honest.
+            // Video: focus follows the subject. Whenever the chosen face (or
+            // object) has moved a little since the last move, and not more
+            // often than TRACK_INTERVAL_MS, meter and focus where it is now.
+            // Lost for a while, hand back to continuous AF.
+            if (videoMode) {
+                val subj = result.subject
+                val now = SystemClock.uptimeMillis()
+                if (subj != null) {
+                    val moved = lastTrack[0] < 0f || abs(subj.cx - lastTrack[0]) > TRACK_MOVE || abs(subj.cy - lastTrack[1]) > TRACK_MOVE
+                    if (moved && now - lastTrackMs[0] >= TRACK_INTERVAL_MS) {
+                        val factory = previewView.meteringPointFactory
+                        val point = factory.createPoint(subj.cx * previewView.width, subj.cy * previewView.height)
+                        val action = FocusMeteringAction.Builder(point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE)
+                            .disableAutoCancel()
+                            .build()
+                        cameraControl?.cameraControl?.startFocusAndMetering(action)
+                        lastTrack[0] = subj.cx; lastTrack[1] = subj.cy; lastTrackMs[0] = now
+                        Log.i(TAG, "video: focus follows subject at (%.2f, %.2f)".format(subj.cx, subj.cy))
+                    }
+                } else if (lastTrack[0] >= 0f && now - lastTrackMs[0] > TRACK_LOST_MS) {
+                    cameraControl?.cameraControl?.cancelFocusAndMetering()
+                    lastTrack[0] = -1f; lastTrack[1] = -1f
+                    Log.i(TAG, "video: subject lost, continuous AF")
+                }
+            }
+
             // Sharpness against the scene's own recent best: a frame well
             // below it is motion or missed focus, and not worth a shutter.
             sharpRef[0] = maxOf(sharpRef[0] * SHARP_DECAY, result.sharpness)
@@ -472,7 +603,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
             // Easy shot on: the coach may press the shutter (at the lock,
             // or near enough). Off: guidance only, the shutter is the
             // photographer's. Never while a review is up.
-            if (wantsShot && thermalPlan[0].autoCaptureOn && overlayState.easyShot && overlayState.review == null) {
+            if (wantsShot && thermalPlan[0].autoCaptureOn && overlayState.easyShot && overlayState.review == null && !videoMode) {
                 capture(auto = true)
             }
 
@@ -572,7 +703,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 val group = UseCaseGroup.Builder()
                     .addUseCase(preview)
                     .addUseCase(analysis)
-                    .addUseCase(imageCapture)
+                    .addUseCase(if (forVideo) videoCapture else imageCapture)
                     .apply { previewView.viewPort?.let { setViewPort(it) } }
                     .build()
 
@@ -616,7 +747,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                     overlayState = overlayState.copy(mirrored = isFront, baseFocalMm = if (isFront) FRONT_FOCAL_MM else REAR_FOCAL_MM)
                     Log.i(
                         TAG,
-                        "bound ${if (isFront) "front" else "rear"} camera: mirrored=$isFront " +
+                        "bound ${if (isFront) "front" else "rear"} camera${if (forVideo) " for video" else ""}: mirrored=$isFront " +
                             "autofocus=${statics.hasAutofocus} zoom<=${statics.maxZoomRatio}x " +
                             "minFocus=${statics.minFocusCm}cm viewPort=${previewView.viewPort != null}",
                     )
@@ -640,9 +771,25 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
             onZoomSelected = { ratio ->
                 cameraControl?.cameraControl?.setZoomRatio(ratio)
             },
+            onVideoMode = {
+                if (!videoMode) {
+                    if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        audioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+                    }
+                    videoMode = true
+                    overlayState = overlayState.copy(videoMode = true, review = null)
+                    Log.i(TAG, "mode -> VIDEO")
+                }
+            },
             onShutter = {
-                autoCapture.notifyManualCapture()
-                capture(auto = false)
+                if (videoMode) {
+                    if (activeRecording == null) startRecording() else stopRecording()
+                } else {
+                    autoCapture.notifyManualCapture()
+                    capture(auto = false)
+                }
             },
             onGallery = { openGallery() },
             onModeSelected = { selectMode(it) },
@@ -716,7 +863,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 val toFront = lensFacing == CameraSelector.LENS_FACING_BACK
                 lensFacing = if (toFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
                 // The selfie lens is for people.
-                if (toFront) selectMode(CoachMode.PORTRAIT)
+                if (toFront) selectMode(CoachMode.PORTRAIT, leaveVideo = false)
             },
             onToggleGuide = {
                 overlayState = overlayState.copy(showGuide = !overlayState.showGuide)
@@ -761,6 +908,9 @@ private fun buildOverlayState(
     lookPreview: ImageBitmap?,
     showGuide: Boolean,
     baseFocalMm: Float,
+    videoMode: Boolean,
+    recording: Boolean,
+    recordingMs: Long,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -806,6 +956,9 @@ private fun buildOverlayState(
         lookPreview = lookPreview,
         showGuide = showGuide,
         baseFocalMm = baseFocalMm,
+        videoMode = videoMode,
+        recording = recording,
+        recordingMs = recordingMs,
     )
 }
 

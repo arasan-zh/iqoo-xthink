@@ -36,6 +36,12 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** VIDEO tab: the shutter records, focus follows the subject. */
+    val videoMode: Boolean = false,
+    /** True while a clip is being recorded. */
+    val recording: Boolean = false,
+    /** Length of the clip so far. */
+    val recordingMs: Long = 0L,
     /** The guidance card (the words). Off by default: the reticle and the arrows guide. */
     val showGuide: Boolean = false,
     /** Focal length of the lens at 1x, 35mm-equivalent, for the zoom readout. */

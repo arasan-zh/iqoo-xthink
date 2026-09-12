@@ -31,6 +31,13 @@ import androidx.compose.runtime.setValue
 import kotlin.math.exp
 import kotlin.math.ln
 import kotlin.math.roundToInt
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.ui.draw.alpha
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -183,19 +190,52 @@ fun ModeTabs(
     onModeSelected: (CoachMode) -> Unit,
     modifier: Modifier = Modifier,
     portraitOnly: Boolean = false,
+    videoMode: Boolean = false,
+    onVideo: () -> Unit = {},
 ) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ModeTab("PORTRAIT", mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
+        ModeTab("PORTRAIT", !videoMode && mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         // The selfie lens is for people: the other modes stay on the rear camera.
         if (!portraitOnly) {
-            ModeTab("SCENE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
-            ModeTab("OBJECT", mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
-            ModeTab("CREATIVE", mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
+            ModeTab("SCENE", !videoMode && mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+            ModeTab("OBJECT", !videoMode && mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
+            ModeTab("CREATIVE", !videoMode && mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
         }
+        ModeTab("VIDEO", videoMode, onClick = onVideo)
+    }
+}
+
+/** A red dot and the clock, while recording. */
+@Composable
+fun RecordingChip(ms: Long, modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "rec")
+    val a by t.animateFloat(
+        initialValue = 0.35f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(tween(600, easing = LinearEasing), RepeatMode.Reverse),
+        label = "recDot",
+    )
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(XT.ChipStrong)
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(modifier = Modifier.size(9.dp).alpha(a).clip(CircleShape).background(XT.Record))
+        val s = ms / 1000
+        Text(
+            text = "%d:%02d".format(s / 60, s % 60),
+            color = XT.OnChip,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
     }
 }
 
@@ -247,6 +287,8 @@ fun BottomBar(
     onGallery: () -> Unit,
     onFlip: () -> Unit,
     modifier: Modifier = Modifier,
+    video: Boolean = false,
+    recording: Boolean = false,
 ) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 28.dp),
@@ -291,7 +333,7 @@ fun BottomBar(
             }
         }
 
-        Shutter(locked = locked, onClick = onShutter)
+        Shutter(locked = locked, video = video, recording = recording, onClick = onShutter)
 
         // Flip - where a camera app keeps it.
         FlipButton(onClick = onFlip, diameter = 46.dp, background = Color.White.copy(alpha = 0.14f))
@@ -333,17 +375,22 @@ fun QrButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
  * moment to press is visible without reading the card.
  */
 @Composable
-private fun Shutter(locked: Boolean, onClick: () -> Unit) {
+private fun Shutter(locked: Boolean, video: Boolean, recording: Boolean, onClick: () -> Unit) {
     val ring by animateColorAsState(
-        targetValue = if (locked) XT.Green else Color.White,
+        targetValue = if (locked && !video) XT.Green else Color.White,
         animationSpec = tween(260),
         label = "shutterRing",
     )
     val inner by animateColorAsState(
-        targetValue = if (locked) XT.Green else XT.Gold,
+        targetValue = when {
+            video -> XT.Record
+            locked -> XT.Green
+            else -> XT.Gold
+        },
         animationSpec = tween(260),
         label = "shutterInner",
     )
+    val square by animateFloatAsState(if (recording) 1f else 0f, tween(200), label = "recSquare")
     Canvas(
         modifier = Modifier
             .size(76.dp)
@@ -356,8 +403,21 @@ private fun Shutter(locked: Boolean, onClick: () -> Unit) {
     ) {
         val c = size.minDimension / 2f
         drawCircle(ring, c - 2.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
-        drawCircle(inner.copy(alpha = 0.9f), c - 10.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
-        if (locked) drawCircle(XT.Green.copy(alpha = 0.12f), c - 11.dp.toPx(), Offset(c, c))
+        if (video) {
+            // A red disc that squares off while recording, as every camera's does.
+            val r = c - 12.dp.toPx()
+            val side = r * (2f - 0.7f * square)
+            val radius = r * (1f - square) + 6.dp.toPx() * square
+            drawRoundRect(
+                XT.Record,
+                topLeft = Offset(c - side / 2f, c - side / 2f),
+                size = Size(side, side),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius),
+            )
+        } else {
+            drawCircle(inner.copy(alpha = 0.9f), c - 10.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
+            if (locked) drawCircle(XT.Green.copy(alpha = 0.12f), c - 11.dp.toPx(), Offset(c, c))
+        }
     }
 }
 
