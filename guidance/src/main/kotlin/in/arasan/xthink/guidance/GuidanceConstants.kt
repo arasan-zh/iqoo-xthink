@@ -37,6 +37,18 @@ object GuidanceConstants {
     /** Subject looking frame-left sits on the right third. */
     const val LEAD_ROOM_CX_LOOKING_LEFT = 0.667f
 
+    // --- Digital zoom -------------------------------------------------------
+    // This phone exposes ONE rear camera; its 1x-10x range is a digital crop of
+    // the main sensor, not an optical lens change. See docs/HARDWARE.md.
+    /** Never advise past this. Beyond it the crop costs more than the framing gains. */
+    const val ZOOM_MAX_ADVISED = 3.0f
+    /** Distance advice must stall this long before zoom is offered instead. */
+    const val STEP_STALL_MS = 3000L
+    /** Relative size improvement that counts as the photographer making progress. */
+    const val STEP_PROGRESS_EPSILON = 0.05f
+    /** Zoom ratios within this of each other are the same ratio. */
+    const val ZOOM_EPSILON = 0.05f
+
     // --- Status flags -------------------------------------------------------
     /** Smoothed angular rate above which the shot is judged unsteady, deg/s. */
     const val STABILITY_RATE_DEG_PER_S = 8.0f

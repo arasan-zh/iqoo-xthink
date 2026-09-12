@@ -46,7 +46,8 @@ enum class Verb {
     MOVE_UP, MOVE_DOWN,
     MOVE_LEFT, MOVE_RIGHT,
     STEP_CLOSER, STEP_BACK,
-    TAP_FOCUS, LOCKED,
+    ZOOM_IN, ZOOM_OUT,
+    TAP_FOCUS, HOLD_STEADY, LOCKED,
 }
 
 /** How far off we are, in units of the channel's deadzone. */
@@ -81,6 +82,8 @@ data class AlignmentState(
     val framingInDeadzone: Boolean,
     /** 0..1 progress through the 400 ms lock dwell. Fills the lock ring. */
     val lockProgress: Float,
+    /** Zoom ratio that would fix the framing, or 1f when zoom is not the answer. */
+    val suggestedZoom: Float,
     /** 0..1, same value as [GuidanceEngine.totalError]. Drives haptics. */
     val totalError: Float,
 ) {
@@ -90,7 +93,7 @@ data class AlignmentState(
             offsetX = 0f, offsetY = 0f, sizeErr = 0f,
             rollInDeadzone = false, pitchInDeadzone = false,
             distanceInDeadzone = false, framingInDeadzone = false,
-            lockProgress = 0f, totalError = 0f,
+            lockProgress = 0f, suggestedZoom = 1f, totalError = 0f,
         )
     }
 }

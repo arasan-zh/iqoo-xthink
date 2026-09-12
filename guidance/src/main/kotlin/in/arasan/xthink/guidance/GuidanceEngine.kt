@@ -14,6 +14,10 @@ import `in`.arasan.xthink.guidance.GuidanceConstants.LEAD_ROOM_CX_LOOKING_RIGHT
 import `in`.arasan.xthink.guidance.GuidanceConstants.LOCK_DWELL_MS
 import `in`.arasan.xthink.guidance.GuidanceConstants.MAGNITUDE_BIG_FACTOR
 import `in`.arasan.xthink.guidance.GuidanceConstants.MAGNITUDE_MOVE_FACTOR
+import `in`.arasan.xthink.guidance.GuidanceConstants.STEP_PROGRESS_EPSILON
+import `in`.arasan.xthink.guidance.GuidanceConstants.STEP_STALL_MS
+import `in`.arasan.xthink.guidance.GuidanceConstants.ZOOM_EPSILON
+import `in`.arasan.xthink.guidance.GuidanceConstants.ZOOM_MAX_ADVISED
 import `in`.arasan.xthink.guidance.GuidanceConstants.SCALE_PITCH_DEG
 import `in`.arasan.xthink.guidance.GuidanceConstants.SCALE_ROLL_DEG
 import `in`.arasan.xthink.guidance.GuidanceConstants.SCALE_SIZE
@@ -53,10 +57,15 @@ import kotlin.math.sqrt
  * @param profile composition targets for the current shot type.
  * @param mirrored true for the front camera, whose preview is flipped. Only
  *        MOVE_LEFT / MOVE_RIGHT invert; up/down and the roll verbs do not.
+ * @param hasAutofocus false for a fixed-focus camera. On this phone the front
+ *        camera reports CONTROL_AF_AVAILABLE_MODES = [OFF], so TAP_FOCUS there
+ *        would ask for something the hardware cannot do. When false the
+ *        tap-focus rung is skipped and focus never blocks the lock.
  */
 class GuidanceEngine(
     profile: CompositionProfile,
     private val mirrored: Boolean = false,
+    private val hasAutofocus: Boolean = true,
 ) {
 
     var profile: CompositionProfile = profile
@@ -91,6 +100,17 @@ class GuidanceEngine(
     private var focusAnchored = false
     private var focusAnchorX = 0f
     private var focusAnchorY = 0f
+
+    // Digital zoom. Defaults say "no zoom available", so an engine that is
+    // never told about zoom never advises it.
+    private var zoomRatio = 1f
+    private var maxZoomRatio = 1f
+    private var suggestedZoom = 1f
+
+    // Stall detection for the distance rung: how long we have been telling the
+    // photographer to step closer without the subject actually getting bigger.
+    private var stepAdviceMs = 0L
+    private var bestSizeErrAbs = Float.MAX_VALUE
 
     /** 0..1. Zero when every channel is inside its deadzone. Drives haptics. */
     var totalError: Float = 0f
@@ -160,13 +180,18 @@ class GuidanceEngine(
 
         compositionOk = rollIn && pitchIn && sizeIn && xIn && yIn
 
+        updateStepStall(sizeErr, sizeIn, dt)
+
         // --- lock dwell -----------------------------------------------------
         if (compositionOk && focusOk) dwellMs += dt else dwellMs = 0L
 
         // --- ladder ---------------------------------------------------------
         val candidate = ladder(rollErr, rollIn, pitchErr, pitchIn, sizeErr, sizeIn, xErr, xIn, yErr, yIn)
             ?: if (dwellMs >= LOCK_DWELL_MS) instruction(Verb.LOCKED, Magnitude.NUDGE)
-            else shown ?: instruction(Verb.TAP_FOCUS, Magnitude.NUDGE)
+            // Geometry is good but the dwell is not served. Holding the last
+            // arrow avoids a flicker; on a cold start there is no last arrow,
+            // and "hold steady" is exactly the right thing to say.
+            else shown ?: instruction(Verb.HOLD_STEADY, Magnitude.NUDGE)
 
         // --- 600 ms instruction lockout -------------------------------------
         val current = shown
@@ -226,11 +251,9 @@ class GuidanceEngine(
             }
         }
 
-        // 3. Distance.
-        !sizeIn -> instruction(
-            if (sizeErr < 0f) Verb.STEP_CLOSER else Verb.STEP_BACK,
-            magnitudeFor(sizeErr, DEADZONE_SIZE_RATIO),
-        )
+        // 3. Distance. Moving the photographer is the whole premise of xThink,
+        //    so zoom is a fallback, never the first answer. See distanceAdvice.
+        !sizeIn -> distanceAdvice(sizeErr)
 
         // 4. x/y framing. One axis at a time - whichever is further out, x on a tie.
         !xIn || !yIn ->
@@ -269,6 +292,62 @@ class GuidanceEngine(
             if (shortfall > 0f && -shortfall < err) err = -shortfall
         }
         return err
+    }
+
+    /**
+     * Distance advice, zoom-aware.
+     *
+     * Walking gives a better photograph than cropping, and telling the
+     * photographer where to stand is the point of this app, so STEP_* is always
+     * the first answer. Zoom is offered in exactly two cases:
+     *
+     *  - **Too big while already zoomed in.** Undoing a digital crop is free
+     *    and lossless, so it beats asking someone to walk backwards.
+     *  - **Too small and stepping has demonstrably stalled.** After
+     *    [STEP_STALL_MS] of STEP_CLOSER with no measurable progress, the
+     *    photographer probably cannot move - a wall, a barrier, a stage - and
+     *    a capped crop is better than advice they cannot follow.
+     */
+    private fun distanceAdvice(sizeErr: Float): Instruction {
+        val magnitude = magnitudeFor(sizeErr, DEADZONE_SIZE_RATIO)
+        return if (sizeErr > 0f) {
+            if (zoomRatio > 1f + ZOOM_EPSILON) instruction(Verb.ZOOM_OUT, magnitude)
+            else instruction(Verb.STEP_BACK, magnitude)
+        } else {
+            if (stepHasStalled() && zoomHeadroom()) instruction(Verb.ZOOM_IN, magnitude)
+            else instruction(Verb.STEP_CLOSER, magnitude)
+        }
+    }
+
+    private fun stepHasStalled(): Boolean = stepAdviceMs >= STEP_STALL_MS
+
+    /** Is there usable zoom left below the advised ceiling? */
+    private fun zoomHeadroom(): Boolean =
+        maxZoomRatio > zoomRatio + ZOOM_EPSILON && zoomRatio < ZOOM_MAX_ADVISED - ZOOM_EPSILON
+
+    /**
+     * Track whether "step closer" is actually working. Progress resets the
+     * clock; standing still runs it down towards offering zoom instead.
+     */
+    private fun updateStepStall(sizeErr: Float, sizeIn: Boolean, dt: Long) {
+        val stepping = !sizeIn && sizeErr < 0f
+        if (!stepping) {
+            stepAdviceMs = 0L
+            bestSizeErrAbs = Float.MAX_VALUE
+            suggestedZoom = 1f
+            return
+        }
+        val err = abs(sizeErr)
+        if (err < bestSizeErrAbs - STEP_PROGRESS_EPSILON) {
+            // The subject got meaningfully bigger: they are moving. Keep waiting.
+            bestSizeErrAbs = err
+            stepAdviceMs = 0L
+        } else {
+            stepAdviceMs += dt
+        }
+        // Zoom that would put the subject on target, capped at the advised ceiling.
+        suggestedZoom = (zoomRatio / (1f + sizeErr))
+            .coerceIn(1f, minOf(maxZoomRatio, ZOOM_MAX_ADVISED))
     }
 
     private fun verticalMove(yErr: Float): Instruction = instruction(
@@ -321,6 +400,14 @@ class GuidanceEngine(
     }
 
     private fun updateFocus(box: SubjectBox?) {
+        if (!hasAutofocus) {
+            // Fixed-focus camera. There is nothing to tap, so focus can never
+            // be the reason we withhold a lock.
+            focusConfirmed = false
+            focusAnchored = false
+            focusOk = true
+            return
+        }
         if (box == null) {
             // Nothing to focus on. Not a reason to block the lock.
             focusConfirmed = false
@@ -375,12 +462,14 @@ class GuidanceEngine(
             distanceInDeadzone = sizeIn,
             framingInDeadzone = xIn && yIn,
             lockProgress = lockProgress,
+            suggestedZoom = suggestedZoom,
             totalError = totalError,
         )
     }
 
     /** :app reports the result of a focus tap or an autofocus lock. */
     fun reportFocusLocked(locked: Boolean) {
+        if (!hasAutofocus) return
         focusConfirmed = locked
         if (locked) {
             focusAnchored = cxEma.seeded
@@ -390,6 +479,18 @@ class GuidanceEngine(
             focusAnchored = false
         }
         focusOk = locked || !cxEma.seeded
+    }
+
+    /**
+     * :app reports the live digital zoom. Until this is called the engine
+     * assumes no zoom is available and will never advise it.
+     *
+     * @param ratio current CONTROL_ZOOM_RATIO.
+     * @param maxRatio upper bound of CONTROL_ZOOM_RATIO_RANGE.
+     */
+    fun reportZoom(ratio: Float, maxRatio: Float) {
+        zoomRatio = ratio.coerceAtLeast(1f)
+        maxZoomRatio = maxRatio.coerceAtLeast(1f)
     }
 
     /** Swap composition targets, e.g. when the shot type changes. */
@@ -417,6 +518,9 @@ class GuidanceEngine(
         shownMs = 0L
         focusConfirmed = false
         focusAnchored = false
+        stepAdviceMs = 0L
+        bestSizeErrAbs = Float.MAX_VALUE
+        suggestedZoom = 1f
         totalError = 0f
         focusOk = true
         stabilityOk = false
@@ -465,11 +569,14 @@ class GuidanceEngine(
                 Verb.MOVE_RIGHT -> "Move phone right"
                 Verb.STEP_CLOSER -> "Step closer"
                 Verb.STEP_BACK -> "Step back"
+                Verb.ZOOM_IN -> "Zoom in"
+                Verb.ZOOM_OUT -> "Zoom out"
                 Verb.TAP_FOCUS -> "Tap to focus"
+                Verb.HOLD_STEADY -> "Hold steady"
                 Verb.LOCKED -> "Locked"
             }
             return when {
-                verb == Verb.LOCKED || verb == Verb.TAP_FOCUS -> base
+                verb == Verb.LOCKED || verb == Verb.TAP_FOCUS || verb == Verb.HOLD_STEADY -> base
                 magnitude == Magnitude.NUDGE -> "$base a little"
                 magnitude == Magnitude.BIG -> "$base a lot"
                 else -> base
