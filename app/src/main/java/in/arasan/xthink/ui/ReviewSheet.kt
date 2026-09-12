@@ -66,7 +66,6 @@ data class ReviewState(
 @Composable
 fun ReviewSheet(
     review: ReviewState,
-    coach: CoachText?,
     onChooseEnhanced: (Boolean) -> Unit,
     onChooseLook: (Int) -> Unit,
     onSave: () -> Unit,
@@ -136,21 +135,6 @@ fun ReviewSheet(
                 color = XT.Amber,
                 fontSize = 13.sp,
                 fontWeight = FontWeight.Medium,
-            )
-        }
-
-        // --- the coach's line, when it has one ---
-        if (coach != null && (coach.text.isNotBlank() || !coach.done)) {
-            Text(
-                text = if (coach.text.isBlank()) "Looking…" else coach.text,
-                color = if (coach.text.isBlank()) XT.OnChipMuted else XT.OnChip,
-                fontSize = 15.sp,
-                lineHeight = 21.sp,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(XT.CornerSmall))
-                    .background(XT.Chip)
-                    .padding(horizontal = 14.dp, vertical = 10.dp),
             )
         }
 

@@ -74,8 +74,6 @@ fun GuidanceOverlay(
     onReviewChooseLook: (Int) -> Unit,
     onReviewSave: () -> Unit,
     onReviewDiscard: () -> Unit,
-    onPickReference: () -> Unit,
-    onClearReference: () -> Unit,
     onToggleEasyShot: () -> Unit,
     onToggleLooks: () -> Unit,
     onPickLook: (Int) -> Unit,
@@ -169,7 +167,8 @@ fun GuidanceOverlay(
                 .padding(horizontal = XT.Gutter),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // --- top: the flip button, and the coach's words beneath it ---
+            // --- top: the chips and the install QR. The coach never speaks
+            //     here; it only names the crop after the shutter. ---
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -186,13 +185,9 @@ fun GuidanceOverlay(
                     ) {
                         if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
-                        if (state.coachAvailable) {
-                            ReferenceButton(thumbnail = state.reference, onPick = onPickReference, onClear = onClearReference)
-                        }
                     }
                     QrButton(onClick = { showQr = true })
                 }
-                CoachPanel(coach = state.coach)
             }
 
             // --- middle: the mode rail on the left. Its own vertical centre,
@@ -267,7 +262,6 @@ fun GuidanceOverlay(
         if (review != null) {
             ReviewSheet(
                 review = review,
-                coach = state.coach,
                 onChooseEnhanced = onReviewChooseEnhanced,
                 onChooseLook = onReviewChooseLook,
                 onSave = onReviewSave,

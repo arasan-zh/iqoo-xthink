@@ -76,7 +76,6 @@ import `in`.arasan.xthink.guidance.ThermalGovernor
 import `in`.arasan.xthink.guidance.ThermalPlan
 import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
-import `in`.arasan.xthink.ui.CoachText
 import `in`.arasan.xthink.ui.Looks
 import `in`.arasan.xthink.ui.ReviewState
 import `in`.arasan.xthink.ui.GuidanceOverlay
@@ -93,15 +92,9 @@ private const val TAG = "xThink"
 /** How long a tapped focus point stays before the camera returns to continuous AF. */
 private const val FOCUS_HOLD_S = 5L
 
-/** While chasing a reference, the coach looks at the frame at most this often. */
-private const val COACH_LIVE_PERIOD_MS = 20_000L
-
-/** The coach's words stay this long after the last one arrives. */
-private const val COACH_LINGER_MS = 7_000L
 
 
-/** A tap may bring a look forward, but not more often than this. */
-private const val COACH_TAP_MIN_GAP_MS = 4_000L
+
 
 /** The sharpness reference forgets slowly, so a new scene re-baselines within seconds. */
 private const val SHARP_DECAY = 0.985f
@@ -252,30 +245,10 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
     // The on-device coach. Absent, quietly, when the model is not on the phone.
     val coach = remember { LlmCoach(context) }
     var coachState by remember { mutableStateOf(LlmCoach.State.LOADING) } // warmUp settles it
-    val lastCoachAskMs = remember { longArrayOf(0L) }
     val sharpRef = remember { floatArrayOf(0f) }
     DisposableEffect(coach) {
-        coach.warmUp(ContextCompat.getMainExecutor(context)) {
-            coachState = it
-            overlayState = overlayState.copy(coachAvailable = it == LlmCoach.State.READY)
-        }
+        coach.warmUp(ContextCompat.getMainExecutor(context)) { coachState = it }
         onDispose { coach.close() }
-    }
-
-    fun say(kind: LlmCoach.Kind, image: Bitmap, prompt: String): Boolean {
-        val label = when (kind) {
-            LlmCoach.Kind.LIVE -> "COACH"
-            LlmCoach.Kind.CROP -> "CROP"
-            LlmCoach.Kind.REFERENCE -> "REFERENCE"
-        }
-        val started = coach.ask(kind, image, prompt, ContextCompat.getMainExecutor(context)) { text, done ->
-            overlayState = overlayState.copy(coach = CoachText(label, text, done))
-        }
-        if (started) {
-            lastCoachAskMs[0] = SystemClock.uptimeMillis()
-            overlayState = overlayState.copy(coach = CoachText(label, "", false))
-        }
-        return started
     }
 
     /** The coach's word on the cut, when there is a coach and it is free. */
@@ -291,33 +264,6 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
 
     /** A modest copy of what the preview shows, for the coach's eyes. */
     fun previewSnapshot(): Bitmap? = runCatching { previewView.bitmap }.getOrNull()
-
-    // "Shoot one like this": the coach reads a picked photo once and its
-    // words become part of every live prompt until cleared.
-    var referenceGuide by remember { mutableStateOf<String?>(null) }
-    val pickReference = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        if (uri == null) return@rememberLauncherForActivityResult
-        val bmp = runCatching {
-            android.graphics.ImageDecoder.decodeBitmap(
-                android.graphics.ImageDecoder.createSource(context.contentResolver, uri),
-            ) { d, info, _ ->
-                d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
-                val longest = maxOf(info.size.width, info.size.height)
-                var sample = 1
-                while (longest / (sample * 2) >= 768) sample *= 2
-                d.setTargetSampleSize(sample)
-            }
-        }.getOrNull() ?: return@rememberLauncherForActivityResult
-        overlayState = overlayState.copy(reference = bmp.asImageBitmap())
-        val started = coach.ask(LlmCoach.Kind.REFERENCE, bmp, LlmCoach.REFERENCE_PROMPT, ContextCompat.getMainExecutor(context)) { text, done ->
-            overlayState = overlayState.copy(coach = CoachText("REFERENCE", text, done))
-            if (done) {
-                referenceGuide = text.ifBlank { null }
-                Log.i(TAG, "reference guide: ${text.replace("\n", " / ")}")
-            }
-        }
-        if (started) overlayState = overlayState.copy(coach = CoachText("REFERENCE", "", false))
-    }
 
     LaunchedEffect(debugEnhanceUri, coachState) {
         if (debugEnhanceUri == null) return@LaunchedEffect
@@ -407,32 +353,6 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
         onDispose { monitor.stop() }
     }
 
-    // The coach does not chatter. Unprompted it speaks only while chasing a
-    // reference photo, one look every COACH_LIVE_PERIOD_MS, and only when
-    // idle, assisted, something in frame and the phone not hot. Otherwise
-    // it waits for a tap or a shutter. Never a loop over frames.
-    LaunchedEffect(coachState) {
-        if (coachState != LlmCoach.State.READY) return@LaunchedEffect
-        while (true) {
-            delay(1_000L)
-            val now = SystemClock.uptimeMillis()
-            val st = overlayState
-            val idle = now - lastCoachAskMs[0] >= COACH_LIVE_PERIOD_MS
-            val calm = thermalPlan[0].tier < ThermalTier.HOT
-            if (!idle || coach.isBusy || !st.assisted || referenceGuide == null || st.subject == null || !calm) continue
-            val snap = previewSnapshot() ?: continue
-            say(LlmCoach.Kind.LIVE, snap, LlmCoach.livePromptWith(referenceGuide))
-        }
-    }
-
-    // Said and done: the panel leaves on its own after a moment.
-    LaunchedEffect(overlayState.coach?.done, overlayState.coach?.label) {
-        val c = overlayState.coach ?: return@LaunchedEffect
-        if (!c.done) return@LaunchedEffect
-        delay(COACH_LINGER_MS)
-        if (overlayState.coach === c) overlayState = overlayState.copy(coach = null)
-    }
-
     // --- sensor ----------------------------------------------------------
     DisposableEffect(engine) {
         val sensor = AttitudeSensor(context)
@@ -516,9 +436,6 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 focusPoint = overlayState.focusPoint,
                 focusNonce = overlayState.focusNonce,
                 review = overlayState.review,
-                coach = overlayState.coach,
-                coachAvailable = overlayState.coachAvailable,
-                reference = overlayState.reference,
                 easyShot = overlayState.easyShot,
                 look = overlayState.look,
                 showLooks = overlayState.showLooks,
@@ -763,16 +680,6 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                     focusNonce = overlayState.focusNonce + 1,
                 )
                 Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
-                if (coachState == LlmCoach.State.READY && !coach.isBusy &&
-                    SystemClock.uptimeMillis() - lastCoachAskMs[0] >= COACH_TAP_MIN_GAP_MS
-                ) {
-                    previewSnapshot()?.let { snap ->
-                        val where = "The photographer just tapped to focus on the point %d%% across and %d%% down the frame - that is the subject.\n".format(
-                            (x * 100).toInt(), (y * 100).toInt(),
-                        )
-                        say(LlmCoach.Kind.LIVE, snap, where + LlmCoach.livePromptWith(referenceGuide))
-                    }
-                }
             },
             onToggleLooks = {
                 val open = !overlayState.showLooks
@@ -794,13 +701,6 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 overlayState = overlayState.copy(easyShot = on)
                 haptics.play(HapticCue.TICK, if (on) 0.6f else 0.3f)
                 Log.i(TAG, "easy shot ${if (on) "on" else "off"}")
-            },
-            onPickReference = {
-                pickReference.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
-            },
-            onClearReference = {
-                referenceGuide = null
-                overlayState = overlayState.copy(reference = null, coach = null)
             },
             onFlip = {
                 lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
@@ -843,9 +743,6 @@ private fun buildOverlayState(
     focusPoint: Pair<Float, Float>?,
     focusNonce: Int,
     review: ReviewState?,
-    coach: CoachText?,
-    coachAvailable: Boolean,
-    reference: ImageBitmap?,
     easyShot: Boolean,
     look: Int,
     showLooks: Boolean,
@@ -889,9 +786,6 @@ private fun buildOverlayState(
         focusPoint = focusPoint,
         focusNonce = focusNonce,
         review = review,
-        coach = coach,
-        coachAvailable = coachAvailable,
-        reference = reference,
         easyShot = easyShot,
         look = look,
         showLooks = showLooks,
