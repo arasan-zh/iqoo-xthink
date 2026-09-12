@@ -6,8 +6,6 @@ import android.content.ContentValues
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
-import android.os.VibrationEffect
-import android.os.VibratorManager
 import android.provider.MediaStore
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
@@ -59,6 +57,8 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.AutoCapturePolicy
+import `in`.arasan.xthink.guidance.HapticCue
+import `in`.arasan.xthink.guidance.LockHaptics
 import `in`.arasan.xthink.guidance.CompositionProfile
 import `in`.arasan.xthink.guidance.GuidanceEngine
 import `in`.arasan.xthink.guidance.Instruction
@@ -159,6 +159,11 @@ private fun CameraAndGuidance() {
     val autoCapture = remember { AutoCapturePolicy() }
     var captureInFlight by remember { mutableStateOf(false) }
 
+    // The haptic lock game. :guidance decides the rhythm; the driver only
+    // knows the motor.
+    val lockHaptics = remember { LockHaptics() }
+    val haptics = remember { HapticDriver(context) }
+
     fun capture(auto: Boolean) {
         if (captureInFlight) return
         captureInFlight = true
@@ -179,7 +184,9 @@ private fun CameraAndGuidance() {
                     captureInFlight = false
                     val uri: Uri? = output.savedUri
                     Log.i(TAG, "captured auto=$auto -> $uri")
-                    clickHaptic(context)
+                    // An auto shot follows the lock thunk by a frame; a second
+                    // click on top would read as a stutter. Manual gets its click.
+                    if (!auto) haptics.click()
                     val thumb: Bitmap? = uri?.let {
                         runCatching { context.contentResolver.loadThumbnail(it, Size(160, 160), null) }.getOrNull()
                     }
@@ -249,6 +256,13 @@ private fun CameraAndGuidance() {
                 thumbnail = overlayState.thumbnail,
                 captureNonce = overlayState.captureNonce,
             )
+
+            // The lock game: feel the frame come together without looking.
+            val cue = lockHaptics.update(engine.totalError, next.verb, result.subject != null, result.dtMs)
+            if (cue != HapticCue.NONE) {
+                haptics.play(cue, lockHaptics.lastTickStrength)
+                if (cue != HapticCue.TICK) Log.i(TAG, "haptic $cue")
+            }
 
             // The coach said "now". Take the picture.
             if (autoCapture.update(next.verb, engine.stabilityOk, result.subject != null, result.dtMs)) {
@@ -454,13 +468,6 @@ private fun buildOverlayState(
     )
 }
 
-/** One short click, the way a stock camera confirms a shot. */
-private fun clickHaptic(context: Context) {
-    runCatching {
-        val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
-        vm.defaultVibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
-    }
-}
 
 private fun hasCameraPermission(context: Context): Boolean =
     ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==

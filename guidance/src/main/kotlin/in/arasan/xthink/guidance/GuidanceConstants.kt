@@ -71,6 +71,18 @@ object GuidanceConstants {
     /** Eyes sit roughly this far down a detector face box. Shared with :app. */
     const val EYE_LINE_FRACTION_OF_FACE = 0.4f
 
+    // --- Haptic lock game -------------------------------------------------------
+    // totalError drives pulse rate like a Geiger counter: slow and sparse when
+    // far off, quickening as the frame comes together, then one distinct
+    // thunk on lock and silence while it holds. All 8 composition primitives
+    // and amplitude control are confirmed on this phone (docs/evidence).
+    /** Above this error the game is silent - a phone that buzzes while you are badly off is just noise. */
+    const val HAPTIC_START_ERROR = 0.6f
+    /** Pulse interval at HAPTIC_START_ERROR. */
+    const val HAPTIC_INTERVAL_FAR_MS = 900L
+    /** Pulse interval as the error approaches zero. */
+    const val HAPTIC_INTERVAL_NEAR_MS = 140L
+
     // --- Auto capture -----------------------------------------------------------
     /**
      * Minimum gap between automatic shots. One capture per lock acquisition
