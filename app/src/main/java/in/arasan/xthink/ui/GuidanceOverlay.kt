@@ -13,21 +13,29 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.input.pointer.pointerInput
 import `in`.arasan.xthink.guidance.CoachMode
-import `in`.arasan.xthink.guidance.ThermalTier
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,6 +66,7 @@ fun GuidanceOverlay(
     onGallery: () -> Unit,
     onModeSelected: (CoachMode) -> Unit,
     onFlip: () -> Unit,
+    onTap: (x: Float, y: Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -82,6 +91,11 @@ fun GuidanceOverlay(
     var overlayTop by remember { mutableFloatStateOf(0f) }
     var overlayHeight by remember { mutableFloatStateOf(1f) }
     var safeCenterY by remember { mutableFloatStateOf(0f) }
+    // The pinch handler is keyed on maxZoomRatio only, so it reads the live
+    // zoom through this rather than capturing one frame's state.
+    val liveZoom by rememberUpdatedState(state.zoomRatio)
+    val currentZoom = { liveZoom }
+
     val safeCenterYFraction = if (overlayHeight > 0f) {
         ((safeCenterY - overlayTop) / overlayHeight).coerceIn(0.28f, 0.72f)
     } else {
@@ -96,12 +110,33 @@ fun GuidanceOverlay(
                 overlayHeight = it.size.height.toFloat()
             }
             // Pinch to zoom anywhere on the preview. Buttons consume their own
-            // taps first; this only sees the multi-touch gesture.
-            .pointerInput(state.maxZoomRatio) {
-                detectTransformGestures { _, _, zoomChange, _ ->
-                    if (zoomChange != 1f) {
-                        onZoomSelected((state.zoomRatio * zoomChange).coerceIn(1f, state.maxZoomRatio))
+            // taps first; this only sees the multi-touch gesture. The gesture
+            // accumulates against its own running ratio, not the reported
+            // zoom: the camera's zoom state arrives a few frames late, and
+            // multiplying against a stale value made every pinch stutter.
+            // Tap to focus. Chips and buttons sit above and consume their
+            // own taps, so this only sees taps on the picture.
+            .pointerInput(Unit) {
+                detectTapGestures { pos ->
+                    if (size.width > 0 && size.height > 0) {
+                        onTap(pos.x / size.width, pos.y / size.height)
                     }
+                }
+            }
+            .pointerInput(state.maxZoomRatio) {
+                awaitEachGesture {
+                    awaitFirstDown(requireUnconsumed = false)
+                    var pinchZoom = currentZoom()
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.count { it.pressed }
+                        val zoomChange = event.calculateZoom()
+                        if (pressed >= 2 && zoomChange != 1f) {
+                            pinchZoom = (pinchZoom * zoomChange).coerceIn(1f, state.maxZoomRatio)
+                            onZoomSelected(pinchZoom)
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             },
     ) {
@@ -154,7 +189,6 @@ fun GuidanceOverlay(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
-                if (state.thermal != ThermalTier.COOL) ThermalChip(state.thermal)
                 if (state.assisted) {
                     GuidanceCard(state = state)
                     StatusStrip(state = state)
@@ -182,6 +216,8 @@ fun GuidanceOverlay(
             }
         }
 
+        FocusRing(point = state.focusPoint, nonce = state.focusNonce)
+
         if (flash.value > 0.005f) {
             Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flash.value)))
         }
@@ -193,29 +229,34 @@ fun GuidanceOverlay(
 }
 
 /**
- * Shown only while the governor is holding something back, so the slower
- * guidance reads as deliberate rather than broken. Absent when COOL.
+ * A ring where the photographer tapped: settles from large to small and
+ * fades, the way a stock camera's does, so the tap feels answered even
+ * before the lens has moved.
  */
 @Composable
-private fun ThermalChip(tier: ThermalTier) {
-    val text = when (tier) {
-        ThermalTier.WARM -> "Warm \u2022 guidance at 15 fps"
-        ThermalTier.HOT -> "Hot \u2022 guidance slowed, haptics off"
-        ThermalTier.CRITICAL -> "Cooling down \u2022 auto-capture paused"
-        ThermalTier.COOL -> ""
+private fun FocusRing(point: Pair<Float, Float>?, nonce: Int) {
+    if (point == null) return
+    val progress = remember(nonce) { Animatable(0f) }
+    LaunchedEffect(nonce) {
+        progress.snapTo(0f)
+        progress.animateTo(1f, tween(900, easing = FastOutSlowInEasing))
     }
-    Row(
-        modifier = Modifier
-            .clip(RoundedCornerShape(XT.Corner))
-            .background(XT.Chip)
-            .padding(horizontal = 14.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = text,
-            color = if (tier == ThermalTier.CRITICAL) XT.Amber else XT.OnChip,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-        )
+    val t = progress.value
+    Canvas(modifier = Modifier.fillMaxSize()) {
+        val c = Offset(point.first * size.width, point.second * size.height)
+        val radius = (34.dp.toPx()) * (1.35f - 0.35f * minOf(1f, t * 2.5f))
+        val alpha = if (t < 0.7f) 1f else 1f - (t - 0.7f) / 0.3f
+        drawCircle(XT.Amber.copy(alpha = alpha), radius = radius, center = c, style = Stroke(1.5f.dp.toPx()))
+        val tick = 6.dp.toPx()
+        listOf(Offset(0f, -radius), Offset(0f, radius), Offset(-radius, 0f), Offset(radius, 0f)).forEach { d ->
+            val u = Offset(d.x / radius, d.y / radius)
+            drawLine(
+                XT.Amber.copy(alpha = alpha),
+                c + d,
+                c + d - Offset(u.x * tick, u.y * tick),
+                1.5f.dp.toPx(),
+                StrokeCap.Round,
+            )
+        }
     }
 }

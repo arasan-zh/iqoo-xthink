@@ -75,6 +75,17 @@ class FaceAnalyzer(
     @Volatile
     var mirrored: Boolean = false
 
+    /**
+     * Where the photographer's attention is, in preview space (0..1). The
+     * centre until they tap. OBJECT mode frames the thing here - the biggest
+     * object in view is usually the table, not the cup on it.
+     */
+    @Volatile
+    var focusX: Float = 0.5f
+
+    @Volatile
+    var focusY: Float = 0.5f
+
     private fun deliver(result: FaceResult) {
         if (!mirrored) { onResult(result); return }
         onResult(
@@ -182,8 +193,9 @@ class FaceAnalyzer(
     }
 
     /**
-     * The most prominent object is the subject. No eye line - the engine
-     * composes the box centre, and the OBJECT profile puts it at 0.50.
+     * The object under the focus point is the subject: the smallest box that
+     * contains it, or failing that the nearest box centre. No eye line - the
+     * engine composes the box centre, and the OBJECT profile puts it at 0.50.
      * faceCount carries the subject count so the selector treats "found one"
      * the same way it treats a face.
      */
@@ -193,10 +205,18 @@ class FaceAnalyzer(
         detectMs: Long,
         dtMs: Long,
     ): FaceResult {
-        val target = objects.maxByOrNull { it.boundingBox.width().toLong() * it.boundingBox.height() }
-            ?: return FaceResult(null, null, 0, detectMs, dtMs)
+        if (objects.isEmpty()) return FaceResult(null, null, 0, detectMs, dtMs)
+        // Focus point into analysis space: the preview is a mirror on the front camera.
+        val fx = if (mirrored) 1f - focusX else focusX
+        val fy = focusY
+        val boxes = objects.map { FrameMapping.normalize(it.boundingBox.toFrameRect(), crop) }
+        val containing = boxes.filter {
+            fx >= it.cx - it.w / 2f && fx <= it.cx + it.w / 2f && fy >= it.cy - it.h / 2f && fy <= it.cy + it.h / 2f
+        }
+        val subject = containing.minByOrNull { it.w * it.h }
+            ?: boxes.minByOrNull { (it.cx - fx) * (it.cx - fx) + (it.cy - fy) * (it.cy - fy) }!!
         return FaceResult(
-            subject = FrameMapping.normalize(target.boundingBox.toFrameRect(), crop),
+            subject = subject,
             eyes = null,
             faceCount = 1,
             detectMs = detectMs,

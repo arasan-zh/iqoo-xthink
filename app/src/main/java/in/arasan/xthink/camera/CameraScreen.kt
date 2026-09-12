@@ -25,6 +25,7 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
@@ -79,8 +80,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 
 private const val TAG = "xThink"
+
+/** How long a tapped focus point stays before the camera returns to continuous AF. */
+private const val FOCUS_HOLD_S = 5L
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -334,6 +339,8 @@ private fun CameraAndGuidance() {
                 thermal = thermalPlan[0].tier,
                 thermalHeadroom = overlayState.thermalHeadroom,
                 mirrored = overlayState.mirrored,
+                focusPoint = overlayState.focusPoint,
+                focusNonce = overlayState.focusNonce,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -518,6 +525,23 @@ private fun CameraAndGuidance() {
             },
             onGallery = { openGallery() },
             onModeSelected = { selectMode(it) },
+            onTap = { x, y ->
+                // Focus and meter where the finger landed, and tell the coach
+                // that this is the thing to frame. The ring answers the tap
+                // at once; the lens follows.
+                val factory = previewView.meteringPointFactory
+                val point = factory.createPoint(x * previewView.width, y * previewView.height)
+                val action = FocusMeteringAction.Builder(point)
+                    .setAutoCancelDuration(FOCUS_HOLD_S, TimeUnit.SECONDS)
+                    .build()
+                cameraControl?.cameraControl?.startFocusAndMetering(action)
+                analyzerRef[0]?.let { it.focusX = x; it.focusY = y }
+                overlayState = overlayState.copy(
+                    focusPoint = x to y,
+                    focusNonce = overlayState.focusNonce + 1,
+                )
+                Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
+            },
             onFlip = {
                 lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
                     CameraSelector.LENS_FACING_FRONT
@@ -556,6 +580,8 @@ private fun buildOverlayState(
     thermal: ThermalTier,
     thermalHeadroom: Float,
     mirrored: Boolean,
+    focusPoint: Pair<Float, Float>?,
+    focusNonce: Int,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -592,6 +618,8 @@ private fun buildOverlayState(
         thermal = thermal,
         thermalHeadroom = thermalHeadroom,
         mirrored = mirrored,
+        focusPoint = focusPoint,
+        focusNonce = focusNonce,
     )
 }
 

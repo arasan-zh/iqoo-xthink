@@ -36,6 +36,10 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** Where the photographer last tapped, 0..1 of the preview; a ring is drawn there. */
+    val focusPoint: Pair<Float, Float>? = null,
+    /** Increments on every tap so the ring animates again at the same spot. */
+    val focusNonce: Int = 0,
     /** Front camera: the preview is a mirror, so the horizon tilts the other way. */
     val mirrored: Boolean = false,
     /** The thermal governor's tier. Only shown when it is not COOL. */

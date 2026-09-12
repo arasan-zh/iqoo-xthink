@@ -4,8 +4,14 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.Box
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import `in`.arasan.xthink.camera.CameraScreen
+import `in`.arasan.xthink.ui.Splash
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -13,7 +19,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             MaterialTheme {
-                CameraScreen()
+                // The camera binds underneath the splash, so by the time the
+                // promise fades the preview is already live.
+                var splash by remember { mutableStateOf(true) }
+                Box {
+                    CameraScreen()
+                    if (splash) Splash(onDone = { splash = false })
+                }
             }
         }
     }
