@@ -54,6 +54,10 @@ import androidx.camera.video.Recording
 import androidx.camera.video.VideoCapture
 import androidx.camera.video.VideoRecordEvent
 import kotlin.math.abs
+import android.speech.tts.TextToSpeech
+import android.content.ClipData
+import android.content.ClipboardManager
+import `in`.arasan.xthink.ui.AskState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -155,7 +159,7 @@ private const val ANALYSIS_HEIGHT = 360
  * that the guidance overlay be a separate composable layer.
  */
 @Composable
-fun CameraScreen(debugEnhanceUri: String? = null, debugGenius: String? = null) {
+fun CameraScreen(debugEnhanceUri: String? = null, debugGenius: String? = null, debugAsk: String? = null) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasCameraPermission(context)) }
 
@@ -168,7 +172,7 @@ fun CameraScreen(debugEnhanceUri: String? = null, debugGenius: String? = null) {
     }
 
     if (granted) {
-        CameraAndGuidance(debugEnhanceUri, debugGenius)
+        CameraAndGuidance(debugEnhanceUri, debugGenius, debugAsk)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -191,7 +195,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 
 @OptIn(ExperimentalCamera2Interop::class)
 @Composable
-private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: String? = null) {
+private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: String? = null, debugAsk: String? = null) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -660,6 +664,159 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         }
     }
 
+    // --- ASK ----------------------------------------------------------------
+    // Point the camera at anything: ask, scan, translate, save. One look
+    // per tap; the model is the same Gemma, through the camera.
+    var askMode by remember { mutableStateOf(false) }
+    var aPhase by remember { mutableStateOf("READY") }
+    var aPrompt by remember { mutableStateOf("") }
+    var aAnswer by remember { mutableStateOf("") }
+    var aKind by remember { mutableStateOf("Ask") }
+    var aNote by remember { mutableStateOf<String?>(null) }
+    val notebook = remember { Notebook(context) }
+    val tts = remember {
+        var engine: TextToSpeech? = null
+        engine = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) engine?.language = Locale.US
+        }
+        engine
+    }
+    DisposableEffect(tts) { onDispose { runCatching { tts?.shutdown() } } }
+
+    fun coachLine(): String = when (coachState) {
+        LlmCoach.State.READY -> "Gemma is looking through the camera"
+        LlmCoach.State.LOADING -> "Gemma is loading\u2026"
+        LlmCoach.State.MISSING -> if (coach.modelFile() == null) "No model on this phone" else "Gemma is loading\u2026"
+        else -> "Gemma could not load"
+    }
+
+    fun refreshAsk() {
+        overlayState = overlayState.copy(
+            askMode = askMode,
+            ask = if (askMode) AskState(
+                coach = coachLine(),
+                ready = coachState == LlmCoach.State.READY,
+                speechAvailable = speech.available,
+                phase = aPhase,
+                prompt = aPrompt,
+                answer = aAnswer,
+                note = aNote,
+            ) else null,
+        )
+    }
+
+    fun askFail(why: String) { aPhase = "FAILED"; aNote = why; Log.w(TAG, "ask: $why"); refreshAsk() }
+
+    /** The model looks at the frame with a prompt; the answer streams in and is read aloud at the end. */
+    fun askLook(kind: LlmCoach.Kind, label: String, prompt: String, speak: Boolean) {
+        if (coachState != LlmCoach.State.READY) { askFail("Gemma is not loaded yet - a moment"); return }
+        val snap = previewSnapshot() ?: run { askFail("no frame"); return }
+        aKind = label
+        aPhase = "LOOKING"
+        aAnswer = ""
+        aNote = null
+        refreshAsk()
+        val ok = coach.ask(kind, snap, prompt, ContextCompat.getMainExecutor(context)) { text, done ->
+            if (aPhase != "LOOKING") return@ask
+            aAnswer = text
+            if (done) {
+                aPhase = "DONE"
+                haptics.play(HapticCue.TICK, 0.5f)
+                if (speak && text.isNotBlank()) runCatching { tts?.speak(text.take(600), TextToSpeech.QUEUE_FLUSH, null, "ask") }
+                Log.i(TAG, "ask $label: ${text.length} chars: ${text.take(100).replace('\n', ' ')}")
+            }
+            refreshAsk()
+        }
+        if (!ok) askFail("Gemma is busy")
+    }
+
+    fun askSpeak() {
+        if (aPhase == "LISTENING") { speech.stop(); return }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) { audioLauncher.launch(Manifest.permission.RECORD_AUDIO); return }
+        aPhase = "LISTENING"; aPrompt = ""; aAnswer = ""; aNote = null
+        refreshAsk()
+        speech.listen(
+            onPartial = { partial -> aPrompt = partial; refreshAsk() },
+            onResult = { heard ->
+                if (heard.isBlank()) { aPhase = "READY"; aNote = "Didn't catch that"; refreshAsk() }
+                else { aPrompt = heard; askLook(LlmCoach.Kind.ASK, "Ask", LlmCoach.askPrompt(heard), speak = true) }
+            },
+            onDone = { if (aPhase == "LISTENING") { aPhase = "READY"; refreshAsk() } },
+        )
+    }
+
+    fun askScan() {
+        val snap = previewSnapshot() ?: run { askFail("no frame"); return }
+        aKind = "Scan"; aPrompt = "Scan"; aAnswer = ""; aNote = null; aPhase = "READING"
+        refreshAsk()
+        val started = reader.read(snap, ContextCompat.getMainExecutor(context)) { text ->
+            if (aPhase != "READING") return@read
+            if (text.isBlank()) { askFail("no text in the frame"); return@read }
+            aAnswer = text
+            refreshAsk()
+            // Gemma tidies the OCR when it is there; the raw read stands otherwise.
+            if (coachState == LlmCoach.State.READY) {
+                val ok = coach.askText(LlmCoach.Kind.TIDY, LlmCoach.tidyPrompt(text), ContextCompat.getMainExecutor(context)) { clean, done ->
+                    if (aPhase != "READING") return@askText
+                    if (done) {
+                        if (clean.isNotBlank()) aAnswer = clean
+                        aPhase = "DONE"
+                        aNote = "${aAnswer.length} characters"
+                        haptics.play(HapticCue.TICK, 0.5f)
+                        Log.i(TAG, "ask Scan: ${text.length} read, ${aAnswer.length} clean")
+                    }
+                    refreshAsk()
+                }
+                if (!ok) { aPhase = "DONE"; aNote = "${text.length} characters (as read)"; refreshAsk() }
+            } else {
+                aPhase = "DONE"; aNote = "${text.length} characters (as read)"; refreshAsk()
+            }
+        }
+        if (!started) askFail("reader busy")
+    }
+
+    fun askTranslate() {
+        aPrompt = "Translate"
+        askLook(LlmCoach.Kind.TRANSLATE, "Translate", LlmCoach.TRANSLATE_PROMPT, speak = false)
+        refreshAsk()
+    }
+
+    fun askCopy() {
+        val cm = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("xThink", aAnswer))
+        aNote = "Copied"; haptics.play(HapticCue.TICK, 0.4f); refreshAsk()
+    }
+
+    fun askSave() {
+        val ok = notebook.append(aKind, aPrompt, aAnswer)
+        aPhase = if (ok) "SAVED" else "FAILED"
+        aNote = if (ok) "Saved to Documents/xThink/xthink-notes.md" else "could not save"
+        haptics.play(if (ok) HapticCue.LOCK else HapticCue.UNLOCK, 0.6f)
+        refreshAsk()
+    }
+
+    fun askStop() {
+        speech.stop()
+        runCatching { tts?.stop() }
+        aPhase = "READY"; aNote = "stopped"; refreshAsk()
+    }
+
+    // Dev hooks: --es ask "<question>", --es scan 1, --es translate 1.
+    LaunchedEffect(debugAsk, coachState, askMode) {
+        if (debugAsk == null || !askMode) return@LaunchedEffect
+        if (coachState != LlmCoach.State.READY) return@LaunchedEffect
+        when {
+            debugAsk == "scan" -> if (aPhase == "READY" && aPrompt.isEmpty()) askScan()
+            debugAsk == "translate" -> if (aPhase == "READY" && aPrompt.isEmpty()) askTranslate()
+            aPhase == "READY" && aPrompt.isEmpty() -> { aPrompt = debugAsk; askLook(LlmCoach.Kind.ASK, "Ask", LlmCoach.askPrompt(debugAsk), speak = true) }
+        }
+    }
+    LaunchedEffect(debugAsk) {
+        if (debugAsk != null && !askMode) { askMode = true; refreshAsk(); ensureCoach() }
+    }
+
     // Dev hook: am start --es genius "<what to say>" plans a request without the microphone. Running it still takes the tap.
     LaunchedEffect(debugGenius, coachState, typeMode) {
         if (debugGenius == null || !typeMode || coachState != LlmCoach.State.READY) return@LaunchedEffect
@@ -759,6 +916,11 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     // --- camera + analysis -----------------------------------------------
 
     fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
+        if (askMode && leaveVideo) {
+            askMode = false
+            overlayState = overlayState.copy(askMode = false, ask = null)
+            Log.i(TAG, "mode -> photo (from ASK)")
+        }
         if (typeMode && leaveVideo) {
             Log.i(TAG, "genius: left by mode change")
             keyboard.cancelled = true
@@ -856,6 +1018,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 recordingMs = overlayState.recordingMs,
                 typeMode = overlayState.typeMode,
                 genius = overlayState.genius,
+                askMode = overlayState.askMode,
+                ask = overlayState.ask,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -1075,6 +1239,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             onTypeMode = {
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
+                    if (askMode) { askMode = false; overlayState = overlayState.copy(askMode = false, ask = null) }
                     typeMode = true
                     gPhase = "READY"; gHeard = ""; gPlan = emptyList(); gStep = -1; gNote = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false)
@@ -1103,6 +1268,24 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     }
                 }
             },
+            onAskMode = {
+                if (!askMode) {
+                    if (videoMode) { stopRecording(); videoMode = false }
+                    if (typeMode) { keyboard.cancelled = true; typeMode = false }
+                    askMode = true
+                    aPhase = "READY"; aPrompt = ""; aAnswer = ""; aNote = null
+                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null)
+                    refreshAsk()
+                    ensureCoach()
+                    Log.i(TAG, "mode -> ASK")
+                }
+            },
+            onAskSpeak = { askSpeak() },
+            onAskScan = { askScan() },
+            onAskTranslate = { askTranslate() },
+            onAskCopy = { askCopy() },
+            onAskSave = { askSave() },
+            onAskStop = { askStop() },
             onListen = { geniusSpeak() },
             onGeniusRun = { geniusRun() },
             onGeniusStop = { geniusStop() },
@@ -1115,12 +1298,15 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     }
                     videoMode = true
                     typeMode = false
-                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, genius = null)
+                    askMode = false
+                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, genius = null, askMode = false, ask = null)
                     Log.i(TAG, "mode -> VIDEO")
                 }
             },
             onShutter = {
-                if (typeMode) {
+                if (askMode) {
+                    askSpeak()
+                } else if (typeMode) {
                     geniusSpeak()
                 } else if (videoMode) {
                     if (activeRecording == null) startRecording() else stopRecording()
@@ -1263,6 +1449,8 @@ private fun buildOverlayState(
     recordingMs: Long,
     typeMode: Boolean,
     genius: GeniusState?,
+    askMode: Boolean,
+    ask: AskState?,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -1315,6 +1503,8 @@ private fun buildOverlayState(
         recordingMs = recordingMs,
         typeMode = typeMode,
         genius = genius,
+        askMode = askMode,
+        ask = ask,
     )
 }
 

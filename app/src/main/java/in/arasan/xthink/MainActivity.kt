@@ -28,6 +28,7 @@ class MainActivity : ComponentActivity() {
                     CameraScreen(
                         debugEnhanceUri = intent.getStringExtra("enhance"),
                         debugGenius = intent.getStringExtra("genius"),
+                        debugAsk = intent.getStringExtra("ask"),
                     )
                     if (splash) Splash(onDone = { splash = false })
                 }

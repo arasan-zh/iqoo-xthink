@@ -87,6 +87,13 @@ fun GuidanceOverlay(
     onListen: () -> Unit,
     onGeniusRun: () -> Unit,
     onGeniusStop: () -> Unit,
+    onAskMode: () -> Unit,
+    onAskSpeak: () -> Unit,
+    onAskScan: () -> Unit,
+    onAskTranslate: () -> Unit,
+    onAskCopy: () -> Unit,
+    onAskSave: () -> Unit,
+    onAskStop: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -194,7 +201,7 @@ fun GuidanceOverlay(
                             .horizontalScroll(rememberScrollState()),
                     ) {
                         if (state.recording) RecordingChip(ms = state.recordingMs)
-                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode) {
+                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode) {
                             ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)
                         }
                         if (state.assisted && !state.videoMode) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
@@ -233,7 +240,18 @@ fun GuidanceOverlay(
                 // One card's worth of space: the looks when they are open,
                 // else the words of guidance when they are switched on.
                 val genius = state.genius
-                if (state.typeMode && genius != null) {
+                val ask = state.ask
+                if (state.askMode && ask != null) {
+                    AskPanel(
+                        state = ask,
+                        onAsk = onAskSpeak,
+                        onScan = onAskScan,
+                        onTranslate = onAskTranslate,
+                        onCopy = onAskCopy,
+                        onSave = onAskSave,
+                        onStop = onAskStop,
+                    )
+                } else if (state.typeMode && genius != null) {
                     GeniusPanel(state = genius, onPair = onPairMac, onSpeak = onListen, onRun = onGeniusRun, onStop = onGeniusStop)
                 } else if (state.showShots) {
                     ShotsRow(style = state.shotStyle, onPick = onPickShot)
@@ -262,6 +280,8 @@ fun GuidanceOverlay(
                         onVideo = onVideoMode,
                         typeMode = state.typeMode,
                         onType = onTypeMode,
+                        askMode = state.askMode,
+                        onAsk = onAskMode,
                     )
                     BottomBar(
                         locked = state.isLocked,

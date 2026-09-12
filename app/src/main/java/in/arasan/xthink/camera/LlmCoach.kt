@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -185,7 +185,7 @@ class LlmCoach(private val context: Context) {
                         // COMMAND/UNDERSTAND want one line; a plan is many, ending at DONE.
                         val nl = if (oneLine) raw.indexOf('\n', startIndex = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)) else -1
                         val text = if (oneLine) tidy(if (nl >= 0) raw.substring(0, nl) else raw) else raw.trim()
-                        val planDone = !oneLine && kind != Kind.WRITE && Regex("(?m)^\\s*DONE\\s*$").containsMatchIn(raw)
+                        val planDone = !oneLine && (kind == Kind.PLAN || kind == Kind.CHECK) && Regex("(?m)^\\s*DONE\\s*$").containsMatchIn(raw)
                         val finished = done || (nl >= 0 && text.isNotBlank()) || planDone
                         if (finished && !done) {
                             cut = true
@@ -298,6 +298,28 @@ class LlmCoach(private val context: Context) {
             ---
             If the request appears done or the Mac is doing it, reply exactly: DONE
             Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
+        """.trimIndent()
+
+        /** A question about what the camera sees. */
+        fun askPrompt(question: String): String = """
+            You are looking through the phone's camera with the user. Answer their question about what is in front of the camera,
+            plainly and briefly - under 60 words - and say so if you cannot tell. No preamble.
+            Question: $question
+        """.trimIndent()
+
+        /** Any script in the frame - Tamil, Hindi, anything - into English. */
+        val TRANSLATE_PROMPT = """
+            Read all the text in this image, whatever language or script it is in, and translate it into English.
+            Reply with only the English translation, keeping the line breaks. If there is no text, say: No text found.
+        """.trimIndent()
+
+        /** OCR output into clean, copyable text. */
+        fun tidyPrompt(ocr: String): String = """
+            Below is text read by a camera from a document, with recognition errors. Rewrite it as clean plain text:
+            fix obviously misread characters, keep every sentence and number, keep the line structure, add nothing.
+            Reply with only the cleaned text.
+            ---
+            ${ocr.take(2500)}
         """.trimIndent()
 
         /** What kind of Mac job a sentence is, in one line the macros can act on. */
