@@ -49,6 +49,14 @@ object GuidanceConstants {
     /** Zoom ratios within this of each other are the same ratio. */
     const val ZOOM_EPSILON = 0.05f
 
+    // --- Shot type stability ------------------------------------------------
+    /**
+     * A new face count must hold this long before the composition target is
+     * torn down and rebuilt. Detectors drop a face for a frame or two all the
+     * time; without this the profile flaps and takes the lock dwell with it.
+     */
+    const val SHOT_TYPE_HOLD_MS = 500L
+
     // --- Status flags -------------------------------------------------------
     /** Smoothed angular rate above which the shot is judged unsteady, deg/s. */
     const val STABILITY_RATE_DEG_PER_S = 8.0f

@@ -58,6 +58,8 @@ import `in`.arasan.xthink.guidance.CompositionProfile
 import `in`.arasan.xthink.guidance.GuidanceEngine
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.ShotType
+import `in`.arasan.xthink.guidance.ShotTypeSelector
+import `in`.arasan.xthink.guidance.Verb
 import java.util.concurrent.Executors
 
 private const val TAG = "xThink"
@@ -116,12 +118,18 @@ private fun CameraAndGuidance() {
     var instruction by remember { mutableStateOf<Instruction?>(null) }
     var sample by remember { mutableStateOf<AttitudeSample?>(null) }
     var faces by remember { mutableStateOf<FaceResult?>(null) }
+    var shotType by remember { mutableStateOf(ShotType.LANDSCAPE) }
     var telemetry by remember { mutableStateOf(CameraTelemetry()) }
     var totalError by remember { mutableStateOf(0f) }
     var sensorMissing by remember { mutableStateOf(false) }
 
     val profiles = remember { loadProfiles(context) }
     val engine = remember { GuidanceEngine(profiles.getValue(ShotType.LANDSCAPE)) }
+
+    // A raw face count flaps - 0-2-1-2-0-1-4-3-0 inside ten seconds on the
+    // phone - and every change used to reset the deadzone gates and the lock
+    // dwell with it. The selector makes a change earn its place first.
+    val shotTypes = remember { ShotTypeSelector() }
 
     // The most recent attitude, held rather than acted on. See the analyser
     // comment below for why the sensor does not drive the engine.
@@ -151,6 +159,7 @@ private fun CameraAndGuidance() {
         val mainHandler = Handler(Looper.getMainLooper())
         val analysisExecutor = Executors.newSingleThreadExecutor()
         var lastHeartbeat = 0L
+        var lastVerb: Verb? = null
 
         // IMPORTANT: the ANALYSER drives the engine, not the sensor.
         //
@@ -167,11 +176,25 @@ private fun CameraAndGuidance() {
             faces = result
 
             val attitude = latestAttitude[0] ?: return@FaceAnalyzer
-            engine.setProfile(profiles.getValue(result.shotType))
+            val stable = shotTypes.update(result.faceCount, result.dtMs)
+            shotType = stable
+            engine.setProfile(profiles.getValue(stable))
             val next = engine.update(attitude.attitude, result.subject, result.eyes, result.dtMs)
 
             instruction = next
             totalError = engine.totalError
+
+            // Every change of verb, plus a heartbeat. Transitions are where the
+            // bugs live, and a 1 Hz sample cannot see a state that lasts 500ms.
+            if (next.verb != lastVerb) {
+                Log.i(
+                    TAG,
+                    "verb %s -> %s  (faces=%d %s)".format(
+                        lastVerb ?: "-", next.verb, result.faceCount, stable,
+                    ),
+                )
+                lastVerb = next.verb
+            }
 
             val now = SystemClock.uptimeMillis()
             if (now - lastHeartbeat >= HEARTBEAT_MS) {
@@ -180,7 +203,7 @@ private fun CameraAndGuidance() {
                     TAG,
                     "roll=%+.1f pitch=%+.1f faces=%d %s det=%dms err=%.3f lock=%.2f -> %s".format(
                         attitude.attitude.rollDeg, attitude.attitude.pitchDeg,
-                        result.faceCount, result.shotType, result.detectMs,
+                        result.faceCount, stable, result.detectMs,
                         engine.totalError, engine.lockProgress, next.text,
                     ),
                 )
@@ -284,6 +307,7 @@ private fun CameraAndGuidance() {
             instruction = instruction,
             sample = sample,
             faces = faces,
+            shotType = shotType,
             telemetry = telemetry,
             totalError = totalError,
             sensorMissing = sensorMissing,
@@ -302,6 +326,7 @@ private fun DebugReadout(
     instruction: Instruction?,
     sample: AttitudeSample?,
     faces: FaceResult?,
+    shotType: ShotType,
     telemetry: CameraTelemetry,
     totalError: Float,
     sensorMissing: Boolean,
@@ -335,7 +360,7 @@ private fun DebugReadout(
         val lines = buildList {
             instruction?.let { add("verb     ${it.verb}  ${it.magnitude}") }
             faces?.let { f ->
-                add("faces    ${f.faceCount}  ${f.shotType}  det ${f.detectMs}ms")
+                add("faces    ${f.faceCount} -> $shotType  det ${f.detectMs}ms")
                 f.subject?.let { b ->
                     add("subject  cx %.3f cy %.3f h %.3f".format(b.cx, b.cy, b.h))
                 }

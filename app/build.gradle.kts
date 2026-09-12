@@ -17,6 +17,14 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        ndk {
+            // The bundled face detector ships a ~9 MB native library per ABI.
+            // Every phone since about 2017 is arm64, the iQOO 15 included, and
+            // this Mac's emulators are arm64 too. Shipping the other three adds
+            // ~25 MB to a download judges make on venue Wi-Fi.
+            abiFilters += "arm64-v8a"
+        }
     }
 
     signingConfigs {

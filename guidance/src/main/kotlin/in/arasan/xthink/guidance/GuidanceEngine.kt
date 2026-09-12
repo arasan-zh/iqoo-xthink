@@ -178,7 +178,12 @@ class GuidanceEngine(
         val yApplies = box != null || eye != null
         val yIn = if (yApplies) yGate.update(abs(yErr)) else { yGate.reset(); true }
 
-        compositionOk = rollIn && pitchIn && sizeIn && xIn && yIn
+        // A profile with a size target wants a subject. If it has one and then
+        // loses it, every subject-dependent instruction it was giving becomes
+        // meaningless - "step closer" to nothing. Say so instead.
+        val subjectMissing = profile.targetSizeRatio > 0f && box == null
+
+        compositionOk = !subjectMissing && rollIn && pitchIn && sizeIn && xIn && yIn
 
         updateStepStall(sizeErr, sizeIn, dt)
 
@@ -186,12 +191,20 @@ class GuidanceEngine(
         if (compositionOk && focusOk) dwellMs += dt else dwellMs = 0L
 
         // --- ladder ---------------------------------------------------------
-        val candidate = ladder(rollErr, rollIn, pitchErr, pitchIn, sizeErr, sizeIn, xErr, xIn, yErr, yIn)
-            ?: if (dwellMs >= LOCK_DWELL_MS) instruction(Verb.LOCKED, Magnitude.NUDGE)
-            // Geometry is good but the dwell is not served. Holding the last
-            // arrow avoids a flicker; on a cold start there is no last arrow,
-            // and "hold steady" is exactly the right thing to say.
-            else shown ?: instruction(Verb.HOLD_STEADY, Magnitude.NUDGE)
+        val candidate = if (subjectMissing) {
+            instruction(Verb.SEEKING, Magnitude.NUDGE)
+        } else {
+            ladder(rollErr, rollIn, pitchErr, pitchIn, sizeErr, sizeIn, xErr, xIn, yErr, yIn)
+                ?: if (dwellMs >= LOCK_DWELL_MS) instruction(Verb.LOCKED, Magnitude.NUDGE)
+                // Geometry is good but the dwell is not served. Holding the
+                // last arrow avoids a flicker; on a cold start there is no last
+                // arrow, and "hold steady" is exactly the right thing to say.
+                // Holding the last arrow is right, but SEEKING is a state,
+                // not an arrow. Once a subject is no longer expected, a stale
+                // "looking for your subject" must not be what we hold onto.
+                else shown?.takeIf { it.verb != Verb.SEEKING }
+                    ?: instruction(Verb.HOLD_STEADY, Magnitude.NUDGE)
+        }
 
         // --- 600 ms instruction lockout -------------------------------------
         val current = shown
@@ -201,11 +214,19 @@ class GuidanceEngine(
             shownMs = 0L
         } else {
             shownMs += dt
+            // Crossing into or out of SEEKING is not two instructions
+            // competing - it is the situation itself changing. Making it wait
+            // out the lockout would leave "step closer" on screen for 600ms
+            // after the subject walked off, which is the bug this fixes, and
+            // would hold "looking for your subject" just as long after they
+            // came back.
+            val subjectPresenceChanged =
+                (candidate.verb == Verb.SEEKING) != (current.verb == Verb.SEEKING)
             if (candidate.verb == current.verb) {
                 // Same arrow, refreshed magnitude and text. Not a switch, so
                 // the hold timer keeps running.
                 result = candidate
-            } else if (shownMs >= INSTRUCTION_LOCKOUT_MS) {
+            } else if (subjectPresenceChanged || shownMs >= INSTRUCTION_LOCKOUT_MS) {
                 result = candidate
                 shownMs = 0L
             } else {
@@ -573,10 +594,12 @@ class GuidanceEngine(
                 Verb.ZOOM_OUT -> "Zoom out"
                 Verb.TAP_FOCUS -> "Tap to focus"
                 Verb.HOLD_STEADY -> "Hold steady"
+                Verb.SEEKING -> "Looking for your subject"
                 Verb.LOCKED -> "Locked"
             }
             return when {
-                verb == Verb.LOCKED || verb == Verb.TAP_FOCUS || verb == Verb.HOLD_STEADY -> base
+                verb == Verb.LOCKED || verb == Verb.TAP_FOCUS ||
+                    verb == Verb.HOLD_STEADY || verb == Verb.SEEKING -> base
                 magnitude == Magnitude.NUDGE -> "$base a little"
                 magnitude == Magnitude.BIG -> "$base a lot"
                 else -> base

@@ -14,6 +14,7 @@ import `in`.arasan.xthink.guidance.EyeLine
 import `in`.arasan.xthink.guidance.FrameMapping
 import `in`.arasan.xthink.guidance.FrameRect
 import `in`.arasan.xthink.guidance.ShotType
+import `in`.arasan.xthink.guidance.ShotTypeSelector
 import `in`.arasan.xthink.guidance.SubjectBox
 
 private const val TAG = "xThink"
@@ -121,7 +122,7 @@ class FaceAnalyzer(
         dtMs: Long,
     ): FaceResult {
         if (faces.isEmpty()) {
-            return FaceResult(null, null, 0, ShotType.LANDSCAPE, detectMs, dtMs)
+            return FaceResult(null, null, 0, ShotTypeSelector.shotTypeFor(0), detectMs, dtMs)
         }
 
         val rects = faces.map { it.boundingBox.toFrameRect() }
@@ -132,7 +133,7 @@ class FaceAnalyzer(
                 subject = FrameMapping.normalize(rects[0], crop),
                 eyes = eyeLineOf(face, rects[0], crop),
                 faceCount = 1,
-                shotType = ShotType.HEADSHOT,
+                shotType = ShotTypeSelector.shotTypeFor(1),
                 detectMs = detectMs,
                 dtMs = dtMs,
             )
@@ -155,7 +156,7 @@ class FaceAnalyzer(
                     gazeDx = FrameMapping.gazeFromHeadYaw(yaw),
                 ),
                 faceCount = faces.size,
-                shotType = ShotType.GROUP,
+                shotType = ShotTypeSelector.shotTypeFor(faces.size),
                 detectMs = detectMs,
                 dtMs = dtMs,
             )

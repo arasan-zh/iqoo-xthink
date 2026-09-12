@@ -47,7 +47,7 @@ enum class Verb {
     MOVE_LEFT, MOVE_RIGHT,
     STEP_CLOSER, STEP_BACK,
     ZOOM_IN, ZOOM_OUT,
-    TAP_FOCUS, HOLD_STEADY, LOCKED,
+    TAP_FOCUS, HOLD_STEADY, SEEKING, LOCKED,
 }
 
 /** How far off we are, in units of the channel's deadzone. */
