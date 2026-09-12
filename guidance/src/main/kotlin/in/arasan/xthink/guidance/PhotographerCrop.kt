@@ -73,7 +73,15 @@ object PhotographerCrop {
         }
     }
 
-    /** Least headroom above the face, in face heights. */
+    /**
+     * The crown sits about this far above the detector's box, in face
+     * heights: the box runs eyebrows to chin, and the head - hair
+     * included - carries on above it. Headroom is measured from the crown,
+     * not the eyebrows; the first desk photos clipped the hair.
+     */
+    const val HEAD_TOP_FACES = 0.45f
+
+    /** Least headroom above the crown, in face heights. */
     const val HEADROOM_FACES = 0.35f
 
     /** Most headroom the eye-line rule may ask for, in face heights. */
@@ -140,8 +148,9 @@ object PhotographerCrop {
         val shapes = if (targetAspect != null) listOf(targetAspect to "") else ASPECTS
 
         // --- top: at least a little headroom, at most a lot ---
-        val tightTop = (faceTop - HEADROOM_FACES * face.h).coerceAtLeast(0f)
-        val looseTop = (faceTop - HEADROOM_MAX_FACES * face.h).coerceAtLeast(0f)
+        val crown = faceTop - HEAD_TOP_FACES * face.h
+        val tightTop = (crown - HEADROOM_FACES * face.h).coerceAtLeast(0f)
+        val looseTop = (crown - HEADROOM_MAX_FACES * face.h).coerceAtLeast(0f)
         val eyes = eyesY ?: (face.cy - face.h * 0.1f)
 
         // --- bottom: the safe cuts, longest first. The first that fits

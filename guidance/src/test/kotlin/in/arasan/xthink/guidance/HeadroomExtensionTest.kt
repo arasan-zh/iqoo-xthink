@@ -10,7 +10,7 @@ class HeadroomExtensionTest {
     fun `a head against a plain top edge gets the missing headroom`() {
         val face = SubjectBox(cx = 0.5f, cy = 0.12f, w = 0.24f, h = 0.20f) // top at 0.02
         val extra = HeadroomExtension.extraTop(face, topStripStdDev = 5f)
-        val want = HeadroomExtension.WANTED_FACES * 0.20f - 0.02f
+        val want = (PhotographerCrop.HEAD_TOP_FACES + HeadroomExtension.WANTED_FACES) * 0.20f - 0.02f
         assertEquals(want, extra, 0.001f)
     }
 

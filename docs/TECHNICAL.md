@@ -468,6 +468,13 @@ piece device-verified on the iQOO 15 before it was committed.
   instruction set for LaMa: holes on the photo as shot, then strips. The
   model never draws a mask. A plan that keeps the frame but paints
   something out still opens the review (AS SHOT alone, then the chip).
+- **Headroom from the crown**: ML Kit's face box runs eyebrows to chin,
+  and the crop's headroom was measured from its top - so a full head of
+  hair got clipped (the first desk selfie, 03:08). The crown is taken as
+  0.45 face heights above the box; the tight top, the loose top and the
+  headroom extension all count from there. One crop test moved from 4:5
+  to 3:4 as a result: mid-thigh no longer fits the print shape with the
+  extra room, and the legs win over the shape, as the ladder says.
 - **Opting out**: a *Retouch* chip in the tune row (Portrait only, on by
   default, session-scoped like *Easy shot*). Off, LaMa never touches the
   photo - no holes, no painted strips, not even the reflected headroom -

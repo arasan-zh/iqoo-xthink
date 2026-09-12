@@ -82,8 +82,8 @@ class PhotographerCropTest {
         val p = req(PhotographerCrop.propose(face, eyesY = 0.33f, pose = pose, sourceAspect = aspect, targetAspect = aspect))
         val faceTop = 0.29f
         val headroomFaces = (faceTop - p.crop.top) / 0.12f
-        assertTrue("headroom $headroomFaces faces", headroomFaces <= PhotographerCrop.HEADROOM_MAX_FACES + 0.01f)
-        assertTrue(headroomFaces >= PhotographerCrop.HEADROOM_FACES - 0.01f)
+        assertTrue("headroom $headroomFaces faces", headroomFaces <= PhotographerCrop.HEAD_TOP_FACES + PhotographerCrop.HEADROOM_MAX_FACES + 0.01f)
+        assertTrue(headroomFaces >= PhotographerCrop.HEAD_TOP_FACES + PhotographerCrop.HEADROOM_FACES - 0.01f)
     }
 
     @Test
@@ -94,12 +94,15 @@ class PhotographerCropTest {
         val p = req(PhotographerCrop.propose(face, eyesY = 0.28f, pose = pose, sourceAspect = source))
         val c = p.crop
         assertTrue(c.left >= 0f && c.right <= 1f && c.top >= 0f && c.bottom <= 1f)
-        // Feet + floor would need 0.82 of the height from the headroom line:
-        // no shape holds it. Mid-thigh (0.72) needs 0.54, which 4:5 (cap 0.57)
-        // holds - so the person keeps their legs AND the preferred shape.
+        // Headroom is counted from the crown (0.23 - 0.45 * 0.14 = 0.167),
+        // so the tight top is 0.118. Feet + floor would need 0.88 of the
+        // height from there: no shape holds it. Mid-thigh (0.72) needs 0.60,
+        // which 4:5 (cap 0.57) cannot hold but 3:4 (cap 0.61) can - so the
+        // person keeps their legs, and the ladder gives up the print shape
+        // for it, as the rules say.
         assertEquals(0.62f + PhotographerCrop.THIGH_CUT * 0.18f, c.bottom, 0.02f)
         val pxAspect = (c.width * 1862f) / (c.height * 4096f)
-        assertEquals(PhotographerCrop.PORTRAIT_ASPECT, pxAspect, 0.02f)
+        assertEquals(3f / 4f, pxAspect, 0.02f)
         assertTrue(p.rationale.any { it.contains("Mid-thigh") })
 
         // Push the knees lower so mid-thigh no longer fits 4:5: the ladder

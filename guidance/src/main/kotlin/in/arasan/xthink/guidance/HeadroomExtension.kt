@@ -36,11 +36,12 @@ object HeadroomExtension {
      */
     fun extraTop(face: SubjectBox, topStripStdDev: Float): Float {
         if (face.h <= 0f) return 0f
+        // Above the detector's box sits the crown; room is counted from there.
         val faceTop = face.cy - face.h / 2f
         val have = faceTop.coerceAtLeast(0f)
-        if (have > TRIGGER_FACES * face.h) return 0f
+        if (have > (PhotographerCrop.HEAD_TOP_FACES + TRIGGER_FACES) * face.h) return 0f
         if (topStripStdDev > PLAIN_STDDEV) return 0f
-        val want = WANTED_FACES * face.h
+        val want = (PhotographerCrop.HEAD_TOP_FACES + WANTED_FACES) * face.h
         val missing = (want - have).coerceAtLeast(0f)
         return missing.coerceAtMost(MAX_EXTRA)
     }
