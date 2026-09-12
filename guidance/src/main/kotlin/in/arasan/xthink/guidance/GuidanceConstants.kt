@@ -71,6 +71,15 @@ object GuidanceConstants {
     /** Eyes sit roughly this far down a detector face box. Shared with :app. */
     const val EYE_LINE_FRACTION_OF_FACE = 0.4f
 
+    // --- Auto capture -----------------------------------------------------------
+    /**
+     * Minimum gap between automatic shots. One capture per lock acquisition
+     * already stops a held lock from firing repeatedly; the cooldown stops a
+     * scene that locks, breaks and re-locks every second from producing a
+     * burst of near-identical frames.
+     */
+    const val AUTO_CAPTURE_COOLDOWN_MS = 3000L
+
     // --- Subject loss ---------------------------------------------------------
     /**
      * A subject has to be gone this long before the engine believes it. On a

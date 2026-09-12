@@ -2,7 +2,13 @@ package `in`.arasan.xthink.camera
 
 import android.Manifest
 import android.content.Context
+import android.content.ContentValues
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.VibrationEffect
+import android.os.VibratorManager
+import android.provider.MediaStore
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.TotalCaptureResult
@@ -20,6 +26,8 @@ import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -43,12 +51,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import `in`.arasan.xthink.guidance.AlignmentState
+import `in`.arasan.xthink.guidance.AutoCapturePolicy
 import `in`.arasan.xthink.guidance.CompositionProfile
 import `in`.arasan.xthink.guidance.GuidanceEngine
 import `in`.arasan.xthink.guidance.Instruction
@@ -59,6 +69,9 @@ import `in`.arasan.xthink.guidance.Verb
 import `in`.arasan.xthink.ui.GuidanceOverlay
 import `in`.arasan.xthink.ui.OverlayState
 import `in`.arasan.xthink.ui.StatusValue
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.concurrent.Executors
 
 private const val TAG = "xThink"
@@ -135,6 +148,55 @@ private fun CameraAndGuidance() {
     // has something to call. Null until the camera finishes binding.
     var cameraControl by remember { mutableStateOf<Camera?>(null) }
 
+    // Capture. The policy in :guidance decides WHEN (one shot per lock, only
+    // when steady, with a cooldown); this screen owns the use case and the
+    // write to the gallery.
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+    }
+    val autoCapture = remember { AutoCapturePolicy() }
+    var captureInFlight by remember { mutableStateOf(false) }
+
+    fun capture(auto: Boolean) {
+        if (captureInFlight) return
+        captureInFlight = true
+        val name = "xthink_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, "$name.jpg")
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.RELATIVE_PATH, "DCIM/xThink")
+        }
+        val options = ImageCapture.OutputFileOptions
+            .Builder(context.contentResolver, MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
+            .build()
+        imageCapture.takePicture(
+            options,
+            ContextCompat.getMainExecutor(context),
+            object : ImageCapture.OnImageSavedCallback {
+                override fun onImageSaved(output: ImageCapture.OutputFileResults) {
+                    captureInFlight = false
+                    val uri: Uri? = output.savedUri
+                    Log.i(TAG, "captured auto=$auto -> $uri")
+                    clickHaptic(context)
+                    val thumb: Bitmap? = uri?.let {
+                        runCatching { context.contentResolver.loadThumbnail(it, Size(160, 160), null) }.getOrNull()
+                    }
+                    overlayState = overlayState.copy(
+                        thumbnail = thumb?.asImageBitmap() ?: overlayState.thumbnail,
+                        captureNonce = overlayState.captureNonce + 1,
+                    )
+                }
+
+                override fun onError(e: ImageCaptureException) {
+                    captureInFlight = false
+                    Log.e(TAG, "capture failed", e)
+                }
+            },
+        )
+    }
+
     // --- sensor ----------------------------------------------------------
     DisposableEffect(engine) {
         val sensor = AttitudeSensor(context)
@@ -184,7 +246,14 @@ private fun CameraAndGuidance() {
                 stabilityOk = engine.stabilityOk,
                 compositionOk = engine.compositionOk,
                 hasAutofocus = telemetry.hasAutofocus,
+                thumbnail = overlayState.thumbnail,
+                captureNonce = overlayState.captureNonce,
             )
+
+            // The coach said "now". Take the picture.
+            if (autoCapture.update(next.verb, engine.stabilityOk, result.subject != null, result.dtMs)) {
+                capture(auto = true)
+            }
 
             // Every change of verb, plus a heartbeat. Transitions are where the
             // bugs live, and a 1 Hz sample cannot see a state that lasts 500ms.
@@ -271,6 +340,7 @@ private fun CameraAndGuidance() {
                 val group = UseCaseGroup.Builder()
                     .addUseCase(preview)
                     .addUseCase(analysis)
+                    .addUseCase(imageCapture)
                     .apply { previewView.viewPort?.let { setViewPort(it) } }
                     .build()
 
@@ -318,6 +388,10 @@ private fun CameraAndGuidance() {
             onZoomSelected = { ratio ->
                 cameraControl?.cameraControl?.setZoomRatio(ratio)
             },
+            onShutter = {
+                autoCapture.notifyManualCapture()
+                capture(auto = false)
+            },
             modifier = Modifier.fillMaxSize(),
         )
         if (sensorMissing) {
@@ -343,6 +417,8 @@ private fun buildOverlayState(
     stabilityOk: Boolean,
     compositionOk: Boolean,
     hasAutofocus: Boolean,
+    thumbnail: androidx.compose.ui.graphics.ImageBitmap?,
+    captureNonce: Int,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -373,7 +449,17 @@ private fun buildOverlayState(
         composition = composition,
         zoomRatio = telemetry.zoomRatio,
         maxZoomRatio = telemetry.maxZoomRatio,
+        thumbnail = thumbnail,
+        captureNonce = captureNonce,
     )
+}
+
+/** One short click, the way a stock camera confirms a shot. */
+private fun clickHaptic(context: Context) {
+    runCatching {
+        val vm = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+        vm.defaultVibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_CLICK))
+    }
 }
 
 private fun hasCameraPermission(context: Context): Boolean =

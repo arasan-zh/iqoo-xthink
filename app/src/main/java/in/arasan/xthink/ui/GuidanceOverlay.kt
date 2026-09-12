@@ -9,7 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.background
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
@@ -37,8 +42,19 @@ import androidx.compose.ui.unit.dp
 fun GuidanceOverlay(
     state: OverlayState,
     onZoomSelected: (Float) -> Unit,
+    onShutter: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // The capture flash: a brief white wash whenever a photo is taken, auto
+    // or manual, so the photographer knows without looking at the gallery.
+    val flash = remember { Animatable(0f) }
+    LaunchedEffect(state.captureNonce) {
+        if (state.captureNonce > 0) {
+            flash.snapTo(0.6f)
+            flash.animateTo(0f, tween(280))
+        }
+    }
+
     // The preview fills the whole screen, so the subject-tracking frame maps
     // its normalised coordinates against the FULL canvas to stay pixel-true to
     // the live feed. The fixed guides - corner brackets, centre cross, horizon,
@@ -121,9 +137,17 @@ fun GuidanceOverlay(
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
                     ModeTabs()
-                    BottomBar(locked = state.isLocked)
+                    BottomBar(
+                        locked = state.isLocked,
+                        thumbnail = state.thumbnail,
+                        onShutter = onShutter,
+                    )
                 }
             }
+        }
+
+        if (flash.value > 0.005f) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flash.value)))
         }
     }
 }

@@ -81,7 +81,11 @@ fun Reticle(
         val a = state.alignment
         if (a.hasTarget && a.targetW > 0f && a.targetH > 0f) {
             drawTargetBrackets(a.targetCx, a.targetCy, a.targetW, a.targetH, accent, lockPulse)
-            drawCentreCross(accent, a.targetCy * size.height, a.targetCx * size.width)
+            drawCentreCross(
+                accent,
+                (a.targetCy * size.height).coerceIn(size.height * 0.08f, size.height * 0.92f),
+                (a.targetCx * size.width).coerceIn(size.width * 0.08f, size.width * 0.92f),
+            )
         } else {
             drawBrackets(accent, lockPulse, safeCenterY)
             drawCentreCross(accent, safeCenterY)
@@ -159,8 +163,13 @@ private fun DrawScope.drawTargetBrackets(
     val maxFraction = 0.94f
     val bw = (w * pad * size.width).coerceIn(1f, size.width * maxFraction)
     val bh = (h * pad * size.height).coerceIn(1f, size.height * maxFraction)
-    val left = cx * size.width - bw / 2f
-    val top = cy * size.height - bh / 2f
+    // Keep the whole guide on screen. Gaze lead room on a large subject can
+    // put the mathematically correct target partly off the left or right edge;
+    // a guide you cannot see guides nothing. Slide it inward instead. The
+    // subject frame is NOT clamped - it must stay true to the live feed.
+    val margin = 6.dp.toPx()
+    val left = (cx * size.width - bw / 2f).coerceIn(margin, (size.width - bw - margin).coerceAtLeast(margin))
+    val top = (cy * size.height - bh / 2f).coerceIn(margin, (size.height - bh - margin).coerceAtLeast(margin))
     val right = left + bw
     val bottom = top + bh
     val arm = min(bw, bh) * 0.28f

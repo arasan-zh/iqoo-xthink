@@ -1,5 +1,6 @@
 package `in`.arasan.xthink.ui
 
+import androidx.compose.ui.graphics.ImageBitmap
 import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.SubjectBox
@@ -27,6 +28,10 @@ data class OverlayState(
     val composition: StatusValue,
     val zoomRatio: Float,
     val maxZoomRatio: Float,
+    /** Most recent capture, for the gallery button. Null until the first shot. */
+    val thumbnail: ImageBitmap? = null,
+    /** Bumped on every capture; the overlay flashes when it changes. */
+    val captureNonce: Int = 0,
 ) {
     val verb: Verb? get() = instruction?.verb
     val isLocked: Boolean get() = verb == Verb.LOCKED

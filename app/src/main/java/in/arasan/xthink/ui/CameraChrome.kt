@@ -3,6 +3,7 @@ package `in`.arasan.xthink.ui
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -28,6 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -139,18 +142,23 @@ fun ModeTabs(modifier: Modifier = Modifier) {
 }
 
 // ---------------------------------------------------------------------------
-// Bottom bar - drawn now, wired in v0.4 alongside the haptic lock, which is
-// what will tell you when to press it.
+// Bottom bar. The shutter is live: a tap captures, and the engine's lock
+// captures by itself. The gallery button shows the last shot.
 // ---------------------------------------------------------------------------
 
 @Composable
-fun BottomBar(locked: Boolean, modifier: Modifier = Modifier) {
+fun BottomBar(
+    locked: Boolean,
+    thumbnail: ImageBitmap?,
+    onShutter: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     Row(
         modifier = modifier.fillMaxWidth().padding(horizontal = 28.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // Gallery. A placeholder until v0.4 writes a real capture to it.
+        // Gallery: the most recent capture, or a placeholder until there is one.
         Box(
             modifier = Modifier
                 .size(46.dp)
@@ -158,7 +166,14 @@ fun BottomBar(locked: Boolean, modifier: Modifier = Modifier) {
                 .background(Color.White.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
         ) {
-            Canvas(modifier = Modifier.size(20.dp)) {
+            if (thumbnail != null) {
+                Image(
+                    bitmap = thumbnail,
+                    contentDescription = "Last photo",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.size(46.dp),
+                )
+            } else Canvas(modifier = Modifier.size(20.dp)) {
                 drawRoundRect(
                     color = XT.Inert,
                     cornerRadius = androidx.compose.ui.geometry.CornerRadius(3.dp.toPx()),
@@ -175,7 +190,7 @@ fun BottomBar(locked: Boolean, modifier: Modifier = Modifier) {
             }
         }
 
-        Shutter(locked = locked)
+        Shutter(locked = locked, onClick = onShutter)
 
         // Flip. Rear only in this build, so it is deliberately inert.
         Box(
@@ -210,7 +225,7 @@ fun BottomBar(locked: Boolean, modifier: Modifier = Modifier) {
  * moment to press is visible without reading the card.
  */
 @Composable
-private fun Shutter(locked: Boolean) {
+private fun Shutter(locked: Boolean, onClick: () -> Unit) {
     val ring by animateColorAsState(
         targetValue = if (locked) XT.Green else Color.White,
         animationSpec = tween(260),
@@ -221,7 +236,16 @@ private fun Shutter(locked: Boolean) {
         animationSpec = tween(260),
         label = "shutterInner",
     )
-    Canvas(modifier = Modifier.size(76.dp)) {
+    Canvas(
+        modifier = Modifier
+            .size(76.dp)
+            .clip(CircleShape)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+    ) {
         val c = size.minDimension / 2f
         drawCircle(ring, c - 2.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
         drawCircle(inner.copy(alpha = 0.9f), c - 10.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
