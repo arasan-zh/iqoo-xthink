@@ -236,3 +236,132 @@ screenshot. They are the reason the log exists.
 9. A width rule's first draft silently cancelled every "step closer" (a zero
    beats a negative). Ten existing tests caught it before it shipped.
 10. Auto-capture shot an empty room on a landscape lock. Subject now required.
+
+---
+
+## 7. After the demo: v0.7-oracle (build-22 → freeze)
+
+Everything below was added between the demo build and the freeze, each
+piece device-verified on the iQOO 15 before it was committed.
+
+### Camera
+- **Front camera.** A flip button rebinds `DEFAULT_FRONT_CAMERA` and builds
+  a fresh `GuidanceEngine(mirrored = true, hasAutofocus = false)` - both are
+  constructor facts, and `hasAutofocus` is read from the characteristics,
+  not assumed. Faces and gaze are mirrored into preview space
+  (`FrameMapping.mirrorX`), pitch flips sign for the +Z lens
+  (`AttitudeMath.fromRotationMatrix(r, frontFacing)`), the reticle horizon
+  flips with the mirror. The selfie lens offers PORTRAIT only.
+- **Direction haptics.** `DirectionCues.forTransition` maps a verb change to
+  a signature: left = two low ticks, right = one click, up rises, down
+  falls, level spins, closer swells, back thuds. The phone has **two
+  vibrators** (`VibratorManager.vibratorIds = 0, 1`); LEFT and RIGHT are
+  routed to one motor each with `CombinedVibration`.
+- **Scene** (was Wide): people, places, rooms - everyone framed when faces
+  exist, level/horizon guidance otherwise.
+- **Tap to focus** drives CameraX metering and re-targets the coach: OBJECT
+  frames the object under the finger (smallest containing box, else
+  nearest); PORTRAIT keeps the same person between frames (nearest to last
+  frame's face) and a tap picks the face under it for 1.5 s.
+- **Zoom bar**: a drag on a log scale 1x..10x, tappable stops, a readout in
+  ratio and 35 mm-equivalent (23.5 mm rear, 21.2 mm front, from
+  `docs/HARDWARE.md`). **Guide** toggle (off by default): the reticle and
+  arrows guide, the words are optional. The left rail shows Lighting /
+  Stability / Composition; Focus was dropped (continuous AF said "Good" all
+  day). Shutter sound, a 110 ms flash, a one-second splash.
+- **Video**: `VideoCapture` (FHD, audio when granted) swaps in for
+  `ImageCapture`; the analysis stays bound and focus follows the tracked
+  subject (re-aim ≤ every 500 ms when it moves 4 %, continuous AF after
+  1.5 s lost).
+
+### After the shutter
+- **Photographer's crop** (`PhotographerCrop`, pure Kotlin): ML Kit Pose +
+  Face on a 1024 px decode; never cut a joint (feet + floor, else
+  mid-thigh, else below the hip, else chest), headroom 0.35–1.2 face
+  heights, eyes toward the upper third, a print shape - 4:5 first, then
+  3:4, 2:3, 9:16 only when that keeps more of the person. The camera shoots
+  a 20:9 strip; nobody frames a person that way on purpose.
+- **Headroom extension** (`HeadroomExtension`): only when the strip above a
+  head is plain (luminance σ ≤ 16) - reflected and softened, up to a quarter
+  of the height. A busy edge is left alone.
+- **Review**: AS SHOT / ENHANCED side by side, six **looks** (one colour
+  matrix each: Natural, Warm, Cool, Vivid, Mono, Film), Save / Discard; the
+  original is never touched. The review appears only when a person was
+  recognised; otherwise the shot stands, with the camera-page look baked
+  in. A soft photo (Laplacian variance) is named as such.
+- **Easy shot**: auto-capture only with it on - at the lock, or "near
+  enough" (error ≤ 0.40, fine verb, 700 ms dwell) **only after 30 s** of
+  trying. A sharpness gate on the analysis frame refuses motion and missed
+  focus. No auto-shutter in video or while a review is up.
+
+### The on-device model
+- **Gemma 3n** via MediaPipe GenAI 0.10.35 on the Adreno GPU (OpenCL).
+  E2B int4 (3.1 GB): load 5–15 s once, first token 1–3.5 s, a one-line
+  answer in ~1.3 s. E4B int4 (4.4 GB) is preferred when present (the app
+  loads the largest `.task` it finds in `/data/local/tmp/llm` or its
+  external files dir). The bundles carry a **vision encoder only** - no
+  audio - so the model cannot hear; speech is Google's on-device
+  recogniser. `MAX_TOKENS` is the whole context: an image alone is 256.
+- The model **never speaks in the camera**. Its jobs: name the crop and
+  the look after a shutter ("FEET NATURAL"), honoured by the rules when the
+  body offers that cut; and read a spoken request for STEVE.
+- Models are not in the APK. `scripts/dev.sh model` pushes every bundle in
+  `~/Lab/xthink/models` to every connected phone; `scripts/dev.sh all`
+  installs, grants the camera, and launches on all of them. The HF token on
+  this Mac can re-download the bundles (`google/gemma-3n-E*B-it-litert-preview`).
+
+### STEVE - say it, see the plan, tap Run, the phone does it on the Mac
+- The phone registers as a **Bluetooth HID keyboard** (`BluetoothHidDevice`,
+  descriptor and key table in `HidKeymap`, pure Kotlin). USB gadget mode
+  is root-only on this phone. The Mac pairs with "xThink" once; it
+  reconnects by itself.
+- **Speech** → Google's recogniser → **Gemma reads the sentence** in one
+  line, `KIND | ARG` (`GeniusIntent`), trusted only when what it names was
+  in the words (`plausible`); otherwise the word-router (`GeniusRouter`)
+  decides. Routes: OPEN an app; WEBSITE (a domain, or DuckDuckGo's `\`
+  redirect to the first hit - Google's `btnI` just shows results when
+  typed into an address bar); YouTube plays the first hit for a title;
+  TERMINAL (the model gives the one-line command); WRITE (the model writes
+  the letter / story, TextEdit gets a new document, the phone types it);
+  PROJECT (VS Code, a **new window**, its terminal, `claude`, a
+  single-`index.html` brief); WHATSAPP (new chat to the number, message
+  sent); HELP; anything else - the model plans in a six-verb language
+  (`GeniusPlan`). Macros do the app plumbing (Cmd+Space, Cmd+L, Ctrl+`,
+  Cmd+Shift+N); the model only fills the blank a route leaves.
+- **Human in the loop, by design and by the safety layer.** Every plan is
+  shown in full and runs only after a tap on Run. After a run the camera
+  reads the Mac screen and the model may *propose* a next step - which
+  waits for its own tap. Nothing runs unattended, nothing retries by
+  itself. `CommandSafety` refuses destructive commands (rm, sudo, dd, mkfs,
+  force-push, curl piped to a shell, writes to /dev, ...) and a plan with
+  any refused step never runs.
+- Verified on the Mac: "open the terminal and show the current directory"
+  → `pwd`; "play Raavana Mavandaa Lyrical in youtube" → the exact watch
+  page; "write a short love letter to Priya" and "write a one page science
+  fiction story with the name of a japanese comic" → written by Gemma in
+  ~10 s, typed into TextEdit.
+
+### Things found only by running it (continued)
+11. `adb shell am start --es genius "open the terminal ..."` delivers only
+    `open` - the device shell strips the quotes. Every early "the model
+    can't route" was the model being handed one word. Quote for the device
+    shell: `adb shell "am start ... --es genius 'open the terminal ...'"`.
+12. A Bluetooth keyboard types into whatever has focus. With TYPE mode open
+    and the camera pointed at this Mac, one tap typed 1,086 keys of this
+    very session back into its own terminal. Hence: a plan is shown before
+    it runs, Run is a separate tap, and tests focus TextEdit first.
+13. MediaPipe delivered the model's final callback before its busy flag
+    cleared; the question asked at once from that callback was refused
+    ("Steve is busy"). The flag now clears before the last word is
+    delivered.
+14. A raw text-only session has no chat template: the model *continued*
+    the instructions instead of answering. Wrap in
+    `<start_of_turn>user … <end_of_turn><start_of_turn>model`.
+15. `MAX_TOKENS = 160` produced empty answers: it is the whole context, and
+    an image is 256 tokens of it.
+16. `blueutil --pair` reported `Unspecified Error (0x1f)` while the phone
+    logged `state=2` (connected) - the HID link was up regardless. Trust
+    the device's log over the tool's exit code.
+17. The E2B model copies the nearest example: "open safari" as the last
+    few-shot example made every request `OPEN Safari`. Narrow the question
+    (one line, `KIND | ARG`) and check the answer against the words.
