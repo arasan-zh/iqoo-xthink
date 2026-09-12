@@ -97,8 +97,17 @@ private fun DrawScope.drawSubjectFrame(
     // A face box is tight on the face; open it out so the frame reads as
     // composition rather than as a detection debug box.
     val pad = 1.35f
-    val bw = (w * pad * size.width).coerceAtLeast(1f)
-    val bh = (h * pad * size.height).coerceAtLeast(1f)
+    // A too-close face (bad framing, exactly what STEP_BACK exists for) can
+    // push the padded box past the screen edges. Uncapped, it balloons into a
+    // border that runs behind the rails and the guidance card instead of
+    // reading as a frame around the face. Capping it to a generous fraction
+    // of the screen keeps it centred on the true face position - so "way too
+    // big" still looks obviously way too big - without it competing with the
+    // chrome. Confirmed on device: an up-close shot drew this as a rectangle
+    // wrapping nearly the entire viewfinder before the cap was added.
+    val maxFraction = 0.94f
+    val bw = (w * pad * size.width).coerceIn(1f, size.width * maxFraction)
+    val bh = (h * pad * size.height).coerceIn(1f, size.height * maxFraction)
     val left = cx * size.width - bw / 2f
     val top = cy * size.height - bh / 2f
 
