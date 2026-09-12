@@ -106,7 +106,9 @@ class VerticalStrategyTest {
         val engine = GuidanceEngine(halfBody)
         // Framed, level camera... then 10 degrees of pitch with framing good.
         val verb = engine.update(Attitude(0f, 10f), framedHalfBody(), eyes(), 33L).verb
-        assertEquals("translate mode: 10 degrees is out of the 6 degree deadzone", Verb.TILT_DOWN, verb)
+        // Out of the 6 degree deadzone, so the pitch rung fires - and with a
+        // framed subject it asks for eye level (raise the phone), not a tilt.
+        assertEquals("translate mode: 10 degrees is out of the 6 degree deadzone", Verb.MOVE_UP, verb)
     }
 
     @Test

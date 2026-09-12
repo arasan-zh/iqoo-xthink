@@ -37,9 +37,12 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
-    /** FIT tab: squats, push-ups, hand signs. */
+    /** FIT tab: squats, push-ups. */
     val fitMode: Boolean = false,
     val fit: FitState? = null,
+    /** SIGNS tab: a hand sign, as an English word. */
+    val signsMode: Boolean = false,
+    val sign: String? = null,
     /** ASK tab: ask about, read, translate or keep what the camera sees. */
     val askMode: Boolean = false,
     val ask: AskState? = null,
@@ -82,7 +85,10 @@ data class OverlayState(
 ) {
     val verb: Verb? get() = instruction?.verb
     /** False in CREATIVE: nothing coaches, only the camera controls draw. */
-    val assisted: Boolean get() = mode != CoachMode.CREATIVE && !typeMode && !askMode && !fitMode
+    val assisted: Boolean get() = mode != CoachMode.CREATIVE && !typeMode && !askMode && !fitMode && !signsMode
+
+    /** A chosen Shot style takes the words of guidance off; the frame brackets remain. */
+    val guideMuted: Boolean get() = shotStyle != null
     val isLocked: Boolean get() = verb == Verb.LOCKED
     val isSeeking: Boolean get() = verb == Verb.SEEKING
 

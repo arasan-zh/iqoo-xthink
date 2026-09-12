@@ -87,6 +87,7 @@ fun GuidanceOverlay(
     onListen: () -> Unit,
     onGeniusRun: () -> Unit,
     onGeniusStop: () -> Unit,
+    onSignsMode: () -> Unit,
     onFitMode: () -> Unit,
     onFitPick: (String) -> Unit,
     onFitReset: () -> Unit,
@@ -204,11 +205,12 @@ fun GuidanceOverlay(
                             .horizontalScroll(rememberScrollState()),
                     ) {
                         if (state.recording) RecordingChip(ms = state.recordingMs)
-                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode) {
+                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode && !state.signsMode) {
                             ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)
                         }
                         if (state.assisted && !state.videoMode) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
-                        if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
+                        if (state.assisted && state.guideMuted) GuideMutedChip()
+                        else if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
                     }
                     QrButton(onClick = { showQr = true })
@@ -245,7 +247,9 @@ fun GuidanceOverlay(
                 val genius = state.genius
                 val ask = state.ask
                 val fit = state.fit
-                if (state.fitMode && fit != null) {
+                if (state.signsMode) {
+                    SignsPanel(sign = state.sign)
+                } else if (state.fitMode && fit != null) {
                     FitPanel(state = fit, onMode = onFitPick, onReset = onFitReset)
                 } else if (state.askMode && ask != null) {
                     AskPanel(
@@ -263,7 +267,7 @@ fun GuidanceOverlay(
                     ShotsRow(style = state.shotStyle, onPick = onPickShot)
                 } else if (state.showLooks) {
                     LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
-                } else if (state.assisted && state.showGuide) {
+                } else if (state.assisted && state.showGuide && !state.guideMuted) {
                     GuidanceCard(state = state)
                 }
 
@@ -273,7 +277,7 @@ fun GuidanceOverlay(
                 ) {
                     ZoomBar(
                         zoomRatio = state.zoomRatio,
-                        maxZoomRatio = state.maxZoomRatio,
+                        maxZoomRatio = minOf(state.maxZoomRatio, zoomCapFor(state.shotStyle)),
                         baseFocalMm = state.baseFocalMm,
                         onZoomSelected = onZoomSelected,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
@@ -290,6 +294,8 @@ fun GuidanceOverlay(
                         onAsk = onAskMode,
                         fitMode = state.fitMode,
                         onFit = onFitMode,
+                        signsMode = state.signsMode,
+                        onSigns = onSignsMode,
                     )
                     BottomBar(
                         locked = state.isLocked,
@@ -359,4 +365,17 @@ private fun FocusRing(point: Pair<Float, Float>?, nonce: Int) {
             )
         }
     }
+}
+
+/**
+ * The zoom a shot style allows: a wide or full-length shot is made by
+ * standing back, not by zooming; a close-up may lean on the lens a little.
+ * The style stays selectable at any distance - only the range is capped.
+ */
+fun zoomCapFor(style: ShotType?): Float = when (style) {
+    ShotType.WIDE_SHOT, ShotType.BIRDS_EYE -> 1f
+    ShotType.MEDIUM_SHOT, ShotType.LOW_ANGLE, ShotType.HIGH_ANGLE, ShotType.DUTCH_ANGLE, ShotType.OVER_SHOULDER -> 2f
+    ShotType.CLOSE_UP -> 3f
+    ShotType.EXTREME_CLOSE_UP -> 5f
+    else -> 10f
 }

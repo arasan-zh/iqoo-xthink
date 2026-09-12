@@ -151,6 +151,9 @@ class GuidanceEngine(
     var stabilityOk: Boolean = false
         private set
 
+    /** A subject was in frame on the last update; the pitch rung phrases itself around it. */
+    private var subjectInFrame = false
+
     /** Every geometric channel is inside its deadzone. */
     var compositionOk: Boolean = false
         private set
@@ -203,6 +206,7 @@ class GuidanceEngine(
             }
         }
         updateFocus(box)
+        subjectInFrame = box != null
 
         // --- errors ---------------------------------------------------------
         val rollErr = roll - profile.targetRollDeg
@@ -342,7 +346,14 @@ class GuidanceEngine(
                 verticalMove(yErr)
             } else {
                 instruction(
-                    if (pitchErr > 0f) Verb.TILT_DOWN else Verb.TILT_UP,
+                    // A subject in frame and the camera pointing down at them (or
+                    // up): the photographer is at the wrong height, not the wrong
+                    // angle. Lowering (raising) the phone to eye level is the move;
+                    // tilting would throw the subject out of the frame. Translation
+                    // before rotation - until the arm stalls, when TILT takes over.
+                    if (subjectInFrame && verticalMode != VerticalMode.ROTATE) {
+                        if (pitchErr > 0f) Verb.MOVE_UP else Verb.MOVE_DOWN
+                    } else if (pitchErr > 0f) Verb.TILT_DOWN else Verb.TILT_UP,
                     magnitudeFor(pitchErr, DEADZONE_PITCH_DEG),
                 )
             }

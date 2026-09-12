@@ -88,6 +88,7 @@ import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.Exercise
 import `in`.arasan.xthink.guidance.RepCounter
 import `in`.arasan.xthink.ui.FitState
+import `in`.arasan.xthink.ui.zoomCapFor
 import `in`.arasan.xthink.guidance.HapticCue
 import `in`.arasan.xthink.guidance.LockHaptics
 import `in`.arasan.xthink.guidance.CompositionProfile
@@ -429,6 +430,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     // tap. Nothing runs unattended, and nothing retries by itself.
     var typeMode by remember { mutableStateOf(false) }
     var fitMode by remember { mutableStateOf(false) }
+    var signsMode by remember { mutableStateOf(false) }
     val keyboard = remember { MacKeyboard(context) }
     val reader = remember { ScreenReader() }
     val speech = remember { SpeechInput(context) }
@@ -991,8 +993,12 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
 
     fun applyFitPick() {
         val a = analyzerRef[0] ?: return
-        a.fitExercise = when (fitPick) { "SQUAT" -> Exercise.SQUAT; "PUSHUP" -> Exercise.PUSHUP; else -> null }
-        a.fitGestures = fitPick == "SIGNS"
+        a.fitExercise = if (fitMode) (if (fitPick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT) else null
+        a.fitGestures = signsMode
+    }
+
+    fun refreshSigns() {
+        overlayState = overlayState.copy(signsMode = signsMode, sign = if (signsMode) fitGesture else null)
     }
 
     fun onFitFrame(angle: Float?, gesture: String?, dtMs: Long) {
@@ -1002,25 +1008,25 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             runCatching { tts?.speak(repCounter.count.toString(), TextToSpeech.QUEUE_FLUSH, null, "rep") }
             Log.i(TAG, "fit: ${repCounter.exercise} rep ${repCounter.count}")
         }
-        if (fitPick == "SIGNS") {
-            if (gesture != fitGesture) Log.i(TAG, "fit: hand sign ${gesture ?: "-"}")
-            fitGesture = gesture
-            val now = SystemClock.uptimeMillis()
-            if (gesture == "Thumb_Up" && now - lastGestureShotMs[0] > 3_000L) {
-                lastGestureShotMs[0] = now
-                haptics.play(HapticCue.TICK, 0.6f)
-                capture(auto = false)
+        if (signsMode) {
+            if (gesture != fitGesture) {
+                Log.i(TAG, "signs: ${gesture ?: "-"}")
+                if (gesture != null) haptics.play(HapticCue.TICK, 0.4f)
             }
+            fitGesture = gesture
+            refreshSigns()
+            return
         }
         refreshFit()
     }
 
     fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
-        if (fitMode && leaveVideo) {
+        if ((fitMode || signsMode) && leaveVideo) {
             fitMode = false
+            signsMode = false
             analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false }
-            overlayState = overlayState.copy(fitMode = false, fit = null)
-            Log.i(TAG, "mode -> photo (from FIT)")
+            overlayState = overlayState.copy(fitMode = false, fit = null, signsMode = false, sign = null)
+            Log.i(TAG, "mode -> photo (from FIT/SIGNS)")
         }
         if (askMode && leaveVideo) {
             askMode = false
@@ -1128,6 +1134,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 ask = overlayState.ask,
                 fitMode = overlayState.fitMode,
                 fit = overlayState.fit,
+                signsMode = overlayState.signsMode,
+                sign = overlayState.sign,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -1218,8 +1226,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         }
 
         analyzerRef[0] = analyzer
-        analyzer.onFit = { angle, gesture, dt -> mainHandler.post { if (fitMode) onFitFrame(angle, gesture, dt) } }
-        if (fitMode) applyFitPick()
+        analyzer.onFit = { angle, gesture, dt -> mainHandler.post { if (fitMode || signsMode) onFitFrame(angle, gesture, dt) } }
+        if (fitMode || signsMode) applyFitPick()
         analyzer.mode = shotTypes.mode
         analyzer.mirrored = isFront
         analyzer.minIntervalMs = thermalPlan[0].analysisIntervalMs
@@ -1343,14 +1351,15 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
         GuidanceOverlay(
             state = overlayState,
-            onZoomSelected = { ratio ->
+            onZoomSelected = { requested ->
+                val ratio = requested.coerceAtMost(zoomCapFor(overlayState.shotStyle))
                 cameraControl?.cameraControl?.setZoomRatio(ratio)
             },
             onTypeMode = {
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (askMode) { askMode = false; overlayState = overlayState.copy(askMode = false, ask = null) }
-                    if (fitMode) { fitMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false }; overlayState = overlayState.copy(fitMode = false, fit = null) }
+                    if (fitMode || signsMode) { fitMode = false; signsMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false }; overlayState = overlayState.copy(fitMode = false, fit = null, signsMode = false, sign = null) }
                     typeMode = true
                     gPhase = "READY"; gHeard = ""; gPlan = emptyList(); gStep = -1; gNote = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false)
@@ -1379,8 +1388,22 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     }
                 }
             },
+            onSignsMode = {
+                if (!signsMode) {
+                    if (videoMode) { stopRecording(); videoMode = false }
+                    if (typeMode) { keyboard.cancelled = true; typeMode = false }
+                    askMode = false; fitMode = false
+                    signsMode = true
+                    fitGesture = null
+                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, askMode = false, ask = null, fitMode = false, fit = null)
+                    applyFitPick()
+                    refreshSigns()
+                    Log.i(TAG, "mode -> SIGNS")
+                }
+            },
             onFitMode = {
                 if (!fitMode) {
+                    if (signsMode) { signsMode = false; overlayState = overlayState.copy(signsMode = false, sign = null) }
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
                     askMode = false
@@ -1406,7 +1429,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 if (!askMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
-                    if (fitMode) { fitMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false } }
+                    if (fitMode) { fitMode = false }
+                    if (signsMode) { signsMode = false; overlayState = overlayState.copy(signsMode = false, sign = null) }
+                    analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false }
                     askMode = true
                     aPhase = "READY"; aPrompt = ""; aAnswer = ""; aNote = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null)
@@ -1434,8 +1459,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     videoMode = true
                     typeMode = false
                     askMode = false
-                    if (fitMode) { fitMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false } }
-                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, genius = null, askMode = false, ask = null, fitMode = false, fit = null)
+                    if (fitMode || signsMode) { fitMode = false; signsMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false } }
+                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, genius = null, askMode = false, ask = null, fitMode = false, fit = null, signsMode = false, sign = null)
                     Log.i(TAG, "mode -> VIDEO")
                 }
             },
@@ -1505,6 +1530,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 shotTypes.setStyle(style)
                 engine.setProfile(profiles.getValue(shotTypes.current))
                 overlayState = overlayState.copy(shotStyle = style)
+                val cap = zoomCapFor(style)
+                if (overlayState.zoomRatio > cap) cameraControl?.cameraControl?.setZoomRatio(cap)
                 haptics.play(HapticCue.TICK, 0.4f)
                 Log.i(TAG, "shot style -> ${style ?: "auto"}")
             },
@@ -1589,6 +1616,8 @@ private fun buildOverlayState(
     ask: AskState?,
     fitMode: Boolean,
     fit: FitState?,
+    signsMode: Boolean,
+    sign: String?,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -1645,6 +1674,8 @@ private fun buildOverlayState(
         ask = ask,
         fitMode = fitMode,
         fit = fit,
+        signsMode = signsMode,
+        sign = sign,
     )
 }
 

@@ -203,19 +203,21 @@ fun ModeTabs(
     onAsk: () -> Unit = {},
     fitMode: Boolean = false,
     onFit: () -> Unit = {},
+    signsMode: Boolean = false,
+    onSigns: () -> Unit = {},
 ) {
     // Six tabs do not all fit a phone's width at a readable size, so the
     // row scrolls; the selected tab is scrolled into view when it changes.
     val scroll = rememberScrollState()
-    LaunchedEffect(mode, videoMode, typeMode, askMode, fitMode) {
-        if (typeMode || askMode || fitMode) scroll.animateScrollTo(scroll.maxValue) else if (!videoMode && mode == CoachMode.PORTRAIT) scroll.animateScrollTo(0)
+    LaunchedEffect(mode, videoMode, typeMode, askMode, fitMode, signsMode) {
+        if (typeMode || askMode || fitMode || signsMode) scroll.animateScrollTo(scroll.maxValue) else if (!videoMode && mode == CoachMode.PORTRAIT) scroll.animateScrollTo(0)
     }
     Row(
         modifier = modifier.horizontalScroll(scroll),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val photo = !videoMode && !typeMode && !askMode && !fitMode
+        val photo = !videoMode && !typeMode && !askMode && !fitMode && !signsMode
         ModeTab("PORTRAIT", photo && mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         // The selfie lens is for people: the other modes stay on the rear camera.
         if (!portraitOnly) {
@@ -225,6 +227,7 @@ fun ModeTabs(
         }
         ModeTab("VIDEO", videoMode, onClick = onVideo)
         ModeTab("FIT", fitMode, onClick = onFit)
+        ModeTab("SIGNS", signsMode, onClick = onSigns)
         ModeTab("ASK", askMode, onClick = onAsk)
         if (!portraitOnly) ModeTab("STEVE", typeMode, onClick = onType)
     }
@@ -649,6 +652,27 @@ fun ReferenceButton(
 @Composable
 fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) =
     OnOffChip(label = "Easy shot", on = on, onToggle = onToggle, modifier = modifier)
+
+/** Shown while a Shot style mutes the words of guidance: a small crossed-out speech mark. */
+@Composable
+fun GuideMutedChip(modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(XT.Chip)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Canvas(modifier = Modifier.size(14.dp)) {
+            val w = size.width; val h = size.height; val st = 1.5f.dp.toPx()
+            drawRoundRect(XT.OnChipMuted, Offset(0f, h * 0.1f), Size(w, h * 0.65f), androidx.compose.ui.geometry.CornerRadius(w * 0.2f), style = Stroke(st))
+            drawLine(XT.OnChipMuted, Offset(w * 0.1f, h * 0.95f), Offset(w * 0.9f, h * 0.05f), st, StrokeCap.Round)
+        }
+        Text(text = "Guide off", color = XT.OnChipMuted, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+    }
+}
 
 /** The words of guidance, on or off. Off, the reticle and the arrows still guide. */
 @Composable

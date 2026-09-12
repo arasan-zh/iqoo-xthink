@@ -166,10 +166,13 @@ class AttitudeMathTest {
     }
 
     @Test
-    fun `a camera aimed high makes the engine say tilt down`() {
+    fun `a camera aimed high at a framed subject makes the engine say move up`() {
         val engine = GuidanceEngine(Fixtures.profile(ShotType.HEADSHOT))
         val attitude = AttitudeMath.fromRotationMatrix(poseMatrix(rollDeg = 0f, pitchDeg = 20f))
         val instruction = engine.update(attitude, Fixtures.box(), Fixtures.eyes(y = 0.33f), 100L)
-        assertEquals(Verb.TILT_DOWN, instruction.verb)
+        assertEquals(Verb.MOVE_UP, instruction.verb)
+        // And with nothing in frame, the same aim is a tilt.
+        val empty = GuidanceEngine(Fixtures.profile(ShotType.LANDSCAPE))
+        assertEquals(Verb.TILT_DOWN, empty.update(attitude, null, null, 100L).verb)
     }
 }

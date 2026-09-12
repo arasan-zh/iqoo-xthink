@@ -44,10 +44,11 @@ class GuidanceEngineTest {
             firstVerb(attitude = Attitude(12f, 15f), subject = wrong, eyeLine = onEyeLine),
         )
 
-        // 2. Roll fixed -> pitch. Framing is already good vertically, so this
-        //    is a genuine rotation error and TILT is correct.
+        // 2. Roll fixed -> pitch. A subject is framed and the camera aims up
+        //    at it: the photographer is below eye level - raise the phone.
+        //    (Tilting down would drop the subject out of the frame.)
         assertEquals(
-            Verb.TILT_DOWN,
+            Verb.MOVE_UP,
             firstVerb(attitude = Attitude(0f, 15f), subject = wrong, eyeLine = onEyeLine),
         )
 
@@ -171,23 +172,25 @@ class GuidanceEngineTest {
     }
 
     @Test
-    fun `pitch off with framing already good is a real rotation error`() {
+    fun `pitch off with a framed subject is answered by moving to eye level, not tilting`() {
+        // Aimed up at a framed subject: the photographer is below eye level.
+        // Raise the phone; tilting down would drop the subject out of frame.
         assertEquals(
-            Verb.TILT_DOWN,
+            Verb.MOVE_UP,
             firstVerb(attitude = Attitude(0f, 15f), subject = box(), eyeLine = eyes(y = 0.33f)),
         )
         assertEquals(
-            Verb.TILT_UP,
+            Verb.MOVE_DOWN,
             firstVerb(attitude = Attitude(0f, -15f), subject = box(), eyeLine = eyes(y = 0.33f)),
         )
     }
 
     @Test
-    fun `pitch and framing disagreeing in sign is also a rotation error`() {
-        // Aimed up, yet the subject is high in frame. Moving the phone cannot
-        // fix both, so correct the rotation.
+    fun `pitch and framing disagreeing in sign - raise the phone, which fixes both`() {
+        // Aimed up, yet the subject is high in frame: raising the phone
+        // brings the camera to eye level and the subject down the frame.
         assertEquals(
-            Verb.TILT_DOWN,
+            Verb.MOVE_UP,
             firstVerb(attitude = Attitude(0f, 15f), subject = box(cy = 0.40f), eyeLine = eyes(y = 0.15f)),
         )
     }
@@ -394,7 +397,7 @@ class GuidanceEngineTest {
             firstVerb(subject = box(cy = 0.60f), eyeLine = eyes(y = 0.55f), mirrored = true),
         )
         assertEquals(
-            Verb.TILT_DOWN,
+            Verb.MOVE_UP,
             firstVerb(attitude = Attitude(0f, 15f), subject = box(), eyeLine = eyes(), mirrored = true),
         )
         assertEquals(

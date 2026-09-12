@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** What FIT shows. [mode] is "SQUAT", "PUSHUP" or "SIGNS". */
+/** What FIT shows. [mode] is "SQUAT" or "PUSHUP". */
 data class FitState(
     val mode: String,
     val count: Int,
@@ -33,8 +33,8 @@ data class FitState(
 )
 
 /**
- * FIT. Squats and push-ups counted from the body's joints; hand signs
- * read from the hand. Big numbers, because it is read from the floor.
+ * FIT. Squats and push-ups counted from the body's joints. Big numbers,
+ * because it is read from the floor.
  */
 @Composable
 fun FitPanel(
@@ -54,24 +54,7 @@ fun FitPanel(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Pill("Squats", state.mode == "SQUAT", { onMode("SQUAT") }, Modifier.weight(1f))
             Pill("Push-ups", state.mode == "PUSHUP", { onMode("PUSHUP") }, Modifier.weight(1f))
-            Pill("Hand signs", state.mode == "SIGNS", { onMode("SIGNS") }, Modifier.weight(1.2f))
         }
-        if (state.mode == "SIGNS") {
-            val (emoji, name) = when (state.gesture) {
-                "Thumb_Up" -> "👍" to "Thumbs up  ·  takes the photo"
-                "Thumb_Down" -> "👎" to "Thumbs down"
-                "Victory" -> "✌️" to "Victory"
-                "Pointing_Up" -> "☝️" to "Pointing up"
-                "Open_Palm" -> "🖐️" to "Open palm"
-                "Closed_Fist" -> "✊" to "Fist"
-                "ILoveYou" -> "🤟" to "I love you"
-                else -> "🤚" to "Show a hand sign"
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-                Text(text = emoji, fontSize = 64.sp)
-                Text(text = name, color = if (state.gesture != null) XT.Amber else XT.OnChipMuted, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            }
-        } else {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = state.count.toString(),
@@ -102,7 +85,7 @@ fun FitPanel(
                 }
             }
             Pill("Reset", false, onReset, Modifier.fillMaxWidth())
-        }
+
     }
 }
 
@@ -121,5 +104,47 @@ private fun Pill(text: String, on: Boolean, onClick: () -> Unit, modifier: Modif
         contentAlignment = Alignment.Center,
     ) {
         Text(text = text, color = if (on) Color.Black else XT.OnChip, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+
+/**
+ * SIGNS. One hand sign at a time, read from the hand and shown as the
+ * English word. Seven signs - what the on-device model knows. It takes
+ * no photos and runs nothing else; it is a translator, sign by sign.
+ */
+@Composable
+fun SignsPanel(sign: String?, modifier: Modifier = Modifier) {
+    val (emoji, word) = when (sign) {
+        "Thumb_Up" -> "👍" to "Yes / Good"
+        "Thumb_Down" -> "👎" to "No / Bad"
+        "Victory" -> "✌️" to "Peace / Two"
+        "Pointing_Up" -> "☝️" to "Wait / One"
+        "Open_Palm" -> "🖐️" to "Stop / Hello"
+        "Closed_Fist" -> "✊" to "Hold / Strong"
+        "ILoveYou" -> "🤟" to "I love you"
+        else -> "🤚" to "Show a hand sign"
+    }
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(XT.Corner))
+            .background(XT.ChipStrong)
+            .padding(horizontal = 14.dp, vertical = 14.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(text = emoji, fontSize = 72.sp)
+        Text(
+            text = word,
+            color = if (sign != null) XT.Amber else XT.OnChipMuted,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold,
+        )
+        Text(
+            text = "Seven signs: thumbs up/down, victory, pointing up, open palm, fist, I love you",
+            color = XT.OnChipMuted,
+            fontSize = 11.sp,
+        )
     }
 }
