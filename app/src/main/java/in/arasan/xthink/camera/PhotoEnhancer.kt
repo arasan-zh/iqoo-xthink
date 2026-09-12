@@ -134,6 +134,7 @@ class PhotoEnhancer(private val context: Context) {
         callbackExecutor: Executor,
         advisor: FinishAdvisor? = null,
         paint: Boolean = true,
+        onSmall: ((Bitmap) -> Unit)? = null,
         onResult: (Result) -> Unit,
     ) {
         worker.execute {
@@ -143,6 +144,8 @@ class PhotoEnhancer(private val context: Context) {
                 callbackExecutor.execute { onResult(Result(null, null)) }
                 return@execute
             }
+            // The review opens on this at once; the rest arrives as it is worked out.
+            if (onSmall != null) callbackExecutor.execute { onSmall(small) }
             val image = InputImage.fromBitmap(small, 0)
             val soft = isSoft(small)
             faces.process(image).addOnSuccessListener(worker) { found ->

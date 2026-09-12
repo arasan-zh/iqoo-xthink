@@ -475,6 +475,19 @@ piece device-verified on the iQOO 15 before it was committed.
   headroom extension all count from there. One crop test moved from 4:5
   to 3:4 as a result: mid-thigh no longer fits the print shape with the
   extra room, and the legs win over the shape, as the ladder says.
+- **The review opens at once, and the crop is a switch**: the shutter's
+  review used to wait for the coach (3 s warm, minutes on a cold GPU
+  compile) and then showed a crop as the enhanced picture - a zoom nobody
+  asked for. Now the review opens on the small decode the moment it is in,
+  with the shot as taken and a spinner card where ENHANCED will be
+  (LOOKING while the coach plans, RETOUCHING while LaMa works, "this can
+  take a while"); the plan and then the retouch arrive whenever they do,
+  and a haptic tick marks the retouch landing. ENHANCED is LaMa's work at
+  full frame; a CROP chip, off by default, brings the photographer's crop
+  and, with it, any room painted in. AS SHOT is always the untouched
+  photo. Save applies exactly the switches that are on. Measured with the
+  screen locked: the same hole that takes 3.7 s awake took 27 s, so the
+  wait the spinner covers is real on a pocketed phone.
 - **Opting out**: a *Retouch* chip in the tune row (Portrait only, on by
   default, session-scoped like *Easy shot*). Off, LaMa never touches the
   photo - no holes, no painted strips, not even the reflected headroom -

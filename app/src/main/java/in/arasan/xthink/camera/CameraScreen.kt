@@ -361,40 +361,57 @@ private fun CameraAndGuidance(
     // The retouch waits for the review to open.
     var cleanPending by remember { mutableStateOf<PhotoEnhancer.Result?>(null) }
 
-    /** Open the review for a photo just taken (or handed in by the dev hook). */
-    fun openReview(source: Uri, result: PhotoEnhancer.Result) {
-        val before = result.small
-        val proposal = result.proposal
-        if (before == null || (proposal == null && result.job.isEmpty)) {
-            // No recognised person, nothing to choose: the shot stands as
-            // taken, with the camera-page look baked in if one is set.
-            val look = Looks.ALL[overlayState.look]
-            if (!look.isNatural) {
-                enhancer.saveFinal(source, null, false, look.matrix, ContextCompat.getMainExecutor(context)) { saved ->
-                    if (saved != null) lastCaptureUri = saved
-                    Log.i(TAG, "look ${look.name} baked -> $saved")
-                }
-            }
-            if (result.soft) Log.i(TAG, "capture looks soft")
-            return
+    /** No review (scenes, objects): the shot stands as taken, with the camera-page look baked in if one is set. */
+    fun bakeLook(source: Uri) {
+        val look = Looks.ALL[overlayState.look]
+        if (look.isNatural) return
+        enhancer.saveFinal(source, null, false, look.matrix, ContextCompat.getMainExecutor(context)) { saved ->
+            if (saved != null) lastCaptureUri = saved
+            Log.i(TAG, "look ${look.name} baked -> $saved")
         }
-        pendingEnhance = proposal
+    }
+
+    /**
+     * The review opens the moment the small decode is in: the shot as
+     * taken, and a spinner where ENHANCED will be. The coach's plan and
+     * LaMa's work arrive after, however long they take.
+     */
+    fun openReviewEarly(source: Uri, small: Bitmap) {
+        pendingEnhance = null
         reviewSource = source
         reviewClean = null
-        // A plan with no crop - the frame kept, something painted out -
-        // still gets the review: AS SHOT alone, and the retouch when it lands.
+        cleanPending = null
         overlayState = overlayState.copy(
             review = ReviewState(
-                before = before.asImageBitmap(),
-                after = proposal?.after?.asImageBitmap(),
-                rationale = proposal?.proposal?.rationale ?: emptyList(),
-                enhanced = proposal != null,
-                look = if (overlayState.look != 0) overlayState.look else (result.suggestedLook ?: 0),
+                before = small.asImageBitmap(),
+                after = null,
+                rationale = emptyList(),
+                enhanced = true,
+                look = overlayState.look,
+                analysing = true,
+            ),
+            showLooks = false,
+        )
+    }
+
+    /** The coach's plan is in: the crop on offer, the look, and what LaMa is to do next. */
+    fun applyAnalysis(source: Uri, result: PhotoEnhancer.Result) {
+        if (reviewSource != source) return
+        val r = overlayState.review ?: return
+        if (result.small == null) { pendingEnhance = null; reviewSource = null; cleanPending = null; overlayState = overlayState.copy(review = null); return }
+        pendingEnhance = result.proposal
+        overlayState = overlayState.copy(
+            review = r.copy(
+                after = result.proposal?.after?.asImageBitmap(),
+                rationale = result.proposal?.proposal?.rationale ?: emptyList(),
+                look = if (overlayState.look != 0) overlayState.look else (result.suggestedLook ?: r.look),
                 soft = result.soft,
+                analysing = false,
                 cleaning = !result.job.isEmpty,
             ),
         )
         cleanPending = result
+        if (result.soft) Log.i(TAG, "capture looks soft")
     }
 
     fun closeReview() {
@@ -444,6 +461,24 @@ private fun CameraAndGuidance(
     // committed to the heavy work then - so the first retouch is prompt.
     LaunchedEffect(coachState) { if (coachState == LlmCoach.State.READY) inpainter.warmUp() }
 
+    /** A modest copy of what the preview shows, for the coach's eyes. */
+    fun previewSnapshot(): Bitmap? = runCatching { previewView.bitmap }.getOrNull()
+
+    LaunchedEffect(debugEnhanceUri, coachState) {
+        if (debugEnhanceUri == null) return@LaunchedEffect
+        // Wait for the coach to load (or be absent) so the hook tests the same path a capture takes.
+        if (coachState == LlmCoach.State.MISSING && coach.modelFile() != null) { ensureCoach(); return@LaunchedEffect }
+        if (coachState == LlmCoach.State.LOADING) return@LaunchedEffect
+        val u = Uri.parse(debugEnhanceUri)
+        enhancer.analyse(u, ContextCompat.getMainExecutor(context), finishAdvisor(), overlayState.retouch, onSmall = { openReviewEarly(u, it) }) { applyAnalysis(u, it) }
+    }
+    var captureInFlight by remember { mutableStateOf(false) }
+
+    // The haptic lock game. :guidance decides the rhythm; the driver only
+    // knows the motor.
+    val lockHaptics = remember { LockHaptics() }
+    val haptics = remember { HapticDriver(context) }
+
     // The retouch, once the review is up: LaMa does what the plan says,
     // then the chip appears. An empty plan, or no LaMa file, and the review
     // just stops saying "looking".
@@ -459,6 +494,7 @@ private fun CameraAndGuidance(
         enhancer.retouch(result, inpainter, ContextCompat.getMainExecutor(context)) { clean ->
             if (reviewSource != source) return@retouch
             reviewClean = clean
+            if (clean != null) haptics.click()
             overlayState.review?.let { r ->
                 overlayState = overlayState.copy(
                     review = r.copy(
@@ -473,23 +509,6 @@ private fun CameraAndGuidance(
         }
     }
 
-    /** A modest copy of what the preview shows, for the coach's eyes. */
-    fun previewSnapshot(): Bitmap? = runCatching { previewView.bitmap }.getOrNull()
-
-    LaunchedEffect(debugEnhanceUri, coachState) {
-        if (debugEnhanceUri == null) return@LaunchedEffect
-        // Wait for the coach to load (or be absent) so the hook tests the same path a capture takes.
-        if (coachState == LlmCoach.State.MISSING && coach.modelFile() != null) { ensureCoach(); return@LaunchedEffect }
-        if (coachState == LlmCoach.State.LOADING) return@LaunchedEffect
-        val u = Uri.parse(debugEnhanceUri)
-        enhancer.analyse(u, ContextCompat.getMainExecutor(context), finishAdvisor(), overlayState.retouch) { openReview(u, it) }
-    }
-    var captureInFlight by remember { mutableStateOf(false) }
-
-    // The haptic lock game. :guidance decides the rhythm; the driver only
-    // knows the motor.
-    val lockHaptics = remember { LockHaptics() }
-    val haptics = remember { HapticDriver(context) }
 
     // The thermal governor. :guidance decides the tier; this screen applies
     // the plan - detector rate, haptics, auto-capture - and shows a chip only
@@ -1085,10 +1104,10 @@ private fun CameraAndGuidance(
                     )
                     if (uri != null) {
                         if (overlayState.mode == CoachMode.PORTRAIT) {
-                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), finishAdvisor(), overlayState.retouch) { openReview(uri, it) }
+                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), finishAdvisor(), overlayState.retouch, onSmall = { openReviewEarly(uri, it) }) { applyAnalysis(uri, it) }
                         } else {
                             // Scenes, objects, creative: no crop to a person - the shot stands, with the look.
-                            openReview(uri, PhotoEnhancer.Result(null, null))
+                            bakeLook(uri)
                         }
                     }
                 }
@@ -1695,15 +1714,23 @@ private fun CameraAndGuidance(
                 if (r != null && src != null && !r.saving) {
                     overlayState = overlayState.copy(review = r.copy(saving = true))
                     val look = Looks.ALL[r.look].matrix
-                    val job = if (r.useClean) reviewClean?.job else null
-                    enhancer.saveFinal(src, pendingEnhance, r.enhanced, look, ContextCompat.getMainExecutor(context), job, inpainter) { saved ->
+                    // ENHANCED is whatever switches are on: the retouch, the crop (which brings the painted room with it).
+                    val cropping = r.enhanced && r.useCrop && r.after != null
+                    val painting = r.enhanced && r.useClean && r.cleanBefore != null
+                    val job = if (painting) reviewClean?.job?.takeIf { it.remove.isNotEmpty() || cropping } else null
+                    enhancer.saveFinal(src, pendingEnhance, cropping, look, ContextCompat.getMainExecutor(context), job, inpainter) { saved ->
                         if (saved != null) {
                             lastCaptureUri = saved
-                            val chosen = if (r.enhanced) (if (r.useClean) r.cleanAfter ?: r.after else r.after) else (if (r.useClean) r.cleanBefore else null)
+                            val chosen = when {
+                                cropping && painting -> r.cleanAfter ?: r.after
+                                cropping -> r.after
+                                painting -> r.cleanBefore
+                                else -> null
+                            }
                             overlayState = overlayState.copy(thumbnail = chosen ?: overlayState.thumbnail)
                         }
                         haptics.click()
-                        Log.i(TAG, "review: kept ${if (r.enhanced) "enhanced" else "original"} look=${Looks.ALL[r.look].name} painted=${job != null} saved=$saved")
+                        Log.i(TAG, "review: kept ${if (cropping || painting) "enhanced" else "original"} crop=$cropping painted=${job != null} look=${Looks.ALL[r.look].name} saved=$saved")
                         closeReview()
                     }
                 }
@@ -1714,6 +1741,9 @@ private fun CameraAndGuidance(
             },
             onReviewToggleClean = {
                 overlayState.review?.let { r -> if (r.cleanBefore != null) overlayState = overlayState.copy(review = r.copy(useClean = !r.useClean)) }
+            },
+            onReviewToggleCrop = {
+                overlayState.review?.let { r -> if (r.after != null) overlayState = overlayState.copy(review = r.copy(useCrop = !r.useCrop)) }
             },
             onTap = { x, y ->
                 // Focus and meter where the finger landed, and tell the coach

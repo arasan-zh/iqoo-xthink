@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -63,6 +64,10 @@ data class ReviewState(
     val cleanNote: String? = null,
     /** Show and save the retouched picture. */
     val useClean: Boolean = false,
+    /** The coach is working out the shot: the crop, the look, what to paint. */
+    val analysing: Boolean = false,
+    /** Apply the photographer's crop. Off by default: a crop reads as a zoom nobody asked for. */
+    val useCrop: Boolean = false,
 )
 
 /**
@@ -81,11 +86,21 @@ fun ReviewSheet(
     onDiscard: () -> Unit,
     modifier: Modifier = Modifier,
     onToggleClean: () -> Unit = {},
+    onToggleCrop: () -> Unit = {},
 ) {
     val appear by animateFloatAsState(1f, tween(260), label = "review")
+    // AS SHOT is the photo as taken. ENHANCED is what the choices make of
+    // it: LaMa's retouch at full frame by default, the crop only when asked.
     val clean = review.useClean && review.cleanBefore != null
-    val beforeImage = if (clean) review.cleanBefore!! else review.before
-    val afterImage = if (clean && review.cleanAfter != null) review.cleanAfter else review.after
+    val cropping = review.useCrop && review.after != null
+    val beforeImage = review.before
+    val afterImage: ImageBitmap? = when {
+        cropping && clean && review.cleanAfter != null -> review.cleanAfter
+        cropping -> review.after
+        clean -> review.cleanBefore
+        else -> null
+    }
+    val working = afterImage == null && (review.analysing || review.cleaning)
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -130,41 +145,31 @@ fun ReviewSheet(
                     onClick = { onChooseEnhanced(true) },
                     modifier = Modifier.weight(1f),
                 )
+            } else if (working) {
+                Working(label = if (review.analysing) "LOOKING" else "RETOUCHING", modifier = Modifier.weight(1f))
             }
-        }
-        if (review.after != null && review.rationale.isNotEmpty()) {
-            Text(
-                text = review.rationale.joinToString("  ·  "),
-                color = XT.OnChipMuted,
-                fontSize = 12.sp,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
         }
 
-        // --- the retouch: offered once LaMa has filled what the coach named ---
-        if (review.cleaning) {
-            Text(text = "Looking for distractions\u2026", color = XT.OnChipMuted, fontSize = 12.sp)
+        // --- what went into ENHANCED, each a switch: the retouch, the crop ---
+        if (review.analysing) {
+            Text(text = "Working out the shot\u2026", color = XT.OnChipMuted, fontSize = 12.sp)
+        } else if (review.cleaning) {
+            Text(text = "Retouching\u2026 this can take a while", color = XT.OnChipMuted, fontSize = 12.sp)
         } else if (review.cleanNote != null && review.cleanBefore != null) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(if (review.useClean) XT.Amber.copy(alpha = 0.18f) else XT.Chip)
-                    .border(1.dp, if (review.useClean) XT.Amber else Color.Transparent, RoundedCornerShape(16.dp))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onToggleClean)
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-            ) {
-                Text(
-                    text = if (review.useClean) "\u2713  RETOUCHED" else "RETOUCH",
-                    color = if (review.useClean) XT.Amber else XT.OnChip,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    letterSpacing = 1.sp,
-                )
-                Spacer(Modifier.width(10.dp))
-                Text(text = review.cleanNote, color = XT.OnChipMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            }
+            OptionChip(
+                on = review.useClean,
+                label = if (review.useClean) "\u2713  RETOUCHED" else "RETOUCH",
+                note = review.cleanNote,
+                onClick = onToggleClean,
+            )
+        }
+        if (review.after != null && !review.analysing) {
+            OptionChip(
+                on = review.useCrop,
+                label = if (review.useCrop) "\u2713  CROPPED" else "CROP",
+                note = review.rationale.joinToString("  ·  "),
+                onClick = onToggleCrop,
+            )
         }
 
         if (review.soft) {
@@ -208,7 +213,7 @@ fun ReviewSheet(
             Answer(
                 text = when {
                     review.saving -> "Saving…"
-                    !review.enhanced && look.isNatural -> "Keep as shot"
+                    (!review.enhanced || afterImage == null) && look.isNatural -> "Keep as shot"
                     else -> "Save this one"
                 },
                 filled = true,
@@ -276,6 +281,58 @@ private fun Choice(
             letterSpacing = 1.sp,
             modifier = Modifier.align(Alignment.CenterHorizontally),
         )
+    }
+}
+
+/** The ENHANCED card's place while the coach and LaMa work: a quiet spinner in the accent. */
+@Composable
+private fun Working(label: String, modifier: Modifier = Modifier) {
+    Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .aspectRatio(0.62f)
+                .clip(RoundedCornerShape(XT.Corner))
+                .background(Color.White.copy(alpha = 0.05f))
+                .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(XT.Corner)),
+            contentAlignment = Alignment.Center,
+        ) {
+            CircularProgressIndicator(color = XT.Green, strokeWidth = 2.dp, modifier = Modifier.size(30.dp))
+        }
+        Text(
+            text = label,
+            color = XT.OnChipMuted,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+            modifier = Modifier.align(Alignment.CenterHorizontally),
+        )
+    }
+}
+
+/** One ingredient of ENHANCED as a switch: on in amber, with the coach's note beside it. */
+@Composable
+private fun OptionChip(on: Boolean, label: String, note: String, onClick: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (on) XT.Amber.copy(alpha = 0.18f) else XT.Chip)
+            .border(1.dp, if (on) XT.Amber else Color.Transparent, RoundedCornerShape(16.dp))
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+    ) {
+        Text(
+            text = label,
+            color = if (on) XT.Amber else XT.OnChip,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 1.sp,
+        )
+        if (note.isNotBlank()) {
+            Spacer(Modifier.width(10.dp))
+            Text(text = note, color = XT.OnChipMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
     }
 }
 
