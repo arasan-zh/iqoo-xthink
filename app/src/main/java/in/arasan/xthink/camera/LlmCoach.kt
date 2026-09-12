@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, CLEAN }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -246,6 +246,21 @@ class LlmCoach(private val context: Context) {
             You are a photography coach looking through the phone camera. Say the ONE most useful change
             for this shot - light, angle, background, distance or moment - in at most 12 words.
             Be specific to what you see. No greeting, no preamble, no punctuation flourishes.
+        """.trimIndent()
+
+        /**
+         * The retouch. The detector's candidates are listed in words; the
+         * model, looking at the photo, says which are distractions. Read by
+         * Retouch.parse, so the shape of the answer is fixed: one line,
+         * `REMOVE 1,3 | why` or `NONE | why`. The numbers become holes for
+         * LaMa - so the rules say what a hole may and may not be.
+         */
+        fun cleanPrompt(candidates: String): String = """
+            You are a photo retoucher finishing this photo of a person. Things in it that could be painted out, numbered:
+            $candidates
+            Paint out only distractions: litter, a stray bag or bottle, a cable, a bin, a sign, a photobomber at the edge, clutter that pulls the eye from the person.
+            Never paint out the person, anything they wear or hold, or anything that gives the place its character.
+            Answer with exactly one line: REMOVE <numbers, comma separated> | <what they are, three words> - or NONE | <why, three words>.
         """.trimIndent()
 
         /** The crop and the look, in two words. Parsed by PhotographerCrop.parseCut and Looks. */

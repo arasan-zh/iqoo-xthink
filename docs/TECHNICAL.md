@@ -408,3 +408,23 @@ piece device-verified on the iQOO 15 before it was committed.
   gallery. Translate, Scan and Fit lost their tabs (the deep links still
   reach them). Voice and Chat share one `Conversation`, so a follow-up
   knows what was said; leaving a room stops the speech.
+- **The retouch (LaMa on the phone)**: after the shutter, once the review
+  is up, ML Kit's object detector lists what is in the photo; `Retouch`
+  (pure Kotlin, tested) drops the person's column and anything huge or
+  tiny, and writes the rest as a numbered list in words (*"1: bottom-left
+  edge, 3% of the frame, looks like food"*); Gemma, looking at the photo,
+  answers one fixed line - `REMOVE 1,3 | what they are` or `NONE | why` -
+  which `Retouch.parse` reads; the numbers become holes, grown a little,
+  and `Inpainter` fills them with big-lama (`lama_fp32.onnx`, 208 MB,
+  Carve's export, ONNX Runtime on four CPU threads, fixed 512×512). The
+  net never sees the whole photo: the smallest square around the holes
+  with context goes through at 512 and only the filled pixels, feathered,
+  come back at the photo's own resolution - a stray cup in a 12-megapixel
+  frame keeps the frame's sharpness everywhere else. The desk test showed
+  the one thing that matters: a hole that hugs the object leaves a ghost;
+  ten pixels of margin at 512 removes it cleanly. The review shows a
+  RETOUCHED chip (tap to toggle) and saves the retouch at full size. The
+  optimised graph is cached on first load (37 s once, 2 s after); the
+  session is warmed when the coach loads. Measured: detector 60 ms, Gemma
+  2.4 s, LaMa 3.7 s on the 1024-px review copy. The model file lives next
+  to the Gemma bundles in `/data/local/tmp/llm` (`scripts/dev.sh model`).

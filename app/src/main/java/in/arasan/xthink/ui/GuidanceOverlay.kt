@@ -78,6 +78,7 @@ fun GuidanceOverlay(
     onReviewChooseLook: (Int) -> Unit,
     onReviewSave: () -> Unit,
     onReviewDiscard: () -> Unit,
+    onReviewToggleClean: () -> Unit = {},
     onToggleEasyShot: () -> Unit,
     onToggleLooks: () -> Unit,
     onPickLook: (Int) -> Unit,
@@ -342,6 +343,7 @@ fun GuidanceOverlay(
                 onChooseLook = onReviewChooseLook,
                 onSave = onReviewSave,
                 onDiscard = onReviewDiscard,
+                onToggleClean = onReviewToggleClean,
             )
         }
     }

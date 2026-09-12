@@ -87,6 +87,7 @@ dependencies {
     implementation(libs.mlkit.objects)
     implementation(libs.mlkit.pose)
     implementation(libs.mlkit.text)
+    implementation(libs.onnxruntime.android)
     implementation(libs.mediapipe.genai)
     implementation(libs.mediapipe.core)
     implementation(libs.mediapipe.vision)

@@ -115,10 +115,12 @@ STEPS
     # and are pushed to /data/local/tmp/llm, which the app can read. The
     # app loads the biggest bundle it finds - E4B over E2B.
     dir="$HOME/Lab/xthink/models"
-    ls "$dir"/*.task >/dev/null 2>&1 || { echo "no .task models in $dir (see docs/TECHNICAL.md)" >&2; exit 2; }
+    # LaMa (lama_fp32.onnx, 208 MB) sits beside the Gemma bundles and is pushed the same way.
+    ls "$dir"/*.task "$dir"/*.onnx >/dev/null 2>&1 || { echo "no .task/.onnx models in $dir (see docs/TECHNICAL.md)" >&2; exit 2; }
     for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
       adb -s "$s" shell "mkdir -p /data/local/tmp/llm && chmod 755 /data/local/tmp/llm"
-      for model in "$dir"/*.task; do
+      for model in "$dir"/*.task "$dir"/*.onnx; do
+        [ -e "$model" ] || continue
         name=$(basename "$model")
         have=$(adb -s "$s" shell stat -c %s "/data/local/tmp/llm/$name" 2>/dev/null | tr -d '\r')
         if [ "$have" = "$(wc -c < "$model" | tr -d ' ')" ]; then

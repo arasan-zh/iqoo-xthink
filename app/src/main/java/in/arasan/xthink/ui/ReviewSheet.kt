@@ -54,6 +54,15 @@ data class ReviewState(
     val saving: Boolean = false,
     /** The photo is soft - missed focus or motion. Said once, plainly. */
     val soft: Boolean = false,
+    /** The retouch is being worked out - detector, coach, LaMa - in the background. */
+    val cleaning: Boolean = false,
+    /** The photo with the distractions painted out, as shot and under the crop; null until there is one. */
+    val cleanBefore: ImageBitmap? = null,
+    val cleanAfter: ImageBitmap? = null,
+    /** Why, in the coach's words. */
+    val cleanNote: String? = null,
+    /** Show and save the retouched picture. */
+    val useClean: Boolean = false,
 )
 
 /**
@@ -71,8 +80,12 @@ fun ReviewSheet(
     onSave: () -> Unit,
     onDiscard: () -> Unit,
     modifier: Modifier = Modifier,
+    onToggleClean: () -> Unit = {},
 ) {
     val appear by animateFloatAsState(1f, tween(260), label = "review")
+    val clean = review.useClean && review.cleanBefore != null
+    val beforeImage = if (clean) review.cleanBefore!! else review.before
+    val afterImage = if (clean && review.cleanAfter != null) review.cleanAfter else review.after
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -102,16 +115,16 @@ fun ReviewSheet(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.weight(1f, fill = false)) {
             Choice(
                 label = "AS SHOT",
-                image = review.before,
+                image = beforeImage,
                 filter = filter,
                 chosen = !review.enhanced,
                 onClick = { onChooseEnhanced(false) },
                 modifier = Modifier.weight(1f),
             )
-            if (review.after != null) {
+            if (afterImage != null) {
                 Choice(
                     label = "ENHANCED",
-                    image = review.after,
+                    image = afterImage,
                     filter = filter,
                     chosen = review.enhanced,
                     onClick = { onChooseEnhanced(true) },
@@ -127,6 +140,31 @@ fun ReviewSheet(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
             )
+        }
+
+        // --- the retouch: offered once LaMa has filled what the coach named ---
+        if (review.cleaning) {
+            Text(text = "Looking for distractions\u2026", color = XT.OnChipMuted, fontSize = 12.sp)
+        } else if (review.cleanNote != null && review.cleanBefore != null) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (review.useClean) XT.Amber.copy(alpha = 0.18f) else XT.Chip)
+                    .border(1.dp, if (review.useClean) XT.Amber else Color.Transparent, RoundedCornerShape(16.dp))
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onToggleClean)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Text(
+                    text = if (review.useClean) "\u2713  RETOUCHED" else "RETOUCH",
+                    color = if (review.useClean) XT.Amber else XT.OnChip,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp,
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(text = review.cleanNote, color = XT.OnChipMuted, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
 
         if (review.soft) {
@@ -148,7 +186,7 @@ fun ReviewSheet(
                 letterSpacing = 1.2.sp,
             )
             val scroll = rememberScrollState()
-            val source = if (review.enhanced && review.after != null) review.after else review.before
+            val source = if (review.enhanced && afterImage != null) afterImage else beforeImage
             Row(
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.horizontalScroll(scroll),
