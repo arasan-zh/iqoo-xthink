@@ -91,6 +91,8 @@ fun GuidanceOverlay(
     onFitPick: (String) -> Unit,
     onFitReset: () -> Unit,
     onAskMode: () -> Unit,
+    onScanMode: () -> Unit,
+    onAskScan: () -> Unit,
     onAskTranslate: () -> Unit,
     onAskCopy: () -> Unit,
     onAskSave: () -> Unit,
@@ -249,7 +251,8 @@ fun GuidanceOverlay(
                 } else if (state.askMode && ask != null) {
                     AskPanel(
                         state = ask,
-                        onTranslate = onAskTranslate,
+                        onTranslate = if (state.scanMode) onAskScan else onAskTranslate,
+                        scan = state.scanMode,
                         onCopy = onAskCopy,
                         onSave = onAskSave,
                         onStop = onAskStop,
@@ -285,6 +288,8 @@ fun GuidanceOverlay(
                         onType = onTypeMode,
                         askMode = state.askMode,
                         onAsk = onAskMode,
+                        scanMode = state.scanMode,
+                        onScan = onScanMode,
                         fitMode = state.fitMode,
                         onFit = onFitMode,
                     )

@@ -201,6 +201,8 @@ fun ModeTabs(
     onType: () -> Unit = {},
     askMode: Boolean = false,
     onAsk: () -> Unit = {},
+    scanMode: Boolean = false,
+    onScan: () -> Unit = {},
     fitMode: Boolean = false,
     onFit: () -> Unit = {},
 ) {
@@ -225,7 +227,8 @@ fun ModeTabs(
         }
         ModeTab("VIDEO", videoMode, onClick = onVideo)
         ModeTab("FIT", fitMode, onClick = onFit)
-        ModeTab("TRANSLATE", askMode, onClick = onAsk)
+        ModeTab("SCAN", askMode && scanMode, onClick = onScan)
+        ModeTab("TRANSLATE", askMode && !scanMode, onClick = onAsk)
         if (!portraitOnly) ModeTab("STEVE", typeMode, onClick = onType)
     }
 }

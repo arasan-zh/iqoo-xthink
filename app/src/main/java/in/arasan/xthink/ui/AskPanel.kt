@@ -51,6 +51,7 @@ data class AskState(
 fun AskPanel(
     state: AskState,
     onTranslate: () -> Unit,
+    scan: Boolean = false,
     onCopy: () -> Unit,
     onSave: () -> Unit,
     onStop: () -> Unit,
@@ -97,7 +98,7 @@ fun AskPanel(
         ) {
             if (state.prompt.isBlank() && state.answer.isBlank()) {
                 Text(
-                    text = "Point the camera at a sign, a menu, a page \u2014 Tamil, Hindi, anything \u2014 and tap Translate.",
+                    text = if (scan) "Point the camera at a page, a card, a whiteboard \u2014 and tap Scan. The text comes out clean, ready to copy or save." else "Point the camera at a sign, a menu, a page \u2014 Tamil, Hindi, anything \u2014 and tap Translate.",
                     color = XT.OnChipMuted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -115,7 +116,7 @@ fun AskPanel(
             if (busy) {
                 Answer(text = "Stop", filled = false, onClick = onStop, modifier = Modifier.weight(1f))
             } else {
-                Answer(text = "Translate to English", filled = state.ready, onClick = onTranslate, modifier = Modifier.weight(1f))
+                Answer(text = if (scan) "Scan text" else "Translate to English", filled = scan || state.ready, onClick = onTranslate, modifier = Modifier.weight(1f))
             }
         }
         if (!busy && state.answer.isNotBlank()) {

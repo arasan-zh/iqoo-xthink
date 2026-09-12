@@ -43,9 +43,11 @@ data class OverlayState(
     /** SIGNS tab: a hand sign, as an English word. */
     val signsMode: Boolean = false,
     val sign: String? = null,
-    /** ASK tab: ask about, read, translate or keep what the camera sees. */
+    /** TRANSLATE / SCAN tabs: read what the camera sees, into English or into clean text. */
     val askMode: Boolean = false,
     val ask: AskState? = null,
+    /** True when the tab is SCAN (clean text) rather than TRANSLATE (English). */
+    val scanMode: Boolean = false,
     /** GENIUS tab: say it, the phone does it on a paired Mac; the camera watches the screen. */
     val typeMode: Boolean = false,
     val genius: GeniusState? = null,

@@ -704,6 +704,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     // Point the camera at anything: ask, scan, translate, save. One look
     // per tap; the model is the same Gemma, through the camera.
     var askMode by remember { mutableStateOf(false) }
+    var scanMode by remember { mutableStateOf(false) }
     var aPhase by remember { mutableStateOf("READY") }
     var aPrompt by remember { mutableStateOf("") }
     var aAnswer by remember { mutableStateOf("") }
@@ -1056,9 +1057,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             Log.i(TAG, "mode -> photo (from FIT/SIGNS)")
         }
         if (askMode && leaveVideo) {
-            askMode = false
-            overlayState = overlayState.copy(askMode = false, ask = null)
-            Log.i(TAG, "mode -> photo (from ASK)")
+            askMode = false; scanMode = false
+            overlayState = overlayState.copy(askMode = false, ask = null, scanMode = false)
+            Log.i(TAG, "mode -> photo (from TRANSLATE/SCAN)")
         }
         if (typeMode && leaveVideo) {
             Log.i(TAG, "genius: left by mode change")
@@ -1159,6 +1160,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 genius = overlayState.genius,
                 askMode = overlayState.askMode,
                 ask = overlayState.ask,
+                scanMode = overlayState.scanMode,
                 fitMode = overlayState.fitMode,
                 fit = overlayState.fit,
                 signsMode = overlayState.signsMode,
@@ -1438,8 +1440,25 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 Log.i(TAG, "fit -> $pick")
             },
             onFitReset = { repCounter.reset(); haptics.play(HapticCue.TICK, 0.4f); refreshFit() },
+            onScanMode = {
+                if (!askMode || !scanMode) {
+                    if (videoMode) { stopRecording(); videoMode = false }
+                    if (typeMode) { keyboard.cancelled = true; typeMode = false }
+                    if (fitMode) { fitMode = false }
+                    analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false }
+                    askMode = true; scanMode = true
+                    aPhase = "READY"; aPrompt = ""; aAnswer = ""; aNote = null
+                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, fitMode = false, fit = null, scanMode = true)
+                    refreshAsk()
+                    ensureCoach()
+                    Log.i(TAG, "mode -> SCAN")
+                }
+            },
+            onAskScan = { askScan() },
             onAskMode = {
-                if (!askMode) {
+                if (!askMode || scanMode) {
+                    scanMode = false
+                    overlayState = overlayState.copy(scanMode = false)
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
                     if (fitMode) { fitMode = false }
@@ -1477,7 +1496,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             },
             onShutter = {
                 if (askMode) {
-                    askTranslate()
+                    if (scanMode) askScan() else askTranslate()
                 } else if (typeMode) {
                     geniusSpeak()
                 } else if (videoMode) {
@@ -1625,6 +1644,7 @@ private fun buildOverlayState(
     genius: GeniusState?,
     askMode: Boolean,
     ask: AskState?,
+    scanMode: Boolean,
     fitMode: Boolean,
     fit: FitState?,
     signsMode: Boolean,
@@ -1683,6 +1703,7 @@ private fun buildOverlayState(
         genius = genius,
         askMode = askMode,
         ask = ask,
+        scanMode = scanMode,
         fitMode = fitMode,
         fit = fit,
         signsMode = signsMode,
