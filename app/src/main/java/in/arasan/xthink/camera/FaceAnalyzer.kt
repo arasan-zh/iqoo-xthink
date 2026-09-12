@@ -34,18 +34,16 @@ data class FaceResult(
  * PERFORMANCE_MODE_FAST, landmarks ON, classification OFF.
  *
  * Everything geometric is delegated to [FrameMapping] in :guidance, which is
- * unit tested. This class handles the Android plumbing and the two policy
- * decisions that need a detector to make sense of:
+ * unit tested. This class handles the Android plumbing and one policy decision
+ * that needs a detector to make sense of:
  *
- *  - **Shot type.** No faces is LANDSCAPE, one face is HEADSHOT, two or more
- *    is GROUP. Mode tabs in v0.3 will make this explicit; until then a single
- *    fixed profile would tell two people to step closer until one of their
- *    faces filled 45% of the frame.
- *  - **Which face.** The largest, because the nearest person is nearly always
- *    the intended subject and face size is the most stable signal ML Kit
- *    gives. Picking the most central would hand the subject back and forth
- *    between two people as the phone pans - exactly the flicker the deadzones
- *    and EMA exist to suppress.
+ *  - **Which face is the subject.** Portrait-only build: the composition
+ *    always targets ONE face, the largest, however many are in frame. Face
+ *    size is the most stable signal ML Kit gives - it does not flicker between
+ *    candidates as the phone moves the way "most central" would - and the
+ *    nearest person is almost always who the photographer means to shoot.
+ *    Group framing (a box spanning everybody) needs a mode tab to reach
+ *    deliberately, so it is not attempted here.
  */
 class FaceAnalyzer(
     private val onResult: (FaceResult) -> Unit,
@@ -125,42 +123,20 @@ class FaceAnalyzer(
             return FaceResult(null, null, 0, ShotTypeSelector.shotTypeFor(0), detectMs, dtMs)
         }
 
-        val rects = faces.map { it.boundingBox.toFrameRect() }
+        // Largest face wins, always - portrait-only, so a crowd in the
+        // background never pulls the composition into a group shot it cannot
+        // reach in this build. See the class doc for why size, not centrality.
+        val target = faces.maxBy { it.boundingBox.width().toLong() * it.boundingBox.height() }
+        val rect = target.boundingBox.toFrameRect()
 
-        return if (faces.size == 1) {
-            val face = faces[0]
-            FaceResult(
-                subject = FrameMapping.normalize(rects[0], crop),
-                eyes = eyeLineOf(face, rects[0], crop),
-                faceCount = 1,
-                shotType = ShotTypeSelector.shotTypeFor(1),
-                detectMs = detectMs,
-                dtMs = dtMs,
-            )
-        } else {
-            // A group is framed as one subject spanning everybody.
-            val union = FrameMapping.union(rects)!!
-            // Averaging the eye lines keeps the horizon honest when heads are
-            // at different heights; averaging the yaws means a group all facing
-            // one way gets lead room, while a group looking every which way
-            // averages to roughly zero and stays centred.
-            val eyeY = faces.indices
-                .map { eyeYOf(faces[it], rects[it]) }
-                .average()
-                .toFloat()
-            val yaw = faces.map { it.headEulerAngleY }.average().toFloat()
-            FaceResult(
-                subject = FrameMapping.normalize(union, crop),
-                eyes = EyeLine(
-                    y = FrameMapping.normalizeY(eyeY, crop),
-                    gazeDx = FrameMapping.gazeFromHeadYaw(yaw),
-                ),
-                faceCount = faces.size,
-                shotType = ShotTypeSelector.shotTypeFor(faces.size),
-                detectMs = detectMs,
-                dtMs = dtMs,
-            )
-        }
+        return FaceResult(
+            subject = FrameMapping.normalize(rect, crop),
+            eyes = eyeLineOf(target, rect, crop),
+            faceCount = faces.size,
+            shotType = ShotTypeSelector.shotTypeFor(faces.size),
+            detectMs = detectMs,
+            dtMs = dtMs,
+        )
     }
 
     private fun eyeLineOf(face: Face, rect: FrameRect, crop: FrameRect) = EyeLine(

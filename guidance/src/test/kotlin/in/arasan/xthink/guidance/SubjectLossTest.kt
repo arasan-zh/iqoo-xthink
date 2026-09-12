@@ -140,20 +140,38 @@ class SubjectLossTest {
 
     @Test
     fun `switchProgress reports how far a pending change has come`() {
+        // Portrait-only: the only switch that ever pends is LANDSCAPE<->HEADSHOT,
+        // since every face count from 1 up maps to the same HEADSHOT target.
         val selector = ShotTypeSelector()
-        repeat(20) { selector.update(1, 33L) }
+        assertEquals(ShotType.LANDSCAPE, selector.current)
         assertEquals(0f, selector.switchProgress, 1e-6f)
 
-        selector.update(2, 250L)
+        selector.update(1, 250L)
         assertEquals(0.5f, selector.switchProgress, 1e-3f)
     }
 
     @Test
-    fun `the count to shot type mapping is the agreed policy`() {
+    fun `a face count change that does not cross the landscape-headshot line is not a pending switch`() {
+        // Going from one face to three is not a switch at all under the
+        // portrait-only policy, so it must not start a hold timer.
+        val selector = ShotTypeSelector()
+        repeat(20) { selector.update(1, 33L) }
+        assertEquals(ShotType.HEADSHOT, selector.current)
+
+        selector.update(3, 250L)
+        assertEquals(0f, selector.switchProgress, 1e-6f)
+        assertEquals(ShotType.HEADSHOT, selector.current)
+    }
+
+    @Test
+    fun `the count to shot type mapping is the agreed policy - portrait only`() {
+        // This build never switches to GROUP: with several faces in frame and
+        // no mode tab to say otherwise, HEADSHOT on the largest face is the
+        // one unambiguous choice.
         assertEquals(ShotType.LANDSCAPE, ShotTypeSelector.shotTypeFor(0))
         assertEquals(ShotType.HEADSHOT, ShotTypeSelector.shotTypeFor(1))
-        assertEquals(ShotType.GROUP, ShotTypeSelector.shotTypeFor(2))
-        assertEquals(ShotType.GROUP, ShotTypeSelector.shotTypeFor(9))
+        assertEquals(ShotType.HEADSHOT, ShotTypeSelector.shotTypeFor(2))
+        assertEquals(ShotType.HEADSHOT, ShotTypeSelector.shotTypeFor(9))
         assertEquals(ShotType.LANDSCAPE, ShotTypeSelector.shotTypeFor(-1))
     }
 
@@ -161,7 +179,7 @@ class SubjectLossTest {
     fun `reset returns it to a known shot type`() {
         val selector = ShotTypeSelector()
         repeat(20) { selector.update(3, 33L) }
-        assertEquals(ShotType.GROUP, selector.current)
+        assertEquals(ShotType.HEADSHOT, selector.current)
         selector.reset()
         assertEquals(ShotType.LANDSCAPE, selector.current)
         assertEquals(0f, selector.switchProgress, 1e-6f)

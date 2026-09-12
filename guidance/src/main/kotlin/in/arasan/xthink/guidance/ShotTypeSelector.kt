@@ -59,16 +59,16 @@ class ShotTypeSelector(initial: ShotType = ShotType.LANDSCAPE) {
 
     companion object {
         /**
-         * No faces is a landscape; one is a headshot; several are a group.
-         * Half and full body need the mode tabs in v0.3 to reach, because face
-         * size cannot distinguish "far away" from "wrong shot type" - the
-         * engine's whole job is to correct face size, so inferring intent from
-         * it would make the target chase the error.
+         * Portrait-only build: no faces is a landscape, any number of faces is
+         * a headshot on the largest one. GROUP, HALF_BODY and FULL_BODY need
+         * mode tabs to reach deliberately - with several faces in frame and no
+         * tab to say otherwise, HEADSHOT on whoever is nearest is the one
+         * unambiguous choice, so a crowd in the background does not derail the
+         * shot the photographer is actually taking.
          */
         fun shotTypeFor(faceCount: Int): ShotType = when {
             faceCount <= 0 -> ShotType.LANDSCAPE
-            faceCount == 1 -> ShotType.HEADSHOT
-            else -> ShotType.GROUP
+            else -> ShotType.HEADSHOT
         }
     }
 }

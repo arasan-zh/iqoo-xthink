@@ -17,6 +17,7 @@ import androidx.annotation.OptIn
 import androidx.camera.camera2.interop.Camera2CameraInfo
 import androidx.camera.camera2.interop.Camera2Interop
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
@@ -26,14 +27,10 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -47,19 +44,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.CompositionProfile
 import `in`.arasan.xthink.guidance.GuidanceEngine
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.ShotType
 import `in`.arasan.xthink.guidance.ShotTypeSelector
+import `in`.arasan.xthink.guidance.SubjectBox
 import `in`.arasan.xthink.guidance.Verb
+import `in`.arasan.xthink.ui.GuidanceOverlay
+import `in`.arasan.xthink.ui.OverlayState
+import `in`.arasan.xthink.ui.StatusValue
 import java.util.concurrent.Executors
 
 private const val TAG = "xThink"
@@ -68,11 +67,13 @@ private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
 
 /**
- * v0.2-anchor: rear camera preview, real device attitude, ML Kit face
- * detection, and the full guidance ladder running on the phone.
+ * v0.3-frame: the real overlay, on the same camera plumbing v0.2-anchor built.
  *
- * Deliberately unstyled. The stock-camera look in CLAUDE.md lands in
- * v0.3-frame as a separate overlay layer over this same camera code.
+ * Portrait-only in this build - a single face is always the subject, however
+ * many are in frame, via [FaceAnalyzer] and [ShotTypeSelector]. CameraScreen's
+ * job stops at building an [OverlayState] each frame; everything about how
+ * that state is drawn lives in the ui package, per CLAUDE.md's requirement
+ * that the guidance overlay be a separate composable layer.
  */
 @Composable
 fun CameraScreen() {
@@ -115,12 +116,7 @@ private fun CameraAndGuidance() {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var instruction by remember { mutableStateOf<Instruction?>(null) }
-    var sample by remember { mutableStateOf<AttitudeSample?>(null) }
-    var faces by remember { mutableStateOf<FaceResult?>(null) }
-    var shotType by remember { mutableStateOf(ShotType.LANDSCAPE) }
-    var telemetry by remember { mutableStateOf(CameraTelemetry()) }
-    var totalError by remember { mutableStateOf(0f) }
+    var overlayState by remember { mutableStateOf(OverlayState.EMPTY) }
     var sensorMissing by remember { mutableStateOf(false) }
 
     val profiles = remember { loadProfiles(context) }
@@ -135,13 +131,14 @@ private fun CameraAndGuidance() {
     // comment below for why the sensor does not drive the engine.
     val latestAttitude = remember { arrayOfNulls<AttitudeSample>(1) }
 
+    // The bound camera's control surface, so the zoom slider in the overlay
+    // has something to call. Null until the camera finishes binding.
+    var cameraControl by remember { mutableStateOf<Camera?>(null) }
+
     // --- sensor ----------------------------------------------------------
     DisposableEffect(engine) {
         val sensor = AttitudeSensor(context)
-        val started = sensor.start { s ->
-            latestAttitude[0] = s
-            sample = s
-        }
+        val started = sensor.start { s -> latestAttitude[0] = s }
         sensorMissing = !started
         if (!started) Log.w(TAG, "TYPE_GAME_ROTATION_VECTOR unavailable; guidance cannot run")
         onDispose { sensor.stop() }
@@ -158,6 +155,7 @@ private fun CameraAndGuidance() {
     DisposableEffect(lifecycleOwner) {
         val mainHandler = Handler(Looper.getMainLooper())
         val analysisExecutor = Executors.newSingleThreadExecutor()
+        var telemetry = CameraTelemetry()
         var lastHeartbeat = 0L
         var lastVerb: Verb? = null
 
@@ -173,16 +171,20 @@ private fun CameraAndGuidance() {
         // ML Kit delivers its callback on the main thread and the capture
         // callback posts there, so the engine still only ever sees one thread.
         val analyzer = FaceAnalyzer { result ->
-            faces = result
-
             val attitude = latestAttitude[0] ?: return@FaceAnalyzer
             val stable = shotTypes.update(result.faceCount, result.dtMs)
-            shotType = stable
             engine.setProfile(profiles.getValue(stable))
             val next = engine.update(attitude.attitude, result.subject, result.eyes, result.dtMs)
 
-            instruction = next
-            totalError = engine.totalError
+            overlayState = buildOverlayState(
+                instruction = next,
+                alignment = engine.alignment,
+                subject = result.subject,
+                telemetry = telemetry,
+                stabilityOk = engine.stabilityOk,
+                compositionOk = engine.compositionOk,
+                hasAutofocus = telemetry.hasAutofocus,
+            )
 
             // Every change of verb, plus a heartbeat. Transitions are where the
             // bugs live, and a 1 Hz sample cannot see a state that lasts 500ms.
@@ -223,6 +225,12 @@ private fun CameraAndGuidance() {
                     CaptureRequest.CONTROL_AF_MODE,
                     CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE,
                 )
+                // The HAL does not reset zoom to 1.0 on its own - on this
+                // phone a fresh bind can start at 2x, which is neither what
+                // the composition profiles assume nor what the zoom slider
+                // shows by default. Ask for 1x explicitly so a cold launch
+                // starts exactly where the mockup and the profiles expect.
+                .setCaptureRequestOption(CaptureRequest.CONTROL_ZOOM_RATIO, 1.0f)
                 .setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
                     override fun onCaptureCompleted(
                         session: CameraCaptureSession,
@@ -230,10 +238,9 @@ private fun CameraAndGuidance() {
                         result: TotalCaptureResult,
                     ) {
                         mainHandler.post {
-                            val next = CameraTelemetry.from(telemetry, result)
-                            telemetry = next
-                            engine.reportFocusLocked(next.focusLocked)
-                            engine.reportZoom(next.zoomRatio, next.maxZoomRatio)
+                            telemetry = CameraTelemetry.from(telemetry, result)
+                            engine.reportFocusLocked(telemetry.focusLocked)
+                            engine.reportZoom(telemetry.zoomRatio, telemetry.maxZoomRatio)
                         }
                     }
                 })
@@ -275,6 +282,7 @@ private fun CameraAndGuidance() {
                         CameraSelector.DEFAULT_BACK_CAMERA,
                         group,
                     )
+                    cameraControl = camera
                     val characteristics =
                         Camera2CameraInfo.extractCameraCharacteristics(camera.cameraInfo)
                     val statics = CameraTelemetry.fromCharacteristics(characteristics)
@@ -282,6 +290,7 @@ private fun CameraAndGuidance() {
                         maxZoomRatio = statics.maxZoomRatio,
                         minFocusCm = statics.minFocusCm,
                         hasAutofocus = statics.hasAutofocus,
+                        maxIso = statics.maxIso,
                     )
                     engine.reportZoom(telemetry.zoomRatio, statics.maxZoomRatio)
                     Log.i(
@@ -296,6 +305,7 @@ private fun CameraAndGuidance() {
 
         onDispose {
             runCatching { future.get().unbindAll() }
+            cameraControl = null
             analyzer.close()
             analysisExecutor.shutdown()
         }
@@ -303,86 +313,67 @@ private fun CameraAndGuidance() {
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
-        DebugReadout(
-            instruction = instruction,
-            sample = sample,
-            faces = faces,
-            shotType = shotType,
-            telemetry = telemetry,
-            totalError = totalError,
-            sensorMissing = sensorMissing,
-            // Preview stays full-bleed; only the readout clears the status bar.
-            modifier = Modifier.align(Alignment.TopStart).statusBarsPadding(),
+        GuidanceOverlay(
+            state = overlayState,
+            onZoomSelected = { ratio ->
+                cameraControl?.cameraControl?.setZoomRatio(ratio)
+            },
+            modifier = Modifier.fillMaxSize(),
         )
+        if (sensorMissing) {
+            Text(
+                text = "GAME_ROTATION_VECTOR unavailable",
+                color = Color.Red,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 64.dp),
+            )
+        }
     }
 }
 
 /**
- * Raw numbers, not a design. Proving the chain works comes before making it
- * look like a camera app.
+ * Turns the engine's output and the ISP's telemetry into what the overlay
+ * draws. This is the one place camera facts and guidance facts meet; the
+ * overlay package never sees either source directly.
  */
-@Composable
-private fun DebugReadout(
-    instruction: Instruction?,
-    sample: AttitudeSample?,
-    faces: FaceResult?,
-    shotType: ShotType,
+private fun buildOverlayState(
+    instruction: Instruction,
+    alignment: AlignmentState,
+    subject: SubjectBox?,
     telemetry: CameraTelemetry,
-    totalError: Float,
-    sensorMissing: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(12.dp)
-            .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(20.dp))
-            .padding(12.dp),
-        verticalArrangement = Arrangement.spacedBy(2.dp),
-    ) {
-        if (sensorMissing) {
-            Text(
-                "GAME_ROTATION_VECTOR unavailable",
-                color = Color.Red,
-                fontFamily = FontFamily.Monospace,
-                fontSize = 13.sp,
-            )
-        }
-
-        Text(
-            text = instruction?.text ?: "waiting for a frame...",
-            color = Color(0xFF4ADE80),
-            fontFamily = FontFamily.Monospace,
-            fontSize = 20.sp,
-            fontWeight = FontWeight.Bold,
-        )
-
-        val lines = buildList {
-            instruction?.let { add("verb     ${it.verb}  ${it.magnitude}") }
-            faces?.let { f ->
-                add("faces    ${f.faceCount} -> $shotType  det ${f.detectMs}ms")
-                f.subject?.let { b ->
-                    add("subject  cx %.3f cy %.3f h %.3f".format(b.cx, b.cy, b.h))
-                }
-                f.eyes?.let { e ->
-                    add("eyes     y %.3f  gaze %+.2f".format(e.y, e.gazeDx))
-                }
-            }
-            sample?.let {
-                add("roll     %+.2f deg%s".format(it.attitude.rollDeg, if (it.rollReliable) "" else " (bad)"))
-                add("pitch    %+.2f deg".format(it.attitude.pitchDeg))
-                add("imu      %.0f Hz".format(it.hz))
-            }
-            add("error    %.3f".format(totalError))
-            add("af       ${telemetry.afText}${if (telemetry.focusLocked) "  LOCKED" else ""}")
-            add("iso      ${telemetry.iso ?: "-"}   shutter ${telemetry.shutterText}")
-            add("zoom     %.2fx / %.2fx".format(telemetry.zoomRatio, telemetry.maxZoomRatio))
-            add("frames   ${telemetry.frames}")
-        }
-        for (l in lines) {
-            Text(l, color = Color.White, fontFamily = FontFamily.Monospace, fontSize = 12.sp)
-        }
+    stabilityOk: Boolean,
+    compositionOk: Boolean,
+    hasAutofocus: Boolean,
+): OverlayState {
+    val focus = when {
+        !hasAutofocus -> StatusValue("Focus", "Fixed", true)
+        telemetry.focusLocked -> StatusValue("Focus", "Good", true)
+        telemetry.afState == null -> StatusValue("Focus", "-", false)
+        else -> StatusValue("Focus", "Focusing", false)
     }
+    val lighting = StatusValue("Lighting", telemetry.lightingText, telemetry.lightingOk)
+    val stability = StatusValue("Stability", if (stabilityOk) "Stable" else "Hold still", stabilityOk)
+    val composition = StatusValue(
+        "Composition",
+        when {
+            instruction.verb == Verb.LOCKED -> "Centered"
+            instruction.verb == Verb.SEEKING -> "No subject"
+            compositionOk -> "Good"
+            else -> "Adjusting"
+        },
+        compositionOk,
+    )
+
+    return OverlayState(
+        instruction = instruction,
+        alignment = alignment,
+        subject = subject,
+        focus = focus,
+        lighting = lighting,
+        stability = stability,
+        composition = composition,
+        zoomRatio = telemetry.zoomRatio,
+        maxZoomRatio = telemetry.maxZoomRatio,
+    )
 }
 
 private fun hasCameraPermission(context: Context): Boolean =
