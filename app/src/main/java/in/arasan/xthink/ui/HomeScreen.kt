@@ -72,7 +72,7 @@ fun HomeScreen(status: String, onOpen: (String) -> Unit) {
                 Box(
                     modifier = Modifier.size(44.dp).clip(CircleShape).background(Color.White),
                     contentAlignment = Alignment.Center,
-                ) { Text(text = "Q", color = Palette.Accent, fontSize = 24.sp, fontWeight = FontWeight.Black, letterSpacing = (-1).sp) }
+                ) { Mark(size = 26.dp, color = Palette.Ink) }
                 Spacer(Modifier.width(12.dp))
                 Column {
                     Text(text = "xThink", color = Palette.Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)

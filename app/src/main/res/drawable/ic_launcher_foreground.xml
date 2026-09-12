@@ -1,34 +1,31 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!--
-  xThink launcher foreground: a stylised Q in the app's gold - the colour the
-  overlay uses for the active mode and the zoom stop - on a white ground.
-
-  Adaptive icons are 108dp with a 66dp safe zone in the middle, so the ring
-  sits well inside it. A thick ring is the O; the tail leaves the ring at
-  bottom-right at 45 degrees, the way a Q's does, and its width matches the
-  ring so it reads as one drawn stroke, not a decoration. A small gap where
-  the tail crosses the ring keeps the letterform clean at 48dp.
--->
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
     android:width="108dp"
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-
-    <!-- The ring. Drawn as an arc that stops short of the tail so the two
-         strokes do not pile up at the crossing. -->
-    <path
-        android:strokeColor="#F5A524"
-        android:strokeWidth="9"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M 71.1,66.4 A 23,23 0 1 1 71.4,41.6" />
-
-    <!-- The tail: bottom-right, 45 degrees, same stroke as the ring. -->
-    <path
-        android:strokeColor="#F5A524"
-        android:strokeWidth="9"
-        android:strokeLineCap="round"
-        android:fillColor="#00000000"
-        android:pathData="M 63,63 L 79,79" />
+    <!-- The mark: one hook, rotated a third of a turn twice. Ink on the white ground. -->
+    <group android:pivotX="54" android:pivotY="54" android:rotation="0">
+        <path
+            android:pathData="M54,30.5 C68.2,30.5 74.3,43.7 66.2,51.8 C62.2,55.9 56.1,54.9 55.1,49.8"
+            android:strokeColor="#1E1F24"
+            android:strokeWidth="6.2"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="120">
+        <path
+            android:pathData="M54,30.5 C68.2,30.5 74.3,43.7 66.2,51.8 C62.2,55.9 56.1,54.9 55.1,49.8"
+            android:strokeColor="#1E1F24"
+            android:strokeWidth="6.2"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+    </group>
+    <group android:pivotX="54" android:pivotY="54" android:rotation="240">
+        <path
+            android:pathData="M54,30.5 C68.2,30.5 74.3,43.7 66.2,51.8 C62.2,55.9 56.1,54.9 55.1,49.8"
+            android:strokeColor="#1E1F24"
+            android:strokeWidth="6.2"
+            android:strokeLineCap="round"
+            android:fillColor="#00000000" />
+    </group>
 </vector>

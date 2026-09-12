@@ -31,6 +31,15 @@ object Palette {
     val Lavender = Color(0xFFE4DEF6)
     val Sky = Color(0xFFD9E9F7)
 
+    /** The assistant's rooms - Chat, Voice - are night: black, a purple glow, white ink. */
+    val Night = Color(0xFF07080F)
+    val NightCard = Color.White.copy(alpha = 0.08f)
+    val NightCardStrong = Color.White.copy(alpha = 0.14f)
+    val NightInk = Color(0xFFF4F1EA)
+    val NightMuted = Color(0xFFF4F1EA).copy(alpha = 0.6f)
+    val Violet = Color(0xFF7C3AED)
+    val Rose = Color(0xFFF43F5E)
+
     /** Headlines in a serif, the rest in the system sans - the reference's mix. */
     val Display: FontFamily = FontFamily.Serif
     val Corner = 24.dp

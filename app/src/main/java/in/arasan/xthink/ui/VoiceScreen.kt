@@ -78,7 +78,8 @@ fun VoiceScreen(
     onHome: () -> Unit,
 ) {
     val busy = state.phase in setOf("LISTENING", "THINKING", "SPEAKING")
-    Box(modifier = Modifier.fillMaxSize().background(Palette.Ground)) {
+    Box(modifier = Modifier.fillMaxSize().background(Palette.Night)) {
+        ParticleField()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -89,9 +90,9 @@ fun VoiceScreen(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                RoundButton(onClick = onHome) { Glyph("home", Palette.Ink, 20.dp) }
+                NightRound(onClick = onHome) { Glyph("home", Palette.NightInk, 20.dp) }
                 Spacer(Modifier.weight(1f))
-                Text(text = "Voice", color = Palette.Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "Voice", color = Palette.NightInk, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.size(44.dp))
             }
@@ -106,7 +107,7 @@ fun VoiceScreen(
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(20.dp))
-                            .background(if (on) Palette.Ink else Palette.Glass)
+                            .background(if (on) Palette.NightInk else Palette.NightCard)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
@@ -114,7 +115,7 @@ fun VoiceScreen(
                             )
                             .padding(horizontal = 16.dp, vertical = 10.dp),
                     ) {
-                        Text(text = l.native, color = if (on) Color.White else Palette.Ink, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+                        Text(text = l.native, color = if (on) Palette.Night else Palette.NightInk, fontSize = 14.sp, fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -127,7 +128,7 @@ fun VoiceScreen(
                     "FAILED" -> "Could not"
                     else -> if (state.ready) "Tap the mic and talk" else state.modelLine
                 },
-                color = Palette.InkMuted,
+                color = Palette.NightMuted,
                 fontSize = 15.sp,
             )
             Spacer(Modifier.height(20.dp))
@@ -135,7 +136,7 @@ fun VoiceScreen(
             Spacer(Modifier.height(28.dp))
             Text(
                 text = "Talk freely. The phone answers in ${VOICE_LANGUAGES[state.language].name}.",
-                color = Palette.Ink,
+                color = Palette.NightInk,
                 fontFamily = Palette.Display,
                 fontSize = 26.sp,
                 lineHeight = 32.sp,
@@ -147,33 +148,28 @@ fun VoiceScreen(
                     .weight(1f)
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(Palette.Corner))
-                    .background(Palette.Glass)
+                    .background(Palette.NightCard)
                     .padding(16.dp)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                if (state.heard.isNotBlank()) Text(text = "“${state.heard}”", color = Palette.InkMuted, fontSize = 14.sp)
-                if (state.reply.isNotBlank()) Text(text = state.reply, color = Palette.Ink, fontSize = 17.sp, lineHeight = 24.sp)
+                if (state.heard.isNotBlank()) Text(text = "“${state.heard}”", color = Palette.NightMuted, fontSize = 14.sp)
+                if (state.reply.isNotBlank()) Text(text = state.reply, color = Palette.NightInk, fontSize = 17.sp, lineHeight = 24.sp)
                 if (state.heard.isBlank() && state.reply.isBlank()) {
-                    Text(text = "Ask anything. What you say and what the phone says appear here.", color = Palette.InkMuted, fontSize = 14.sp)
+                    Text(text = "Ask anything. What you say and what the phone says appear here.", color = Palette.NightMuted, fontSize = 14.sp)
                 }
-                if (state.note != null) Text(text = state.note, color = Palette.InkMuted, fontSize = 12.sp)
+                if (state.note != null) Text(text = state.note, color = Palette.NightMuted, fontSize = 12.sp)
             }
             Spacer(Modifier.height(18.dp))
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(20.dp)) {
-                RoundButton(onClick = onStop, size = 52.dp) { Text("✕", color = Palette.Ink, fontSize = 18.sp) }
+                NightRound(onClick = onStop, size = 52.dp) { Text("✕", color = Palette.NightInk, fontSize = 18.sp) }
                 Box(
-                    modifier = Modifier
-                        .size(84.dp)
-                        .clip(CircleShape)
-                        .background(Brush.linearGradient(listOf(Palette.Peach, Palette.Mint, Palette.Lavender)))
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onMic,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) { Text(text = if (busy) "■" else "🎤", fontSize = 30.sp) }
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onMic,
+                    ),
+                ) { GlowMic(size = 84.dp, active = busy) }
                 Spacer(Modifier.size(52.dp))
             }
         }
@@ -211,7 +207,7 @@ private fun Bars(active: Boolean) {
                     .width(34.dp)
                     .height(h.dp)
                     .clip(RoundedCornerShape(17.dp))
-                    .background(Brush.verticalGradient(listOf(Color.White, Palette.Peach.copy(alpha = 0.9f)))),
+                    .background(Brush.verticalGradient(listOf(Palette.NightInk, Palette.Violet.copy(alpha = 0.7f)))),
             )
         }
     }

@@ -17,6 +17,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import `in`.arasan.xthink.camera.CameraScreen
 import `in`.arasan.xthink.camera.LlmCoach
@@ -109,20 +110,38 @@ class MainActivity : ComponentActivity() {
                 var chatDraft by remember { mutableStateOf("") }
                 var chatBusy by remember { mutableStateOf(false) }
                 var chatListening by remember { mutableStateOf(false) }
+                var chatImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+                val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                    if (uri == null) return@rememberLauncherForActivityResult
+                    chatImage = runCatching {
+                        android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(contentResolver, uri)) { d, info, _ ->
+                            d.allocator = android.graphics.ImageDecoder.ALLOCATOR_SOFTWARE
+                            val longest = maxOf(info.size.width, info.size.height)
+                            var sample = 1
+                            while (longest / (sample * 2) >= 768) sample *= 2
+                            d.setTargetSampleSize(sample)
+                        }
+                    }.getOrNull()
+                }
                 fun chatSend(text: String) {
                     val msg = text.trim()
-                    if (msg.isEmpty() || chatBusy) return
+                    if ((msg.isEmpty() && chatImage == null) || chatBusy) return
                     if (coachState != LlmCoach.State.READY) { chat.add(ChatTurn(true, msg)); chat.add(ChatTurn(false, "Gemma is still loading - a moment, then ask again.")); chatDraft = ""; return }
                     val history = chat.map { it.mine to it.text }
-                    chat.add(ChatTurn(true, msg))
+                    val image = chatImage
+                    chat.add(ChatTurn(true, msg, image?.let { it.asImageBitmap() }))
                     chat.add(ChatTurn(false, ""))
                     chatDraft = ""
+                    chatImage = null
                     chatBusy = true
                     val idx = chat.size - 1
-                    val ok = coach.askText(LlmCoach.Kind.CHAT, LlmCoach.chatPrompt(history, msg), main) { reply, done ->
+                    val onReply: (String, Boolean) -> Unit = { reply, done ->
                         if (idx < chat.size) chat[idx] = ChatTurn(false, reply)
                         if (done) chatBusy = false
                     }
+                    // A photo goes through the model's eyes; words alone through its ears.
+                    val ok = if (image != null) coach.ask(LlmCoach.Kind.CHAT, image, LlmCoach.chatPrompt(history, msg), main, onReply)
+                    else coach.askText(LlmCoach.Kind.CHAT, LlmCoach.chatPrompt(history, msg), main, onReply)
                     if (!ok) { chat[idx] = ChatTurn(false, "Busy - try again in a moment."); chatBusy = false }
                 }
                 fun chatMic() {
@@ -154,6 +173,9 @@ class MainActivity : ComponentActivity() {
                                 draft = chatDraft,
                                 busy = chatBusy,
                                 listening = chatListening,
+                                attachment = chatImage?.let { it.asImageBitmap() },
+                                onAttach = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                onClearAttach = { chatImage = null },
                                 modelLine = when (coachState) {
                                     LlmCoach.State.READY -> "Gemma 3n · on the phone"
                                     LlmCoach.State.LOADING -> "loading the model\u2026"
@@ -172,6 +194,9 @@ class MainActivity : ComponentActivity() {
                                 draft = chatDraft,
                                 busy = chatBusy,
                                 listening = chatListening,
+                                attachment = chatImage?.let { it.asImageBitmap() },
+                                onAttach = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                                onClearAttach = { chatImage = null },
                                 modelLine = when (coachState) {
                                     LlmCoach.State.READY -> "Gemma 3n · on the phone"
                                     LlmCoach.State.LOADING -> "loading the model\u2026"

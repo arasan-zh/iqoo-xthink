@@ -31,13 +31,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 /** One turn of the conversation. */
-data class ChatTurn(val mine: Boolean, val text: String)
+data class ChatTurn(val mine: Boolean, val text: String, val image: ImageBitmap? = null)
 
 /**
  * Chat. Type or speak; the phone answers from its own model, streaming,
@@ -50,16 +51,20 @@ fun ChatScreen(
     busy: Boolean,
     listening: Boolean,
     modelLine: String,
+    attachment: ImageBitmap?,
     onDraft: (String) -> Unit,
     onSend: () -> Unit,
     onMic: () -> Unit,
+    onAttach: () -> Unit,
+    onClearAttach: () -> Unit,
     onHome: () -> Unit,
 ) {
     val list = rememberLazyListState()
     LaunchedEffect(turns.size, turns.lastOrNull()?.text?.length) {
         if (turns.isNotEmpty()) list.animateScrollToItem(turns.size - 1)
     }
-    Box(modifier = Modifier.fillMaxSize().background(Palette.Ground)) {
+    Box(modifier = Modifier.fillMaxSize().background(Palette.Night)) {
+        ParticleField()
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -70,11 +75,18 @@ fun ChatScreen(
                 .padding(top = 8.dp, bottom = 12.dp),
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                RoundButton(onClick = onHome) { Glyph("home", Palette.Ink, 20.dp) }
+                NightRound(onClick = onHome) { Glyph("home", Palette.NightInk, 20.dp) }
                 Spacer(Modifier.weight(1f))
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(text = "Chat", color = Palette.Ink, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text(text = modelLine, color = Palette.InkMuted, fontSize = 11.sp)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.clip(RoundedCornerShape(24.dp)).background(Palette.NightCard).padding(horizontal = 14.dp, vertical = 8.dp),
+                ) {
+                    Mark(size = 18.dp, color = Palette.NightInk)
+                    Spacer(Modifier.size(10.dp))
+                    Column {
+                        Text(text = "xThink", color = Palette.NightInk, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+                        Text(text = modelLine, color = Palette.NightMuted, fontSize = 10.sp)
+                    }
                 }
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.size(44.dp))
@@ -86,28 +98,40 @@ fun ChatScreen(
             ) {
                 if (turns.isEmpty()) {
                     item {
-                        Text(
-                            text = "Ask anything.\nIt stays on the phone.",
-                            color = Palette.Ink,
-                            fontFamily = Palette.Display,
-                            fontSize = 30.sp,
-                            lineHeight = 36.sp,
-                            modifier = Modifier.padding(top = 40.dp),
-                        )
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 390.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(text = "Hi, I'm xThink.", color = Palette.NightMuted, fontSize = 14.sp)
+                            Text(
+                                text = "How can I help\nyou today?",
+                                color = Palette.NightInk,
+                                fontFamily = Palette.Display,
+                                fontSize = 32.sp,
+                                lineHeight = 38.sp,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                            )
+                        }
                     }
                 }
                 itemsIndexed(turns) { _, t ->
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = if (t.mine) Arrangement.End else Arrangement.Start) {
-                        Box(
+                        Column(
                             modifier = Modifier
                                 .widthIn(max = 300.dp)
                                 .clip(RoundedCornerShape(20.dp))
-                                .background(if (t.mine) Palette.Ink else Palette.GlassStrong)
+                                .background(if (t.mine) Brush.linearGradient(listOf(Palette.Violet, Palette.Rose)) else Brush.linearGradient(listOf(Palette.NightCardStrong, Palette.NightCardStrong)))
                                 .padding(horizontal = 16.dp, vertical = 12.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
-                            Text(
+                            if (t.image != null) {
+                                androidx.compose.foundation.Image(
+                                    bitmap = t.image,
+                                    contentDescription = "photo",
+                                    contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                    modifier = Modifier.size(width = 200.dp, height = 150.dp).clip(RoundedCornerShape(12.dp)),
+                                )
+                            }
+                            if (t.text.isNotBlank() || !t.mine) Text(
                                 text = if (t.text.isBlank() && !t.mine) "…" else t.text,
-                                color = if (t.mine) Color.White else Palette.Ink,
+                                color = Palette.NightInk,
                                 fontSize = 16.sp,
                                 lineHeight = 22.sp,
                             )
@@ -115,51 +139,78 @@ fun ChatScreen(
                     }
                 }
             }
-            // The composer.
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(28.dp))
-                    .background(Palette.GlassStrong)
-                    .padding(start = 18.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    if (draft.isBlank()) Text(text = if (listening) "Listening…" else "Write or tap the mic…", color = Palette.InkMuted, fontSize = 16.sp)
-                    BasicTextField(
-                        value = draft,
-                        onValueChange = onDraft,
-                        textStyle = TextStyle(color = Palette.Ink, fontSize = 16.sp),
-                        maxLines = 4,
-                        modifier = Modifier.fillMaxWidth(),
+            // The composer: a photo, words, the mic, send.
+            if (attachment != null) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+                    androidx.compose.foundation.Image(
+                        bitmap = attachment, contentDescription = "attached",
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
                     )
+                    Spacer(Modifier.size(10.dp))
+                    Text(text = "Photo attached", color = Palette.NightMuted, fontSize = 12.sp)
+                    Spacer(Modifier.size(10.dp))
+                    NightRound(onClick = onClearAttach, size = 32.dp) { Text("✕", color = Palette.NightInk, fontSize = 13.sp) }
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(28.dp))
+                        .background(Palette.NightCard)
+                        .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+                ) {
+                    NightRound(onClick = onAttach, size = 40.dp) { Glyph("camera", Palette.NightInk, 18.dp) }
+                    Box(modifier = Modifier.weight(1f)) {
+                        if (draft.isBlank()) Text(text = if (listening) "Listening…" else "Message…", color = Palette.NightMuted, fontSize = 16.sp)
+                        BasicTextField(
+                            value = draft,
+                            onValueChange = onDraft,
+                            textStyle = TextStyle(color = Palette.NightInk, fontSize = 16.sp),
+                            maxLines = 4,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clip(CircleShape)
+                            .background(if (busy) Palette.NightCard else Palette.NightCardStrong)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { if (!busy) onSend() },
+                            ),
+                        contentAlignment = Alignment.Center,
+                    ) { Text(text = "➤", color = Palette.NightInk, fontSize = 16.sp) }
                 }
                 Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(if (listening) Palette.AccentSoft else Color.Transparent)
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = onMic,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) { Text(text = "🎤", fontSize = 20.sp) }
-                Box(
-                    modifier = Modifier
-                        .size(44.dp)
-                        .clip(CircleShape)
-                        .background(if (busy) Palette.InkMuted else Brush.linearGradient(listOf(Palette.Ink, Palette.Ink)).let { Palette.Ink })
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null,
-                            onClick = { if (!busy) onSend() },
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) { Text(text = "➤", color = Color.White, fontSize = 18.sp) }
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = onMic,
+                    ),
+                ) { GlowMic(size = 56.dp, active = listening) }
             }
         }
     }
+}
+
+@Composable
+fun NightRound(onClick: () -> Unit, size: androidx.compose.ui.unit.Dp = 44.dp, content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(Palette.NightCard)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
