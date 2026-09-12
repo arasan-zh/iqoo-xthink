@@ -1,0 +1,8 @@
+<resources>
+    <!-- Compose owns all styling. This theme only needs to be action-bar-free
+         and dark so the camera preview is never letterboxed by a light window
+         background on first frame. -->
+    <style name="Theme.XThink" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

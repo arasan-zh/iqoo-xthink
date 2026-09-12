@@ -1,0 +1,19 @@
+*.iml
+.gradle/
+/local.properties
+local.properties
+.idea/
+.DS_Store
+build/
+/captures
+.externalNativeBuild
+.cxx
+.kotlin/
+
+# Signing material is not committed...
+*.keystore
+*.jks
+# ...except the public Android debug key, which is deliberately checked in so
+# that every CI build is signed with the same key and teammates can
+# update-install the APK instead of uninstalling first.
+!keystore/debug.keystore
