@@ -420,3 +420,108 @@ fun FlipButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Reference - "shoot one like this". A picked photo the coach has read;
+// while one is set its thumbnail sits here, and a tap clears it.
+// ---------------------------------------------------------------------------
+
+@Composable
+fun ReferenceButton(
+    thumbnail: ImageBitmap?,
+    onPick: () -> Unit,
+    onClear: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(XT.Chip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = { if (thumbnail == null) onPick() else onClear() },
+            )
+            .padding(horizontal = if (thumbnail == null) 14.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        if (thumbnail != null) {
+            Image(
+                bitmap = thumbnail,
+                contentDescription = "reference photo",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(32.dp)
+                    .clip(RoundedCornerShape(10.dp)),
+            )
+            Text(
+                text = "Like this  \u00d7",
+                color = XT.OnChip,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(end = 6.dp),
+            )
+        } else {
+            Canvas(modifier = Modifier.size(16.dp)) {
+                val w = size.width
+                val h = size.height
+                drawRoundRect(
+                    XT.OnChip,
+                    topLeft = Offset(0f, 0f),
+                    size = Size(w, h),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.5f.dp.toPx()),
+                    style = Stroke(1.6f.dp.toPx()),
+                )
+                drawLine(XT.OnChip, Offset(w * 0.15f, h * 0.78f), Offset(w * 0.42f, h * 0.48f), 1.6f.dp.toPx(), StrokeCap.Round)
+                drawLine(XT.OnChip, Offset(w * 0.42f, h * 0.48f), Offset(w * 0.62f, h * 0.68f), 1.6f.dp.toPx(), StrokeCap.Round)
+                drawLine(XT.OnChip, Offset(w * 0.62f, h * 0.68f), Offset(w * 0.85f, h * 0.42f), 1.6f.dp.toPx(), StrokeCap.Round)
+            }
+            Text(
+                text = "Shoot like…",
+                color = XT.OnChip,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+            )
+        }
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// Easy shot - the "near enough" auto-shutter toggle. Green when on.
+// ---------------------------------------------------------------------------
+
+@Composable
+fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    val bg by animateColorAsState(if (on) XT.Green.copy(alpha = 0.22f) else XT.Chip, tween(180), label = "easyBg")
+    val fg by animateColorAsState(if (on) XT.Green else XT.OnChip, tween(180), label = "easyFg")
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(bg)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onToggle,
+            )
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(8.dp)
+                .clip(CircleShape)
+                .background(fg),
+        )
+        Text(
+            text = if (on) "Easy shot" else "Easy shot off",
+            color = fg,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}

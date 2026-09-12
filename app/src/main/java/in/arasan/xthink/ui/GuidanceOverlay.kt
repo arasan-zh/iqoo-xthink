@@ -30,6 +30,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +70,9 @@ fun GuidanceOverlay(
     onTap: (x: Float, y: Float) -> Unit,
     onEnhanceSave: () -> Unit,
     onEnhanceDismiss: () -> Unit,
+    onPickReference: () -> Unit,
+    onClearReference: () -> Unit,
+    onToggleEasyShot: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -159,9 +163,22 @@ fun GuidanceOverlay(
                 .padding(horizontal = XT.Gutter),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // --- top: the flip button, right-aligned. Nothing decorative. ---
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                FlipButton(onClick = onFlip)
+            // --- top: the flip button, and the coach's words beneath it ---
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
+                        if (state.coachAvailable) {
+                            ReferenceButton(thumbnail = state.reference, onPick = onPickReference, onClear = onClearReference)
+                        }
+                    }
+                    FlipButton(onClick = onFlip)
+                }
+                CoachPanel(coach = state.coach)
             }
 
             // --- middle: the mode rail on the left. Its own vertical centre,

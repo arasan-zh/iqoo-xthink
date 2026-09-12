@@ -36,6 +36,14 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** "Near enough" auto-shutter: shoot when close to the lock, not only at it. */
+    val easyShot: Boolean = false,
+    /** True when the on-device model is on the phone: the coach controls show. */
+    val coachAvailable: Boolean = false,
+    /** The picked "shoot one like this" photo, or null. */
+    val reference: ImageBitmap? = null,
+    /** What the on-device coach is saying, or null when it has nothing to say. */
+    val coach: CoachText? = null,
     /** A photographer's crop waiting for a yes or no, or null. */
     val enhance: EnhanceProposal? = null,
     /** True while the enhanced file is being written. */
