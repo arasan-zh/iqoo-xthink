@@ -20,7 +20,7 @@ class GeniusRouterTest {
         val r = GeniusRouter.route("open apple.com") as Route.Website
         assertEquals("https://apple.com", r.url)
         val g = GeniusRouter.route("open the iqoo website") as Route.Website
-        assertTrue(g.url.startsWith("https://www.google.com/search?btnI=1&q=iqoo"))
+        assertTrue(g.url.startsWith("https://duckduckgo.com/?q=%5Ciqoo"))
         assertTrue(GeniusRouter.route("search for the hackathon schedule") is Route.Website)
         val steps = GeniusRouter.steps(r)
         assertEquals(listOf("OPEN Safari", "GO TO apple.com"), steps.map { it.line })
@@ -36,11 +36,14 @@ class GeniusRouterTest {
     }
 
     @Test
-    fun `youtube plays a search`() {
-        val r = GeniusRouter.route("play a song in YouTube") as Route.Website
-        assertEquals("https://www.youtube.com/results?search_query=song", r.url)
-        val s = GeniusRouter.route("open youtube and play Vaathi coming") as Route.Website
-        assertEquals("https://www.youtube.com/results?search_query=Vaathi+coming".lowercase(), s.url.lowercase())
+    fun `youtube plays the first hit for a title`() {
+        val r = GeniusRouter.route("play Raavana Mavandaa Lyrical in YouTube") as Route.Website
+        assertEquals("https://duckduckgo.com/?q=%5Csite%3Ayoutube.com+raavana+mavandaa+lyrical", r.url)
+        val p = GeniusRouter.route("play Vaathi coming") as Route.Website
+        assertTrue(p.url.contains("site%3Ayoutube.com+vaathi+coming"))
+        val s = GeniusRouter.route("open youtube and play Vaathi coming song") as Route.Website
+        assertTrue(s.url.endsWith("vaathi+coming"))
+        assertEquals("https://www.youtube.com", (GeniusRouter.route("play a song in youtube") as Route.Website).url)
         assertEquals("https://www.youtube.com", (GeniusRouter.route("open youtube") as Route.Website).url)
     }
 
@@ -76,6 +79,16 @@ class GeniusRouterTest {
         assertEquals("hello from xThink", r.message)
         val steps = GeniusRouter.steps(r)
         assertEquals("NEW chat to 9442851409", steps[1].line)
+    }
+
+    @Test
+    fun `a story is prose, and help lists the abilities`() {
+        assertTrue(GeniusRouter.route("write a one page science fiction story with the name of a japanese comic") is Route.Write)
+        assertTrue(GeniusRouter.route("write a letter to priya") is Route.Write)
+        assertTrue(GeniusRouter.route("write the code for a landing page") is Route.Project)
+        assertEquals(Route.Help, GeniusRouter.route("what can you do"))
+        assertTrue(GeniusRouter.steps(Route.Help).size == GeniusRouter.HELP.size)
+        assertTrue(GeniusRouter.steps(Route.Help).all { it.ops.isEmpty() })
     }
 
     @Test

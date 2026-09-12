@@ -30,9 +30,11 @@ object GeniusIntent {
             is Route.Website -> mentioned(route.query)
             is Route.Terminal -> GeniusRouter.route(spoken) is Route.Terminal || mentioned(route.request)
             is Route.Write -> mentioned(route.request)
-            is Route.Project -> mentioned(route.request)
+            // A story or a letter is prose even when the model calls it a project.
+            is Route.Project -> mentioned(route.request) && GeniusRouter.route(spoken) !is Route.Write
             is Route.WhatsApp -> spoken.replace(" ", "").contains(route.number)
             is Route.Plan -> true
+            is Route.Help -> true
         }
     }
 
@@ -62,6 +64,7 @@ object GeniusIntent {
                 val message = arg.substringAfter(';', "").trim().ifBlank { arg.replace(number, "").trim(' ', ';', ',', '-') }
                 Route.WhatsApp(number, message)
             }
+            "HELP" -> Route.Help
             "OTHER", "PLAN" -> null
             else -> null
         }

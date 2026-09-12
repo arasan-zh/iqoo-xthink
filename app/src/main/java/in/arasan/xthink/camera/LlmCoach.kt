@@ -310,6 +310,7 @@ class LlmCoach(private val context: Context) {
             WRITE - write a letter, notes, a story, a poem; ARG is what to write, as asked
             PROJECT - create or build code, a website, an app; ARG is what to build
             WHATSAPP - message someone on WhatsApp; ARG is the number ; the message
+            HELP - the user asks what you can do
             OTHER - anything else
             Examples:
             open the terminal and show the current directory -> TERMINAL | pwd
@@ -318,6 +319,8 @@ class LlmCoach(private val context: Context) {
             write a love letter to Priya -> WRITE | a love letter to Priya
             create a portfolio website for Priya -> PROJECT | a portfolio website for Priya
             text 9442851409 on whatsapp saying hello -> WHATSAPP | 9442851409 ; hello
+            write a one page science fiction story -> WRITE | a one page science fiction story
+            what can you do -> HELP |
             Request: $spoken
         """.trimIndent()
 

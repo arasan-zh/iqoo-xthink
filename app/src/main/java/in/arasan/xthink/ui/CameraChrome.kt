@@ -38,6 +38,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.draw.alpha
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -195,8 +196,14 @@ fun ModeTabs(
     typeMode: Boolean = false,
     onType: () -> Unit = {},
 ) {
+    // Six tabs do not all fit a phone's width at a readable size, so the
+    // row scrolls; the selected tab is scrolled into view when it changes.
+    val scroll = rememberScrollState()
+    LaunchedEffect(mode, videoMode, typeMode) {
+        if (typeMode) scroll.animateScrollTo(scroll.maxValue) else if (!videoMode && mode == CoachMode.PORTRAIT) scroll.animateScrollTo(0)
+    }
     Row(
-        modifier = modifier,
+        modifier = modifier.horizontalScroll(scroll),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

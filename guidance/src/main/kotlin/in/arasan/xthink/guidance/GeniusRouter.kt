@@ -28,6 +28,9 @@ sealed class Route {
 
     /** Nothing matched: the model plans in the full verb language. */
     data class Plan(val request: String) : Route()
+
+    /** "What can you do?" - the list, nothing performed. */
+    object Help : Route()
 }
 
 object GeniusRouter {
@@ -62,6 +65,9 @@ object GeniusRouter {
     fun route(spoken: String): Route {
         val s = spoken.trim().lowercase().replace(Regex("\\s+"), " ")
         if (s.isEmpty()) return Route.Plan(spoken)
+        if (Regex("""\b(what can you do|what do you do|what are you able|help me|show me what you can|your abilities|what all can you)\b""").containsMatchIn(s) ||
+            s == "help"
+        ) return Route.Help
 
         // WhatsApp with a number in the words.
         if ("whatsapp" in s || "whats app" in s) {
@@ -74,13 +80,18 @@ object GeniusRouter {
             }
         }
 
-        // YouTube: "play X on youtube" is a search there.
-        if ("youtube" in s || "you tube" in s) {
-            val what = Regex("""(?:play|search|search for|find|watch|open)\s+(.+?)\s*(?:on|in|at)\s+you ?tube""").find(s)?.groupValues?.get(1)
+        // YouTube: "play X on youtube" - or just "play X" - lands on the video itself.
+        val tube = "youtube" in s || "you tube" in s
+        val play = Regex("""^(?:please )?play\b""").containsMatchIn(s)
+        if (tube || play) {
+            var what = Regex("""(?:play|search for|search|find|watch|open)\s+(.+?)\s*(?:on|in|at|from)\s+you ?tube\b""").find(s)?.groupValues?.get(1)
                 ?: Regex("""you ?tube\s+(?:and\s+)?(?:play|search for|search|find|watch)\s+(.+)$""").find(s)?.groupValues?.get(1)
-            val q = what?.trim()?.removePrefix("a ")?.removePrefix("the ")?.trim().orEmpty()
-            return if (q.isEmpty()) Route.Website("youtube", "https://www.youtube.com")
-            else Route.Website("youtube: $q", "https://www.youtube.com/results?search_query=" + q.replace(Regex("\\s+"), "+"))
+                ?: if (play) Regex("""^(?:please )?play\s+(.+)$""").find(s)?.groupValues?.get(1) else null
+            what = what?.replace(Regex("""\s+(?:song|video|music|songs|videos)\s*$"""), "")?.trim()
+            val q = what?.replace(Regex("""^(?:a|an|the|some|any|me)\s+"""), "")?.trim().orEmpty()
+            val generic = q in setOf("", "a", "an", "the", "some", "any", "song", "video", "music", "something")
+            return if (generic) Route.Website("youtube", "https://www.youtube.com")
+            else Route.Website("youtube: $q", youtubePlayUrl(q))
         }
 
         // A plain open of a known app.
@@ -100,9 +111,13 @@ object GeniusRouter {
         val terminal = TERMINAL_WORDS.any { it in "$s " }
         val write = WRITE_WORDS.any { it in "$s " }
         val project = PROJECT_WORDS.any { it in "$s " }
+        // Writing words win over making words: "write a one page story" is
+        // prose, whatever "page" suggests. Code words alone make a project.
+        val code = listOf("code", "html", "website", "web site", "web page", "landing page", "app ", "portfolio", "project", "implement", "refactor", "fix the").any { it in "$s " }
         return when {
+            write && !terminal && !code -> Route.Write(spoken.trim())
             project && !write -> Route.Project(spoken.trim())
-            write && !terminal -> Route.Write(spoken.trim())
+            write && !terminal -> if (code) Route.Project(spoken.trim()) else Route.Write(spoken.trim())
             terminal -> Route.Terminal(spoken.trim())
             project -> Route.Project(spoken.trim())
             else -> Route.Plan(spoken.trim())
@@ -126,12 +141,18 @@ object GeniusRouter {
         return t.replace(Regex("""\s+"""), " ").trim().ifEmpty { spoken.trim() }
     }
 
-    /** Google's "I'm Feeling Lucky": the first result, which is the site itself. */
-    fun luckyUrl(topic: String): String {
-        val q = topic.trim().replace(Regex("\\s+"), "+")
-            .replace("&", "%26").replace("#", "%23").replace("?", "%3F")
-        return "https://www.google.com/search?btnI=1&q=$q"
-    }
+    /**
+     * Straight to the first result. DuckDuckGo's backslash operator
+     * redirects to it without an interstitial; Google's "I'm Feeling
+     * Lucky" parameter just shows results when typed into an address bar.
+     */
+    fun luckyUrl(topic: String): String = "https://duckduckgo.com/?q=%5C" + encode(topic)
+
+    /** The first YouTube hit for a title: the watch page, which plays. */
+    fun youtubePlayUrl(title: String): String = "https://duckduckgo.com/?q=%5Csite%3Ayoutube.com+" + encode(title)
+
+    private fun encode(text: String): String = text.trim().replace(Regex("\\s+"), "+")
+        .replace("&", "%26").replace("#", "%23").replace("?", "%3F").replace("'", "%27").replace("\"", "%22")
 
     /** The single-file brief Claude Code is handed for a project. */
     fun projectBrief(request: String): String =
@@ -179,5 +200,17 @@ object GeniusRouter {
             )),
         )
         is Route.Plan -> emptyList()
+        is Route.Help -> HELP.map { PlanStep(it, emptyList()) }
     }
+
+    /** What Steve can do, in the words to say. */
+    val HELP: List<String> = listOf(
+        "\"open safari\" - open an app",
+        "\"open apple.com\" / \"search for the iqoo website\" - a website",
+        "\"play raavana mavandaa in youtube\" - play a video",
+        "\"open the terminal and show the current directory\" - shell work",
+        "\"write a love letter to Priya\" / \"write a science fiction story\" - Steve writes, TextEdit gets it",
+        "\"create a portfolio website for Priya\" - VS Code, Claude Code, one HTML file",
+        "\"text 9442851409 on whatsapp saying hello\" - a WhatsApp message",
+    )
 }

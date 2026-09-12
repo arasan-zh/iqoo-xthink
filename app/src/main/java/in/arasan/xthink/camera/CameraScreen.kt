@@ -542,6 +542,14 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     fun geniusAct(route: Route, heard: String) {
         val main = ContextCompat.getMainExecutor(context)
         val asked = when (route) {
+            is Route.Help -> {
+                gPlan = GeniusRouter.steps(route)
+                gStep = -1
+                gPhase = "DONE"
+                gNote = "Say any of these. The plan shows first; Run does it."
+                refreshGenius()
+                true
+            }
             is Route.Open, is Route.Website, is Route.Project -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
             is Route.Terminal -> if (route.command != null) {
                 geniusPropose(GeniusRouter.steps(route, route.command), "PLANNED"); true

@@ -14,7 +14,7 @@ class GeniusIntentTest {
         val w = GeniusIntent.parse("WEBSITE | apple.com") as Route.Website
         assertEquals("https://apple.com", w.url)
         val g = GeniusIntent.parse("WEBSITE | iqoo 15") as Route.Website
-        assertTrue(g.url.contains("btnI=1&q=iqoo+15"))
+        assertTrue(g.url.contains("%5Ciqoo+15"))
         val t = GeniusIntent.parse("TERMINAL | ls -la") as Route.Terminal
         assertEquals("ls -la", t.command)
         assertTrue(GeniusIntent.parse("WRITE | a love letter to Priya") is Route.Write)
@@ -43,6 +43,13 @@ class GeniusIntentTest {
         assertTrue(r4 is Route.Terminal && r4.command == "pwd"); assertTrue(fromModel4)
         val (r5, fromModel5) = GeniusIntent.decide("WRITE | a love letter to Priya", "write a love letter to Priya")
         assertTrue(r5 is Route.Write); assertTrue(fromModel5)
+    }
+
+    @Test
+    fun `a story called a project by the model is still a story`() {
+        val (r, fromModel) = GeniusIntent.decide("PROJECT | a one page science fiction story", "write a one page science fiction story with the name of a japanese comic")
+        assertTrue(r is Route.Write); assertTrue(!fromModel)
+        assertEquals(Route.Help, GeniusIntent.parse("HELP | ")) 
     }
 
     @Test
