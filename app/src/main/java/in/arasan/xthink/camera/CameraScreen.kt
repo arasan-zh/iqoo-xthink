@@ -84,6 +84,7 @@ import `in`.arasan.xthink.guidance.GeniusPlan
 import `in`.arasan.xthink.guidance.PlanStep
 import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
+import `in`.arasan.xthink.guidance.MacWatch
 import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.Exercise
 import `in`.arasan.xthink.guidance.RepCounter
@@ -155,6 +156,11 @@ private const val COACH_DEFERRED_LOAD_MS = 60_000L
 
 /** After a plan runs, the Mac gets this long to settle before the camera reads it. */
 private const val GENIUS_SETTLE_MS = 2_500L
+/** How often the camera reads the Mac screen while Steve's room is open. Cheap: ML Kit, no model. */
+private const val WATCH_PERIOD_MS = 2_000L
+/** The model narrates a changed screen at most this often. A run or a tap narrates at once. */
+private const val WATCH_NARRATE_MIN_MS = 20_000L
+private const val WATCH_LOG_MAX = 10
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -523,6 +529,14 @@ private fun CameraAndGuidance(
     var gDraft by remember { mutableStateOf("") }
     var gCountdown by remember { mutableIntStateOf(0) }
     var gArm by remember { mutableIntStateOf(0) }
+    // Steve's eyes: the camera's reading of the Mac, what was typed last,
+    // whether it landed, and what the model has said about the screen.
+    var gScreen by remember { mutableStateOf("") }
+    var gTyped by remember { mutableStateOf<String?>(null) }
+    var gInputSeen by remember { mutableStateOf<Boolean?>(null) }
+    var gLog by remember { mutableStateOf<List<String>>(emptyList()) }
+    var gWatching by remember { mutableStateOf(false) }
+    val gNarratedAt = remember { longArrayOf(0L) }
     DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close(); speech.close() } }
 
     fun keyboardLine(): String = when (keyboardState) {
@@ -551,6 +565,10 @@ private fun CameraAndGuidance(
                 refusals = CommandSafety.refusals(gPlan),
                 draft = gDraft,
                 countdown = gCountdown,
+                screen = gScreen,
+                log = gLog,
+                inputSeen = gInputSeen,
+                watching = gWatching,
             ) else null,
         )
     }
@@ -624,6 +642,58 @@ private fun CameraAndGuidance(
         }, GENIUS_SETTLE_MS)
     }
 
+    /**
+     * One line from the model about what the Mac is showing - after a run
+     * (with the typed text to check), on a tap, or when the screen changed
+     * and it has been a while. Never in a loop of its own: the trigger is
+     * always an event, and the reading loop below is ML Kit, not the model.
+     */
+    fun geniusNarrate(reason: String, typed: String?) {
+        if (gWatching || coachState != LlmCoach.State.READY || coach.isBusy) return
+        val screen = gScreen
+        if (screen.isBlank()) { if (reason == "asked") { gNote = "Point the camera at the Mac screen"; refreshGenius() }; return }
+        gWatching = true
+        refreshGenius()
+        val asked = coach.askText(LlmCoach.Kind.WATCH, LlmCoach.watchPrompt(gHeard, screen, typed), ContextCompat.getMainExecutor(context)) { text, done ->
+            if (!done) return@askText
+            gWatching = false
+            val line = text.trim().trim('"')
+            if (line.isNotBlank()) {
+                val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+                gLog = (gLog + "$clock  $line").takeLast(WATCH_LOG_MAX)
+                gNarratedAt[0] = SystemClock.uptimeMillis()
+                Log.i(TAG, "steve watch ($reason): $line")
+            }
+            refreshGenius()
+        }
+        if (!asked) { gWatching = false; refreshGenius() }
+    }
+
+    // The reading loop: while Steve's room is open, the camera reads the
+    // Mac screen every couple of seconds. Each reading updates the panel
+    // and the input check; a materially changed screen may also earn a
+    // line from the model, rate limited.
+    LaunchedEffect(typeMode) {
+        if (!typeMode) return@LaunchedEffect
+        while (typeMode) {
+            delay(WATCH_PERIOD_MS)
+            if (!typeMode) break
+            val snap = previewSnapshot()
+            if (snap != null && !reader.busy) {
+                reader.read(snap, ContextCompat.getMainExecutor(context)) { text ->
+                    if (!typeMode) return@read
+                    val previous = gScreen
+                    gScreen = text
+                    gInputSeen = MacWatch.inputSeen(gTyped, text)
+                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
+                    val due = SystemClock.uptimeMillis() - gNarratedAt[0] > WATCH_NARRATE_MIN_MS
+                    if (quiet && due && text.isNotBlank() && MacWatch.changed(previous, text)) geniusNarrate("changed", null)
+                    refreshGenius()
+                }
+            }
+        }
+    }
+
     /** The tap. Performs the plan on the table, if CommandSafety lets it. */
     fun geniusRun() {
         val steps = gPlan
@@ -642,7 +712,14 @@ private fun CameraAndGuidance(
         keyboard.perform(
             ops,
             onProgress = { i -> if (i < stepOfOp.size && stepOfOp[i] != gStep) { gStep = stepOfOp[i]; refreshGenius() } },
-            onDone = { ok -> if (!ok) geniusFail("the keyboard link dropped or Stop was pressed") else geniusDone(null) },
+            onDone = { ok ->
+                if (!ok) { geniusFail("the keyboard link dropped or Stop was pressed"); return@perform }
+                geniusDone(null)
+                gTyped = MacWatch.typed(steps)
+                gInputSeen = null
+                // The Mac needs a moment; then one line on what it shows and whether the typing landed.
+                Handler(Looper.getMainLooper()).postDelayed({ if (typeMode) geniusNarrate("after run", gTyped) }, GENIUS_SETTLE_MS + WATCH_PERIOD_MS)
+            },
         )
     }
 
@@ -1463,6 +1540,7 @@ private fun CameraAndGuidance(
                     if (fitMode || signsMode) { fitMode = false; signsMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false }; overlayState = overlayState.copy(fitMode = false, fit = null, signsMode = false, sign = null) }
                     typeMode = true
                     gPhase = "READY"; gHeard = ""; gPlan = emptyList(); gStep = -1; gNote = null
+                    gScreen = ""; gTyped = null; gInputSeen = null; gLog = emptyList(); gWatching = false; gNarratedAt[0] = 0L
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false)
                     refreshGenius()
                     ensureCoach()
@@ -1476,6 +1554,15 @@ private fun CameraAndGuidance(
                         bluetoothLauncher.launch(keyboard.permissions)
                     }
                 }
+    }
+
+    fun leaveSteve() {
+        if (!typeMode) return
+        Log.i(TAG, "genius: left by the back button")
+        keyboard.cancelled = true
+        speech.stop()
+        typeMode = false
+        overlayState = overlayState.copy(typeMode = false, genius = null)
     }
 
     fun enterScan() {
@@ -1686,8 +1773,9 @@ private fun CameraAndGuidance(
                 haptics.play(HapticCue.TICK, if (on) 0.6f else 0.3f)
                 Log.i(TAG, "easy shot ${if (on) "on" else "off"}")
             },
-            onHome = onHome,
+            onHome = { if (typeMode) leaveSteve() else onHome() },
             onOpenRoom = onOpenRoom,
+            onGeniusWatch = { geniusNarrate("asked", gTyped) },
             onToggleTune = { overlayState = overlayState.copy(showTune = !overlayState.showTune, showShots = false, showLooks = false) },
             onFlip = {
                 val toFront = lensFacing == CameraSelector.LENS_FACING_BACK

@@ -51,6 +51,14 @@ data class GeniusState(
     val draft: String = "",
     /** Seconds until the plan runs by itself; 0 when not counting. Cancel stops it. */
     val countdown: Int = 0,
+    /** The camera's latest reading of the Mac screen (OCR), raw. */
+    val screen: String = "",
+    /** What Steve has said about the Mac, oldest first, timestamped. */
+    val log: List<String> = emptyList(),
+    /** After a run: whether the typed text can be read on the screen; null when nothing to judge. */
+    val inputSeen: Boolean? = null,
+    /** The narration is being written. */
+    val watching: Boolean = false,
 )
 
 /**

@@ -428,3 +428,15 @@ piece device-verified on the iQOO 15 before it was committed.
   session is warmed when the coach loads. Measured: detector 60 ms, Gemma
   2.4 s, LaMa 3.7 s on the 1024-px review copy. The model file lives next
   to the Gemma bundles in `/data/local/tmp/llm` (`scripts/dev.sh model`).
+- **Steve watches the Mac**: while Steve's room is open the camera reads
+  the Mac screen every two seconds with ML Kit (no model), and the room
+  shows the Mac through a window - the live preview cleared out of the
+  room's own layer - with the first readable lines under it. `MacWatch`
+  (pure Kotlin, tested) decides what a reading means: whether the screen
+  changed materially (line-set similarity under 0.6), whether the text the
+  phone just typed can be read on it (most of its words, three letters or
+  more), the headline. Gemma narrates - one line, timestamped, kept as a
+  log in the room - only on an event: after a run (with the typed text to
+  check), on the *What's on the Mac?* tap, or when the screen changed and
+  twenty seconds have passed. The reading loop is ML Kit; the model is
+  never in a loop of its own.

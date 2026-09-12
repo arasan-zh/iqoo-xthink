@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, CLEAN }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, CLEAN, WATCH }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -164,7 +164,7 @@ class LlmCoach(private val context: Context) {
             val started = SystemClock.uptimeMillis()
             val sb = StringBuilder()
             var finalText: String? = null
-            val oneLine = kind == Kind.COMMAND || kind == Kind.UNDERSTAND
+            val oneLine = kind == Kind.COMMAND || kind == Kind.UNDERSTAND || kind == Kind.WATCH
             runCatching {
                 val session = LlmInferenceSession.createFromOptions(
                     model,
@@ -261,6 +261,16 @@ class LlmCoach(private val context: Context) {
             Paint out only distractions: litter, a stray bag or bottle, a cable, a bin, a sign, a photobomber at the edge, clutter that pulls the eye from the person.
             Never paint out the person, anything they wear or hold, or anything that gives the place its character.
             Answer with exactly one line: REMOVE <numbers, comma separated> | <what they are, three words> - or NONE | <why, three words>.
+        """.trimIndent()
+
+        /** Steve's eyes: the camera's reading of the Mac screen, narrated in one line. */
+        fun watchPrompt(spoken: String, screen: String, typed: String?): String = """
+            You are watching a Mac through a phone camera on behalf of the user${if (spoken.isNotBlank()) ", who asked: \"$spoken\"" else ""}.
+            The camera reads this on the Mac screen now (OCR, may be noisy):
+            ---
+            ${screen.take(900)}
+            ---
+            ${if (!typed.isNullOrBlank()) "The phone just typed on the Mac: \"${typed.take(120)}\"\n" else ""}Say in one short line what the Mac is showing or doing now${if (!typed.isNullOrBlank()) ", and whether the typed text landed" else ""}. No preamble.
         """.trimIndent()
 
         /** The crop and the look, in two words. Parsed by PhotographerCrop.parseCut and Looks. */

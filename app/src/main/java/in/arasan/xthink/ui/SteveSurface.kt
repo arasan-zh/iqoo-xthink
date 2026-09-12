@@ -34,6 +34,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.text.style.TextOverflow
+import `in`.arasan.xthink.guidance.MacWatch
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -53,9 +67,10 @@ private val CardLine = Color.White.copy(alpha = 0.10f)
 
 /**
  * Steve's room. Dark, quiet, gold: a Bluetooth ring that breathes while
- * the Mac is being found and holds still, solid, once it is linked; what
- * you said; the plan as cards; the count to Run. The camera is still
- * underneath, unseen - Steve needs ears and a keyboard, not eyes.
+ * the Mac is being found and holds still, solid, once it is linked; a
+ * window onto the Mac - the live camera, seen through the room - with
+ * what the camera reads on it; what you said; the plan as cards; the
+ * count to Run; and, below, what Steve says the Mac is doing.
  */
 @Composable
 fun SteveSurface(
@@ -65,12 +80,29 @@ fun SteveSurface(
     onRun: () -> Unit,
     onStop: () -> Unit,
     onHome: () -> Unit,
+    onWatch: () -> Unit = {},
 ) {
     val busy = state.phase in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
     val awaiting = state.phase in setOf("PLANNED", "PROPOSED")
     val refused = state.refusals.any { it != null }
     val linking = !state.connected && state.keyboard.let { it.contains("Connecting") || it.contains("Becoming") || it.contains("ready") }
-    Box(modifier = Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(NightHigh, Night)))) {
+    // The window: a hole in the room through which the camera preview
+    // underneath shows. Its place is measured, then cleared out of the layer.
+    var window by remember { mutableStateOf<Rect?>(null) }
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                window?.let { w ->
+                    val radius = CornerRadius(20.dp.toPx())
+                    drawRoundRect(Color.Black, topLeft = w.topLeft, size = w.size, cornerRadius = radius, blendMode = BlendMode.Clear)
+                    drawRoundRect(Gold.copy(alpha = 0.55f), topLeft = w.topLeft, size = w.size, cornerRadius = radius, style = Stroke(1.dp.toPx()))
+                }
+            }
+            .background(Brush.verticalGradient(listOf(NightHigh, Night))),
+    ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -81,26 +113,63 @@ fun SteveSurface(
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                DarkRound(onClick = onHome) { Glyph("home", Color.White, 20.dp) }
+                DarkRound(onClick = onHome) { Glyph("camera", Color.White, 20.dp) }
                 Spacer(Modifier.weight(1f))
                 Text(text = "STEVE", color = Gold, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 4.sp)
                 Spacer(Modifier.weight(1f))
                 Spacer(Modifier.size(44.dp))
             }
-            Spacer(Modifier.height(20.dp))
-            LinkRing(connected = state.connected, linking = linking)
-            Spacer(Modifier.height(14.dp))
-            Text(
-                text = state.keyboard,
-                color = if (state.connected) Color.White else GoldDim,
-                fontSize = 13.sp,
-                letterSpacing = 0.3.sp,
-            )
-            if (!state.connected) {
-                Spacer(Modifier.height(10.dp))
-                Pill(text = "Pair Mac", gold = true, onClick = onPair)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                LinkRing(connected = state.connected, linking = linking, diameter = 92.dp)
+                Spacer(Modifier.width(14.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = state.keyboard,
+                        color = if (state.connected) Color.White else GoldDim,
+                        fontSize = 13.sp,
+                        lineHeight = 18.sp,
+                        letterSpacing = 0.3.sp,
+                    )
+                    if (!state.connected) {
+                        Spacer(Modifier.height(8.dp))
+                        Pill(text = "Pair Mac", gold = true, onClick = onPair)
+                    }
+                }
             }
-            Spacer(Modifier.height(22.dp))
+            Spacer(Modifier.height(12.dp))
+            // --- the Mac, through the room ---
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .onGloballyPositioned { window = it.boundsInRoot() },
+            )
+            Spacer(Modifier.height(6.dp))
+            val headline = MacWatch.headline(state.screen)
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Text(text = "ON THE MAC", color = GoldDim, fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.5.sp)
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = if (headline.isBlank()) "point the camera at the screen" else headline,
+                    color = if (headline.isBlank()) Color.White.copy(alpha = 0.4f) else Color.White.copy(alpha = 0.75f),
+                    fontSize = 11.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f),
+                )
+            }
+            if (state.inputSeen != null) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (state.inputSeen) "\u2713  The typed text is on the Mac" else "The typed text is not on the screen yet",
+                    color = if (state.inputSeen) XT.Green else XT.Amber,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(12.dp))
             Text(
                 text = when (state.phase) {
                     "LISTENING" -> "Listening…"
@@ -115,11 +184,11 @@ fun SteveSurface(
                 },
                 color = Color.White,
                 fontFamily = FontFamily.Serif,
-                fontSize = 28.sp,
-                lineHeight = 34.sp,
+                fontSize = 24.sp,
+                lineHeight = 30.sp,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             Column(
                 modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
@@ -152,8 +221,17 @@ fun SteveSurface(
                 }
                 if (state.draft.isNotBlank()) Text(text = state.draft, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
                 if (state.note != null) Text(text = state.note, color = GoldDim, fontSize = 12.sp)
+                // --- what Steve has said about the Mac, oldest first ---
+                state.log.forEach { entry ->
+                    Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+                        Text(text = entry.substringBefore("  "), color = GoldDim, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                        Spacer(Modifier.width(10.dp))
+                        Text(text = entry.substringAfter("  ").trim(), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
+                    }
+                }
+                if (state.watching) Text(text = "Looking at the Mac\u2026", color = GoldDim, fontSize = 12.sp)
             }
-            Spacer(Modifier.height(14.dp))
+            Spacer(Modifier.height(10.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 when {
                     busy -> Pill(text = "Stop", gold = false, onClick = onStop, modifier = Modifier.weight(1f))
@@ -164,7 +242,10 @@ fun SteveSurface(
                             gold = true, onClick = onRun, modifier = Modifier.weight(1.4f),
                         )
                     }
-                    else -> Pill(text = "Speak", gold = state.connected && state.speechAvailable, onClick = { if (state.speechAvailable) onSpeak() }, modifier = Modifier.weight(1f))
+                    else -> {
+                        Pill(text = "Speak", gold = state.connected && state.speechAvailable, onClick = { if (state.speechAvailable) onSpeak() }, modifier = Modifier.weight(1.3f))
+                        Pill(text = if (state.watching) "Looking\u2026" else "What's on the Mac?", gold = false, onClick = { if (!state.watching) onWatch() }, modifier = Modifier.weight(1f))
+                    }
                 }
             }
         }
@@ -173,10 +254,10 @@ fun SteveSurface(
 
 /** Three rings. Breathing while the Mac is being found; still and gold once linked. */
 @Composable
-private fun LinkRing(connected: Boolean, linking: Boolean) {
+private fun LinkRing(connected: Boolean, linking: Boolean, diameter: androidx.compose.ui.unit.Dp = 150.dp) {
     val t = rememberInfiniteTransition(label = "ring")
     val p by t.animateFloat(0f, 1f, infiniteRepeatable(tween(1600, easing = LinearEasing), RepeatMode.Restart), label = "p")
-    Box(modifier = Modifier.size(150.dp), contentAlignment = Alignment.Center) {
+    Box(modifier = Modifier.size(diameter), contentAlignment = Alignment.Center) {
         Canvas(modifier = Modifier.fillMaxSize()) {
             val c = Offset(size.width / 2f, size.height / 2f)
             val base = size.minDimension / 2f
@@ -212,9 +293,9 @@ private fun Pill(text: String, gold: Boolean, onClick: () -> Unit, modifier: Mod
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 22.dp),
+            .padding(horizontal = 16.dp),
         contentAlignment = Alignment.Center,
-    ) { Text(text = text, color = if (gold) Night else Color.White, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
+    ) { Text(text = text, color = if (gold) Night else Color.White, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis) }
 }
 
 @Composable
