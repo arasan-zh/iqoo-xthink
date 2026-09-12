@@ -116,6 +116,20 @@ object FrameMapping {
     /** Head yaw at which lead room is asked for in full. */
     const val FULL_LEAD_YAW_DEG = 45f
 
+    /**
+     * The front camera's PREVIEW is mirrored - a selfie mirror - but the
+     * analysis frame is the raw sensor image, un-mirrored. The overlay draws
+     * in preview space, so everything the detector reports is flipped into
+     * it before the engine sees it: x -> 1 - x, and a head turned toward
+     * sensor-right appears turned toward preview-left. The engine then runs
+     * with mirrored = true so MOVE_LEFT / MOVE_RIGHT invert, which is what
+     * makes "move phone right" the physically correct instruction for a face
+     * that appears on the left of a mirror.
+     */
+    fun mirrorX(box: SubjectBox): SubjectBox = box.copy(cx = 1f - box.cx)
+
+    fun mirrorX(eyes: EyeLine): EyeLine = eyes.copy(gazeDx = -eyes.gazeDx)
+
     private fun normalizeRotation(degrees: Int): Int {
         val d = degrees % 360
         return if (d < 0) d + 360 else d

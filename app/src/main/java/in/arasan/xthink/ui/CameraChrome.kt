@@ -382,3 +382,41 @@ private fun DrawScope.drawRailGlyph(index: Int, color: Color) {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Flip - front / rear. The engine has handled the front camera since v0.1
+// (mirrored instructions, fixed focus); this is the button that reaches it.
+// ---------------------------------------------------------------------------
+
+@Composable
+fun FlipButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(XT.Chip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(22.dp)) {
+            val c = size.minDimension / 2f
+            val r = c * 0.68f
+            drawArc(
+                color = XT.OnChip,
+                startAngle = 20f,
+                sweepAngle = 300f,
+                useCenter = false,
+                topLeft = Offset(c - r, c - r),
+                size = Size(r * 2f, r * 2f),
+                style = Stroke(1.8f.dp.toPx(), cap = StrokeCap.Round),
+            )
+            val tip = Offset(c + r * 0.94f, c + r * 0.34f)
+            drawLine(XT.OnChip, tip, Offset(tip.x - r * 0.45f, tip.y - r * 0.1f), 1.8f.dp.toPx(), StrokeCap.Round)
+            drawLine(XT.OnChip, tip, Offset(tip.x - r * 0.05f, tip.y + r * 0.45f), 1.8f.dp.toPx(), StrokeCap.Round)
+        }
+    }
+}

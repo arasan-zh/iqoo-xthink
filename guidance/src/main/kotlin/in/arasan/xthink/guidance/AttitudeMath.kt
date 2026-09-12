@@ -39,13 +39,21 @@ object AttitudeMath {
 
     /**
      * @param r nine floats from `SensorManager.getRotationMatrixFromVector`.
+     * @param frontFacing true for the selfie lens, which looks along +Z - out
+     *        of the screen, at the photographer - instead of the rear lens's
+     *        -Z. Its elevation is therefore the vertical component of
+     *        +(R[2], R[5], R[8]): pitch changes sign, roll does not, because
+     *        "clockwise as the photographer sees it" is defined from the
+     *        screen side for both lenses.
      */
-    fun fromRotationMatrix(r: FloatArray): Attitude {
+    fun fromRotationMatrix(r: FloatArray, frontFacing: Boolean = false): Attitude {
         require(r.size >= 9) { "expected a 3x3 rotation matrix, got ${r.size} floats" }
 
-        // Elevation of the rear camera's optical axis above the horizon. The
-        // vertical component of -(R[2], R[5], R[8]) is all it takes.
-        val pitch = asin((-r[8]).coerceIn(-1f, 1f))
+        // Elevation of the camera's optical axis above the horizon: the
+        // vertical component of -(R[2], R[5], R[8]) for the rear lens,
+        // +(...) for the front.
+        val axisUp = if (frontFacing) r[8] else -r[8]
+        val pitch = asin(axisUp.coerceIn(-1f, 1f))
 
         // Roll is how far the screen-right axis has tilted off horizontal.
         // Measuring it against the screen-up axis with atan2 keeps it correct

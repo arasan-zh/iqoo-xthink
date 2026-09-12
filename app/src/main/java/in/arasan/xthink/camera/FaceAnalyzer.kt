@@ -67,6 +67,24 @@ class FaceAnalyzer(
     @Volatile
     var minIntervalMs: Long = MIN_INTERVAL_MS
 
+    /**
+     * True on the front camera. Its preview is a mirror but the analysis
+     * frame is not, so results are flipped into preview space before the
+     * engine and the overlay see them. See FrameMapping.mirrorX.
+     */
+    @Volatile
+    var mirrored: Boolean = false
+
+    private fun deliver(result: FaceResult) {
+        if (!mirrored) { onResult(result); return }
+        onResult(
+            result.copy(
+                subject = result.subject?.let { FrameMapping.mirrorX(it) },
+                eyes = result.eyes?.let { FrameMapping.mirrorX(it) },
+            )
+        )
+    }
+
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
@@ -143,7 +161,7 @@ class FaceAnalyzer(
         if (mode == CoachMode.OBJECT) {
             objectDetector.process(image)
                 .addOnSuccessListener { objects ->
-                    onResult(interpretObjects(objects, crop, SystemClock.uptimeMillis() - started, dtMs))
+                    deliver(interpretObjects(objects, crop, SystemClock.uptimeMillis() - started, dtMs))
                 }
                 .addOnFailureListener { Log.w(TAG, "object detection failed", it) }
                 .addOnCompleteListener {
@@ -154,7 +172,7 @@ class FaceAnalyzer(
         }
         detector.process(image)
             .addOnSuccessListener { faces ->
-                onResult(interpret(faces, crop, SystemClock.uptimeMillis() - started, dtMs))
+                deliver(interpret(faces, crop, SystemClock.uptimeMillis() - started, dtMs))
             }
             .addOnFailureListener { Log.w(TAG, "face detection failed", it) }
             .addOnCompleteListener {

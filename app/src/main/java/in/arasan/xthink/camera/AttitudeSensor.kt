@@ -44,6 +44,10 @@ class AttitudeSensor(context: Context) : SensorEventListener {
     /** False when this phone has no game rotation vector at all. */
     val isAvailable: Boolean get() = sensor != null
 
+    /** The selfie lens looks along +Z; its pitch is the rear lens's negated. See AttitudeMath. */
+    @Volatile
+    var frontFacing: Boolean = false
+
     private val rotationMatrix = FloatArray(9)
     private var onSample: ((AttitudeSample) -> Unit)? = null
     private var lastTimestampNs = 0L
@@ -74,7 +78,7 @@ class AttitudeSensor(context: Context) : SensorEventListener {
 
         // All of the trigonometry lives in :guidance, where it is unit tested
         // against a generated grid of poses. This class only plumbs.
-        val attitude = AttitudeMath.fromRotationMatrix(rotationMatrix)
+        val attitude = AttitudeMath.fromRotationMatrix(rotationMatrix, frontFacing)
         val reliable = AttitudeMath.isRollReliable(rotationMatrix)
 
         val dtMs = if (lastTimestampNs == 0L) {

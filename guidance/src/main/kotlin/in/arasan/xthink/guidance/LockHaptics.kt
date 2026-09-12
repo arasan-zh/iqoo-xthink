@@ -13,6 +13,44 @@ enum class HapticCue {
     LOCK,
     /** The lock was lost. Once, softer. */
     UNLOCK,
+    // Direction signatures, played once when the instruction changes so the
+    // photographer knows which way without looking. One motor cannot be
+    // spatially left or right, but it can be distinguishably different:
+    /** Two low ticks. */
+    DIR_LEFT,
+    /** One sharp click. */
+    DIR_RIGHT,
+    /** A rise. */
+    DIR_UP,
+    /** A fall. */
+    DIR_DOWN,
+    /** A spin, for levelling either way. */
+    DIR_ROTATE,
+    /** A slow rise, for closer / zoom in. */
+    DIR_CLOSER,
+    /** A thud, for back / zoom out. */
+    DIR_BACK,
+}
+
+/**
+ * The direction signature for an instruction change, or NONE when the change
+ * is not directional (a lock, a focus tap, seeking). Pure; the driver maps
+ * each cue to a motor pattern.
+ */
+object DirectionCues {
+    fun forTransition(previous: Verb?, next: Verb): HapticCue {
+        if (previous == next) return HapticCue.NONE
+        return when (next) {
+            Verb.MOVE_LEFT -> HapticCue.DIR_LEFT
+            Verb.MOVE_RIGHT -> HapticCue.DIR_RIGHT
+            Verb.MOVE_UP, Verb.TILT_UP -> HapticCue.DIR_UP
+            Verb.MOVE_DOWN, Verb.TILT_DOWN -> HapticCue.DIR_DOWN
+            Verb.LEVEL_CW, Verb.LEVEL_CCW -> HapticCue.DIR_ROTATE
+            Verb.STEP_CLOSER, Verb.ZOOM_IN -> HapticCue.DIR_CLOSER
+            Verb.STEP_BACK, Verb.ZOOM_OUT -> HapticCue.DIR_BACK
+            else -> HapticCue.NONE
+        }
+    }
 }
 
 /**

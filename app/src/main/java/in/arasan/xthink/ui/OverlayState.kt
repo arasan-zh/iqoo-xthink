@@ -36,6 +36,8 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** Front camera: the preview is a mirror, so the horizon tilts the other way. */
+    val mirrored: Boolean = false,
     /** The thermal governor's tier. Only shown when it is not COOL. */
     val thermal: ThermalTier = ThermalTier.COOL,
     val thermalHeadroom: Float = Float.NaN,

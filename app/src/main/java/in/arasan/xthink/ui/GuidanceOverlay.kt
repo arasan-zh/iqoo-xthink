@@ -57,6 +57,7 @@ fun GuidanceOverlay(
     onShutter: () -> Unit,
     onGallery: () -> Unit,
     onModeSelected: (CoachMode) -> Unit,
+    onFlip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -121,9 +122,10 @@ fun GuidanceOverlay(
                 .padding(horizontal = XT.Gutter),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // --- top: nothing decorative. A small gap keeps the reticle's
-            //     safe area from starting at the status bar. ---
-            Spacer(Modifier.height(8.dp))
+            // --- top: the flip button, right-aligned. Nothing decorative. ---
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                FlipButton(onClick = onFlip)
+            }
 
             // --- middle: the mode rail on the left. Its own vertical centre,
             //     measured above, is where the fixed guides get drawn. ---

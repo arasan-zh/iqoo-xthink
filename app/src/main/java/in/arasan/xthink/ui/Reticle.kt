@@ -90,7 +90,10 @@ fun Reticle(
             drawBrackets(accent, lockPulse, safeCenterY)
             drawCentreCross(accent, safeCenterY)
         }
-        if (horizonAlpha > 0.01f) drawHorizon(state.alignment.rollDeg, horizonAlpha, safeCenterY)
+        // On a mirrored preview the world tilts the other way, so the horizon
+        // bar - which counter-rotates to stay level with the world - flips sign.
+        val horizonRoll = if (state.mirrored) -state.alignment.rollDeg else state.alignment.rollDeg
+        if (horizonAlpha > 0.01f) drawHorizon(horizonRoll, horizonAlpha, safeCenterY)
         if (ladderAlpha > 0.01f) drawPitchLadder(state.alignment.pitchErrDeg, ladderAlpha, safeCenterY)
     }
 }

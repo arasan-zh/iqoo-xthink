@@ -59,6 +59,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.AutoCapturePolicy
 import `in`.arasan.xthink.guidance.CoachMode
+import `in`.arasan.xthink.guidance.DirectionCues
 import `in`.arasan.xthink.guidance.HapticCue
 import `in`.arasan.xthink.guidance.LockHaptics
 import `in`.arasan.xthink.guidance.CompositionProfile
@@ -139,7 +140,13 @@ private fun CameraAndGuidance() {
     var lastCaptureUri by remember { mutableStateOf<Uri?>(null) }
 
     val profiles = remember { loadProfiles(context) }
-    val engine = remember { GuidanceEngine(profiles.getValue(ShotType.LANDSCAPE)) }
+
+    // Which lens. Flipping rebinds the camera and builds a fresh engine for
+    // it: the front camera is a mirror (left/right invert) and, on this
+    // phone, fixed-focus (never ask for a focus tap). Both are constructor
+    // facts of the engine, so a new one is the honest way to switch.
+    var lensFacing by remember { mutableStateOf(CameraSelector.LENS_FACING_BACK) }
+    var engine by remember { mutableStateOf(GuidanceEngine(profiles.getValue(ShotType.LANDSCAPE))) }
 
     // A raw face count flaps - 0-2-1-2-0-1-4-3-0 inside ten seconds on the
     // phone - and every change used to reset the deadzone gates and the lock
@@ -244,6 +251,7 @@ private fun CameraAndGuidance() {
     // --- sensor ----------------------------------------------------------
     DisposableEffect(engine) {
         val sensor = AttitudeSensor(context)
+        sensor.frontFacing = lensFacing == CameraSelector.LENS_FACING_FRONT
         val started = sensor.start { s -> latestAttitude[0] = s }
         sensorMissing = !started
         if (!started) Log.w(TAG, "TYPE_GAME_ROTATION_VECTOR unavailable; guidance cannot run")
@@ -287,7 +295,8 @@ private fun CameraAndGuidance() {
         runCatching { context.startActivity(intent) }.onFailure { Log.w(TAG, "no viewer for the gallery", it) }
     }
 
-    DisposableEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner, lensFacing) {
+        val isFront = lensFacing == CameraSelector.LENS_FACING_FRONT
         val mainHandler = Handler(Looper.getMainLooper())
         val analysisExecutor = Executors.newSingleThreadExecutor()
         var telemetry = CameraTelemetry()
@@ -324,6 +333,7 @@ private fun CameraAndGuidance() {
                 mode = shotTypes.mode,
                 thermal = thermalPlan[0].tier,
                 thermalHeadroom = overlayState.thermalHeadroom,
+                mirrored = overlayState.mirrored,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -338,6 +348,15 @@ private fun CameraAndGuidance() {
             // ticks so its cooldown clock stays honest.
             val wantsShot = autoCapture.update(next.verb, engine.stabilityOk, result.subject != null, result.dtMs)
             if (wantsShot && thermalPlan[0].autoCaptureOn) capture(auto = true)
+
+            // A direction signature under the thumb when the instruction
+            // changes - left, right, up, down feel different - so the
+            // photographer knows which way without looking. The lockout keeps
+            // changes at least 600ms apart, so these cannot spam.
+            if (next.verb != lastVerb) {
+                val dir = DirectionCues.forTransition(lastVerb, next.verb)
+                if (dir != HapticCue.NONE && thermalPlan[0].hapticsOn) haptics.play(dir)
+            }
 
             // Every change of verb, plus a heartbeat. Transitions are where the
             // bugs live, and a 1 Hz sample cannot see a state that lasts 500ms.
@@ -368,6 +387,7 @@ private fun CameraAndGuidance() {
 
         analyzerRef[0] = analyzer
         analyzer.mode = shotTypes.mode
+        analyzer.mirrored = isFront
         analyzer.minIntervalMs = thermalPlan[0].analysisIntervalMs
 
         val future = ProcessCameraProvider.getInstance(context)
@@ -430,10 +450,9 @@ private fun CameraAndGuidance() {
 
                 runCatching {
                     provider.unbindAll()
-                    // Rear camera only.
                     val camera = provider.bindToLifecycle(
                         lifecycleOwner,
-                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        if (isFront) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA,
                         group,
                     )
                     cameraControl = camera
@@ -453,12 +472,25 @@ private fun CameraAndGuidance() {
                         hasAutofocus = statics.hasAutofocus,
                         maxIso = statics.maxIso,
                     )
-                    engine.reportZoom(telemetry.zoomRatio, statics.maxZoomRatio)
+                    // A fresh engine for this lens: mirrored instructions on
+                    // the front camera, and no focus tap where there is no
+                    // autofocus - measured from the characteristics, not
+                    // assumed from which side the lens is on.
+                    val fresh = GuidanceEngine(
+                        profiles.getValue(shotTypes.current),
+                        mirrored = isFront,
+                        hasAutofocus = statics.hasAutofocus,
+                    )
+                    fresh.reportZoom(telemetry.zoomRatio, statics.maxZoomRatio)
+                    engine = fresh
+                    lockHaptics.reset()
+                    autoCapture.reset()
+                    overlayState = overlayState.copy(mirrored = isFront)
                     Log.i(
                         TAG,
-                        "bound rear camera: autofocus=${statics.hasAutofocus} " +
-                            "zoom<=${statics.maxZoomRatio}x minFocus=${statics.minFocusCm}cm " +
-                            "viewPort=${previewView.viewPort != null}",
+                        "bound ${if (isFront) "front" else "rear"} camera: mirrored=$isFront " +
+                            "autofocus=${statics.hasAutofocus} zoom<=${statics.maxZoomRatio}x " +
+                            "minFocus=${statics.minFocusCm}cm viewPort=${previewView.viewPort != null}",
                     )
                 }.onFailure { Log.e(TAG, "bindToLifecycle failed", it) }
             }
@@ -486,6 +518,13 @@ private fun CameraAndGuidance() {
             },
             onGallery = { openGallery() },
             onModeSelected = { selectMode(it) },
+            onFlip = {
+                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                    CameraSelector.LENS_FACING_FRONT
+                } else {
+                    CameraSelector.LENS_FACING_BACK
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
         if (sensorMissing) {
@@ -516,6 +555,7 @@ private fun buildOverlayState(
     mode: CoachMode,
     thermal: ThermalTier,
     thermalHeadroom: Float,
+    mirrored: Boolean,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -551,6 +591,7 @@ private fun buildOverlayState(
         mode = mode,
         thermal = thermal,
         thermalHeadroom = thermalHeadroom,
+        mirrored = mirrored,
     )
 }
 
