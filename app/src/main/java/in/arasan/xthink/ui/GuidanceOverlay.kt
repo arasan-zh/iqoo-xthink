@@ -16,6 +16,13 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.input.pointer.pointerInput
 import `in`.arasan.xthink.guidance.CoachMode
+import `in`.arasan.xthink.guidance.ThermalTier
+import androidx.compose.material3.Text
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
@@ -140,6 +147,7 @@ fun GuidanceOverlay(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
+                if (state.thermal != ThermalTier.COOL) ThermalChip(state.thermal)
                 GuidanceCard(state = state)
                 StatusStrip(state = state)
 
@@ -167,5 +175,33 @@ fun GuidanceOverlay(
         if (flash.value > 0.005f) {
             Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flash.value)))
         }
+    }
+}
+
+/**
+ * Shown only while the governor is holding something back, so the slower
+ * guidance reads as deliberate rather than broken. Absent when COOL.
+ */
+@Composable
+private fun ThermalChip(tier: ThermalTier) {
+    val text = when (tier) {
+        ThermalTier.WARM -> "Warm \u2022 guidance at 15 fps"
+        ThermalTier.HOT -> "Hot \u2022 guidance slowed, haptics off"
+        ThermalTier.CRITICAL -> "Cooling down \u2022 auto-capture paused"
+        ThermalTier.COOL -> ""
+    }
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(XT.Corner))
+            .background(XT.Chip)
+            .padding(horizontal = 14.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = text,
+            color = if (tier == ThermalTier.CRITICAL) XT.Amber else XT.OnChip,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }

@@ -56,6 +56,14 @@ class FaceAnalyzer(
     @Volatile
     var mode: CoachMode = CoachMode.PORTRAIT
 
+    /**
+     * Minimum gap between analysed frames. The thermal governor raises this
+     * as the phone warms; the detector is the largest heat source we control.
+     * Set from the UI thread, read on the analysis thread.
+     */
+    @Volatile
+    var minIntervalMs: Long = MIN_INTERVAL_MS
+
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
             .setPerformanceMode(FaceDetectorOptions.PERFORMANCE_MODE_FAST)
@@ -75,7 +83,7 @@ class FaceAnalyzer(
         // Throttled, per CLAUDE.md. STRATEGY_KEEP_ONLY_LATEST already drops
         // stale frames; this caps the rate we ask the NPU to work at, which is
         // thermal budget the v0.5-cool governor will want back.
-        if (busy || now - lastAnalysisMs < MIN_INTERVAL_MS) {
+        if (busy || now - lastAnalysisMs < minIntervalMs) {
             imageProxy.close()
             return
         }

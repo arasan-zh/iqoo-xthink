@@ -5,6 +5,7 @@ import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.SubjectBox
+import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
 
 /** One row of the status strip. */
@@ -35,6 +36,9 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** The thermal governor's tier. Only shown when it is not COOL. */
+    val thermal: ThermalTier = ThermalTier.COOL,
+    val thermalHeadroom: Float = Float.NaN,
 ) {
     val verb: Verb? get() = instruction?.verb
     val isLocked: Boolean get() = verb == Verb.LOCKED

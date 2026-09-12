@@ -67,6 +67,9 @@ import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.ShotType
 import `in`.arasan.xthink.guidance.ShotTypeSelector
 import `in`.arasan.xthink.guidance.SubjectBox
+import `in`.arasan.xthink.guidance.ThermalGovernor
+import `in`.arasan.xthink.guidance.ThermalPlan
+import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
 import `in`.arasan.xthink.ui.GuidanceOverlay
 import `in`.arasan.xthink.ui.OverlayState
@@ -167,6 +170,16 @@ private fun CameraAndGuidance() {
     val lockHaptics = remember { LockHaptics() }
     val haptics = remember { HapticDriver(context) }
 
+    // The thermal governor. :guidance decides the tier; this screen applies
+    // the plan - detector rate, haptics, auto-capture - and shows a chip only
+    // while something is being held back.
+    val governor = remember { ThermalGovernor() }
+    val thermalPlan = remember { arrayOf(ThermalPlan.forTier(ThermalTier.COOL)) }
+
+    // The analyser is created inside the camera effect; the mode switch and
+    // the governor both need to reach it from outside, so hold a reference.
+    val analyzerRef = remember { arrayOfNulls<FaceAnalyzer>(1) }
+
     fun capture(auto: Boolean) {
         if (captureInFlight) return
         captureInFlight = true
@@ -208,6 +221,26 @@ private fun CameraAndGuidance() {
         )
     }
 
+    // --- thermal ---------------------------------------------------------
+    DisposableEffect(governor) {
+        val monitor = ThermalMonitor(context)
+        var lastMs = SystemClock.uptimeMillis()
+        monitor.start { headroom, status ->
+            val now = SystemClock.uptimeMillis()
+            val before = governor.tier
+            val plan = governor.update(headroom, status, now - lastMs)
+            lastMs = now
+            thermalPlan[0] = plan
+            analyzerRef[0]?.minIntervalMs = plan.analysisIntervalMs
+            if (plan.tier != before) {
+                Log.i(TAG, "thermal %s -> %s (headroom=%.2f status=%d) analysis=%dms haptics=%b auto=%b".format(
+                    before, plan.tier, headroom, status, plan.analysisIntervalMs, plan.hapticsOn, plan.autoCaptureOn))
+            }
+            overlayState = overlayState.copy(thermal = plan.tier, thermalHeadroom = headroom)
+        }
+        onDispose { monitor.stop() }
+    }
+
     // --- sensor ----------------------------------------------------------
     DisposableEffect(engine) {
         val sensor = AttitudeSensor(context)
@@ -224,10 +257,6 @@ private fun CameraAndGuidance() {
             scaleType = PreviewView.ScaleType.FILL_CENTER
         }
     }
-
-    // The analyser is created inside the effect below; the mode switch needs
-    // to reach it from a click, so hold a reference here.
-    val analyzerRef = remember { arrayOfNulls<FaceAnalyzer>(1) }
 
     fun selectMode(mode: CoachMode) {
         if (overlayState.mode == mode) return
@@ -287,19 +316,22 @@ private fun CameraAndGuidance() {
                 thumbnail = overlayState.thumbnail,
                 captureNonce = overlayState.captureNonce,
                 mode = shotTypes.mode,
+                thermal = thermalPlan[0].tier,
+                thermalHeadroom = overlayState.thermalHeadroom,
             )
 
             // The lock game: feel the frame come together without looking.
             val cue = lockHaptics.update(engine.totalError, next.verb, result.subject != null, result.dtMs)
-            if (cue != HapticCue.NONE) {
+            if (cue != HapticCue.NONE && thermalPlan[0].hapticsOn) {
                 haptics.play(cue, lockHaptics.lastTickStrength)
                 if (cue != HapticCue.TICK) Log.i(TAG, "haptic $cue")
             }
 
-            // The coach said "now". Take the picture.
-            if (autoCapture.update(next.verb, engine.stabilityOk, result.subject != null, result.dtMs)) {
-                capture(auto = true)
-            }
+            // The coach said "now". Take the picture - unless the phone is
+            // too hot for a JPEG encode to be a good idea. The policy still
+            // ticks so its cooldown clock stays honest.
+            val wantsShot = autoCapture.update(next.verb, engine.stabilityOk, result.subject != null, result.dtMs)
+            if (wantsShot && thermalPlan[0].autoCaptureOn) capture(auto = true)
 
             // Every change of verb, plus a heartbeat. Transitions are where the
             // bugs live, and a 1 Hz sample cannot see a state that lasts 500ms.
@@ -318,10 +350,11 @@ private fun CameraAndGuidance() {
                 lastHeartbeat = now
                 Log.i(
                     TAG,
-                    "roll=%+.1f pitch=%+.1f faces=%d %s det=%dms err=%.3f lock=%.2f -> %s".format(
+                    "roll=%+.1f pitch=%+.1f faces=%d %s det=%dms err=%.3f lock=%.2f therm=%.2f/%s -> %s".format(
                         attitude.attitude.rollDeg, attitude.attitude.pitchDeg,
                         result.faceCount, stable, result.detectMs,
-                        engine.totalError, engine.lockProgress, next.text,
+                        engine.totalError, engine.lockProgress,
+                        overlayState.thermalHeadroom, thermalPlan[0].tier, next.text,
                     ),
                 )
             }
@@ -329,6 +362,7 @@ private fun CameraAndGuidance() {
 
         analyzerRef[0] = analyzer
         analyzer.mode = shotTypes.mode
+        analyzer.minIntervalMs = thermalPlan[0].analysisIntervalMs
 
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
@@ -472,6 +506,8 @@ private fun buildOverlayState(
     thumbnail: androidx.compose.ui.graphics.ImageBitmap?,
     captureNonce: Int,
     mode: CoachMode,
+    thermal: ThermalTier,
+    thermalHeadroom: Float,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -505,6 +541,8 @@ private fun buildOverlayState(
         thumbnail = thumbnail,
         captureNonce = captureNonce,
         mode = mode,
+        thermal = thermal,
+        thermalHeadroom = thermalHeadroom,
     )
 }
 

@@ -71,6 +71,23 @@ object GuidanceConstants {
     /** Eyes sit roughly this far down a detector face box. Shared with :app. */
     const val EYE_LINE_FRACTION_OF_FACE = 0.4f
 
+    // --- Thermal governor -------------------------------------------------------
+    // PowerManager.getThermalHeadroom(): 0 = cold, 1.0 = the throttling point.
+    // Measured 0.398 at idle on this phone (docs/evidence). The detector is
+    // the largest heat source we control, so tiers mostly turn its rate down.
+    const val THERMAL_WARM_HEADROOM = 0.60f
+    const val THERMAL_HOT_HEADROOM = 0.80f
+    const val THERMAL_CRITICAL_HEADROOM = 0.95f
+    /** Stepping DOWN a tier needs headroom this far below the threshold that raised it. */
+    const val THERMAL_HYSTERESIS = 0.05f
+    /** A tier change must persist this long before it is believed. Heat moves slowly; noise does not. */
+    const val THERMAL_TIER_HOLD_MS = 2000L
+    /** Analysis interval per tier, ms. 30 Hz, 15 Hz, ~7 Hz, 4 Hz. */
+    const val ANALYSIS_INTERVAL_COOL_MS = 33L
+    const val ANALYSIS_INTERVAL_WARM_MS = 66L
+    const val ANALYSIS_INTERVAL_HOT_MS = 133L
+    const val ANALYSIS_INTERVAL_CRITICAL_MS = 250L
+
     // --- Haptic lock game -------------------------------------------------------
     // totalError drives pulse rate like a Geiger counter: slow and sparse when
     // far off, quickening as the frame comes together, then one distinct
