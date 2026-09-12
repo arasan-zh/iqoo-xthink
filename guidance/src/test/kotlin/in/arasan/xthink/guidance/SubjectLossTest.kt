@@ -103,26 +103,26 @@ class SubjectLossTest {
         val selector = ShotTypeSelector()
         // Settle on a headshot.
         repeat(20) { selector.update(faceCount = 1, dtMs = 33L) }
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
 
         // The detector loses the face for three frames, then finds it again.
         // This is the 0-1-0-1 flapping seen on the phone.
-        assertEquals(ShotType.HEADSHOT, selector.update(0, 33L))
-        assertEquals(ShotType.HEADSHOT, selector.update(0, 33L))
-        assertEquals(ShotType.HEADSHOT, selector.update(0, 33L))
-        assertEquals(ShotType.HEADSHOT, selector.update(1, 33L))
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.update(0, 33L))
+        assertEquals(ShotType.HALF_BODY, selector.update(0, 33L))
+        assertEquals(ShotType.HALF_BODY, selector.update(0, 33L))
+        assertEquals(ShotType.HALF_BODY, selector.update(1, 33L))
+        assertEquals(ShotType.HALF_BODY, selector.current)
     }
 
     @Test
     fun `a face count that really does persist switches the profile`() {
         val selector = ShotTypeSelector()
         repeat(20) { selector.update(1, 33L) }
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
 
         // 500ms of hold at 33ms a frame is 16 frames.
         repeat(15) { selector.update(0, 33L) }
-        assertEquals("not yet - 495ms", ShotType.HEADSHOT, selector.current)
+        assertEquals("not yet - 495ms", ShotType.HALF_BODY, selector.current)
         selector.update(0, 33L)
         assertEquals("528ms, believed", ShotType.LANDSCAPE, selector.current)
     }
@@ -135,13 +135,13 @@ class SubjectLossTest {
         repeat(10) { selector.update(0, 33L) }   // 330ms toward LANDSCAPE
         selector.update(1, 33L)                   // withdrawn
         repeat(10) { selector.update(0, 33L) }   // starts over
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
     }
 
     @Test
     fun `switchProgress reports how far a pending change has come`() {
-        // Portrait-only: the only switch that ever pends is LANDSCAPE<->HEADSHOT,
-        // since every face count from 1 up maps to the same HEADSHOT target.
+        // Portrait-only: the only switch that ever pends is LANDSCAPE<->HALF_BODY,
+        // since every face count from 1 up maps to the same HALF_BODY target.
         val selector = ShotTypeSelector()
         assertEquals(ShotType.LANDSCAPE, selector.current)
         assertEquals(0f, selector.switchProgress, 1e-6f)
@@ -156,22 +156,22 @@ class SubjectLossTest {
         // portrait-only policy, so it must not start a hold timer.
         val selector = ShotTypeSelector()
         repeat(20) { selector.update(1, 33L) }
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
 
         selector.update(3, 250L)
         assertEquals(0f, selector.switchProgress, 1e-6f)
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
     }
 
     @Test
     fun `the count to shot type mapping is the agreed policy - portrait only`() {
         // This build never switches to GROUP: with several faces in frame and
-        // no mode tab to say otherwise, HEADSHOT on the largest face is the
+        // no mode tab to say otherwise, HALF_BODY on the largest face is the
         // one unambiguous choice.
         assertEquals(ShotType.LANDSCAPE, ShotTypeSelector.shotTypeFor(0))
-        assertEquals(ShotType.HEADSHOT, ShotTypeSelector.shotTypeFor(1))
-        assertEquals(ShotType.HEADSHOT, ShotTypeSelector.shotTypeFor(2))
-        assertEquals(ShotType.HEADSHOT, ShotTypeSelector.shotTypeFor(9))
+        assertEquals(ShotType.HALF_BODY, ShotTypeSelector.shotTypeFor(1))
+        assertEquals(ShotType.HALF_BODY, ShotTypeSelector.shotTypeFor(2))
+        assertEquals(ShotType.HALF_BODY, ShotTypeSelector.shotTypeFor(9))
         assertEquals(ShotType.LANDSCAPE, ShotTypeSelector.shotTypeFor(-1))
     }
 
@@ -179,7 +179,7 @@ class SubjectLossTest {
     fun `reset returns it to a known shot type`() {
         val selector = ShotTypeSelector()
         repeat(20) { selector.update(3, 33L) }
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
         selector.reset()
         assertEquals(ShotType.LANDSCAPE, selector.current)
         assertEquals(0f, selector.switchProgress, 1e-6f)
@@ -190,11 +190,11 @@ class SubjectLossTest {
         val selector = ShotTypeSelector()
         repeat(20) { selector.update(1, 33L) }
         repeat(50) { selector.update(0, -1000L) }
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
     }
 
     /**
-     * The two fixes composing: the hysteresis holds HEADSHOT open for half a
+     * The two fixes composing: the hysteresis holds HALF_BODY open for half a
      * second after the face goes, and that is exactly the window in which
      * "looking for your subject" is the honest thing to say. Once it expires
      * the shot is a landscape and normal coaching resumes.
@@ -212,11 +212,11 @@ class SubjectLossTest {
         }
 
         repeat(20) { tick(1, box()) }
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
 
         // Face gone. Still a headshot, so the engine says it is looking.
         assertEquals(Verb.SEEKING, tick(0, null))
-        assertEquals(ShotType.HEADSHOT, selector.current)
+        assertEquals(ShotType.HALF_BODY, selector.current)
 
         // Wait out the hold. The shot becomes a landscape and seeking stops.
         repeat(20) { tick(0, null) }

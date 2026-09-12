@@ -60,15 +60,23 @@ class ShotTypeSelector(initial: ShotType = ShotType.LANDSCAPE) {
     companion object {
         /**
          * Portrait-only build: no faces is a landscape, any number of faces is
-         * a headshot on the largest one. GROUP, HALF_BODY and FULL_BODY need
-         * mode tabs to reach deliberately - with several faces in frame and no
-         * tab to say otherwise, HEADSHOT on whoever is nearest is the one
-         * unambiguous choice, so a crowd in the background does not derail the
-         * shot the photographer is actually taking.
+         * a portrait of the largest one.
+         *
+         * A portrait is HALF_BODY, not HEADSHOT. HEADSHOT's 0.45 face target
+         * is a tight beauty crop - the face spans 18-63% of the frame and the
+         * head top sits exactly on the headroom minimum - and on the phone it
+         * kept saying "step closer" until the face swallowed the screen.
+         * HALF_BODY's 0.25 is head-and-shoulders: face at 25-50%, natural
+         * headroom around 18%, room for the person to exist in the picture.
+         * That is what a well-composed photo of a person means.
+         *
+         * GROUP and FULL_BODY need mode tabs to reach deliberately - with
+         * several faces in frame and no tab to say otherwise, a portrait of
+         * whoever is nearest is the one unambiguous choice.
          */
         fun shotTypeFor(faceCount: Int): ShotType = when {
             faceCount <= 0 -> ShotType.LANDSCAPE
-            else -> ShotType.HEADSHOT
+            else -> ShotType.HALF_BODY
         }
     }
 }

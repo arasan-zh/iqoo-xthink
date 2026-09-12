@@ -38,7 +38,8 @@ data class FaceResult(
  * that needs a detector to make sense of:
  *
  *  - **Which face is the subject.** Portrait-only build: the composition
- *    always targets ONE face, the largest, however many are in frame. Face
+ *    always targets ONE face, the largest, however many are in frame, and
+ *    frames it as HALF_BODY - head and shoulders, not a face-filling crop. Face
  *    size is the most stable signal ML Kit gives - it does not flicker between
  *    candidates as the phone moves the way "most central" would - and the
  *    nearest person is almost always who the photographer means to shoot.
