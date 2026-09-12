@@ -67,6 +67,8 @@ fun GuidanceOverlay(
     onModeSelected: (CoachMode) -> Unit,
     onFlip: () -> Unit,
     onTap: (x: Float, y: Float) -> Unit,
+    onEnhanceSave: () -> Unit,
+    onEnhanceDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -189,7 +191,17 @@ fun GuidanceOverlay(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
-                if (state.assisted) {
+                // The crop proposal takes the guidance card's place while it
+                // waits: one thing to read at a time.
+                val proposal = state.enhance
+                if (proposal != null) {
+                    EnhanceCard(
+                        proposal = proposal,
+                        saving = state.enhanceSaving,
+                        onSave = onEnhanceSave,
+                        onDismiss = onEnhanceDismiss,
+                    )
+                } else if (state.assisted) {
                     GuidanceCard(state = state)
                     StatusStrip(state = state)
                 }

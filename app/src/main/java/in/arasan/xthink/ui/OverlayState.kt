@@ -36,6 +36,10 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** A photographer's crop waiting for a yes or no, or null. */
+    val enhance: EnhanceProposal? = null,
+    /** True while the enhanced file is being written. */
+    val enhanceSaving: Boolean = false,
     /** Where the photographer last tapped, 0..1 of the preview; a ring is drawn there. */
     val focusPoint: Pair<Float, Float>? = null,
     /** Increments on every tap so the ring animates again at the same spot. */

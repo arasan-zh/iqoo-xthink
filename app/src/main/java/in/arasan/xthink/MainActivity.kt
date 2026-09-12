@@ -23,7 +23,9 @@ class MainActivity : ComponentActivity() {
                 // promise fades the preview is already live.
                 var splash by remember { mutableStateOf(true) }
                 Box {
-                    CameraScreen()
+                    // Dev hook: `am start ... --es enhance <content-uri>` runs the
+                    // post-shot crop on an existing photo, for testing over adb.
+                    CameraScreen(debugEnhanceUri = intent.getStringExtra("enhance"))
                     if (splash) Splash(onDone = { splash = false })
                 }
             }

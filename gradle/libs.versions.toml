@@ -13,6 +13,7 @@ lifecycleRuntimeKtx = "2.11.0"
 cameraX = "1.5.0"
 mlkitFaceDetection = "16.1.7"
 mlkitObjectDetection = "17.0.2"
+mlkitPoseDetection = "18.0.0-beta5"
 zxing = "3.5.3"
 
 [libraries]
@@ -38,6 +39,7 @@ androidx-camera-view = { group = "androidx.camera", name = "camera-view", versio
 mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFaceDetection" }
 # "object" is a Kotlin keyword, so the alias avoids it: libs.mlkit.objects
 mlkit-objects = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkitObjectDetection" }
+mlkit-pose = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkitPoseDetection" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 [plugins]

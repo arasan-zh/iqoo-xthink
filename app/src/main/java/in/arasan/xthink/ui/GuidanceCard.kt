@@ -209,7 +209,7 @@ private fun captionFor(instruction: Instruction?, mode: CoachMode): String = whe
     // The noun depends on what the mode is looking for.
     Verb.SEEKING -> when (mode) {
         CoachMode.OBJECT -> "Point at the thing you want to frame."
-        CoachMode.WIDE -> "Get everyone in the frame."
+        CoachMode.WIDE -> "People, places, rooms \u2014 anything but a portrait."
         CoachMode.PORTRAIT -> "Find a face to start guidance."
         CoachMode.CREATIVE -> "Compose freely." // the card is not drawn in this mode
     }

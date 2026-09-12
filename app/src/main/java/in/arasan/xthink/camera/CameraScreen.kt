@@ -73,6 +73,7 @@ import `in`.arasan.xthink.guidance.ThermalGovernor
 import `in`.arasan.xthink.guidance.ThermalPlan
 import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
+import `in`.arasan.xthink.ui.EnhanceProposal
 import `in`.arasan.xthink.ui.GuidanceOverlay
 import `in`.arasan.xthink.ui.OverlayState
 import `in`.arasan.xthink.ui.StatusValue
@@ -100,7 +101,7 @@ private const val ANALYSIS_HEIGHT = 360
  * that the guidance overlay be a separate composable layer.
  */
 @Composable
-fun CameraScreen() {
+fun CameraScreen(debugEnhanceUri: String? = null) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasCameraPermission(context)) }
 
@@ -113,7 +114,7 @@ fun CameraScreen() {
     }
 
     if (granted) {
-        CameraAndGuidance()
+        CameraAndGuidance(debugEnhanceUri)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -136,7 +137,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 
 @OptIn(ExperimentalCamera2Interop::class)
 @Composable
-private fun CameraAndGuidance() {
+private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -175,6 +176,22 @@ private fun CameraAndGuidance() {
             .build()
     }
     val autoCapture = remember { AutoCapturePolicy() }
+
+    // After the shutter: the photographer's crop, offered, never imposed.
+    val enhancer = remember { PhotoEnhancer(context) }
+    var pendingEnhance by remember { mutableStateOf<PhotoEnhancer.Proposal?>(null) }
+    DisposableEffect(enhancer) { onDispose { enhancer.close() } }
+    LaunchedEffect(debugEnhanceUri) {
+        if (debugEnhanceUri == null) return@LaunchedEffect
+        enhancer.analyse(Uri.parse(debugEnhanceUri), ContextCompat.getMainExecutor(context)) { proposal ->
+            pendingEnhance = proposal
+            overlayState = overlayState.copy(
+                enhance = proposal?.let {
+                    EnhanceProposal(it.before.asImageBitmap(), it.after.asImageBitmap(), it.proposal.rationale)
+                },
+            )
+        }
+    }
     var captureInFlight by remember { mutableStateOf(false) }
 
     // The haptic lock game. :guidance decides the rhythm; the driver only
@@ -223,6 +240,21 @@ private fun CameraAndGuidance() {
                         thumbnail = thumb?.asImageBitmap() ?: overlayState.thumbnail,
                         captureNonce = overlayState.captureNonce + 1,
                     )
+                    if (uri != null) {
+                        enhancer.analyse(uri, ContextCompat.getMainExecutor(context)) { proposal ->
+                            pendingEnhance = proposal
+                            overlayState = overlayState.copy(
+                                enhance = proposal?.let {
+                                    EnhanceProposal(
+                                        before = it.before.asImageBitmap(),
+                                        after = it.after.asImageBitmap(),
+                                        rationale = it.proposal.rationale,
+                                    )
+                                },
+                                enhanceSaving = false,
+                            )
+                        }
+                    }
                 }
 
                 override fun onError(e: ImageCaptureException) {
@@ -341,6 +373,8 @@ private fun CameraAndGuidance() {
                 mirrored = overlayState.mirrored,
                 focusPoint = overlayState.focusPoint,
                 focusNonce = overlayState.focusNonce,
+                enhance = overlayState.enhance,
+                enhanceSaving = overlayState.enhanceSaving,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -525,6 +559,30 @@ private fun CameraAndGuidance() {
             },
             onGallery = { openGallery() },
             onModeSelected = { selectMode(it) },
+            onEnhanceSave = {
+                val p = pendingEnhance
+                if (p != null && !overlayState.enhanceSaving) {
+                    overlayState = overlayState.copy(enhanceSaving = true)
+                    enhancer.save(p, ContextCompat.getMainExecutor(context)) { saved ->
+                        if (saved != null) {
+                            lastCaptureUri = saved
+                            haptics.click()
+                            overlayState = overlayState.copy(
+                                thumbnail = p.after.asImageBitmap(),
+                                enhance = null,
+                                enhanceSaving = false,
+                            )
+                        } else {
+                            overlayState = overlayState.copy(enhanceSaving = false)
+                        }
+                        pendingEnhance = null
+                    }
+                }
+            },
+            onEnhanceDismiss = {
+                pendingEnhance = null
+                overlayState = overlayState.copy(enhance = null, enhanceSaving = false)
+            },
             onTap = { x, y ->
                 // Focus and meter where the finger landed, and tell the coach
                 // that this is the thing to frame. The ring answers the tap
@@ -582,6 +640,8 @@ private fun buildOverlayState(
     mirrored: Boolean,
     focusPoint: Pair<Float, Float>?,
     focusNonce: Int,
+    enhance: EnhanceProposal?,
+    enhanceSaving: Boolean,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -620,6 +680,8 @@ private fun buildOverlayState(
         mirrored = mirrored,
         focusPoint = focusPoint,
         focusNonce = focusNonce,
+        enhance = enhance,
+        enhanceSaving = enhanceSaving,
     )
 }
 

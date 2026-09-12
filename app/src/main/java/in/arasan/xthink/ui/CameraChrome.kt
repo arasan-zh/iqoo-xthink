@@ -114,7 +114,7 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: 
 }
 
 // ---------------------------------------------------------------------------
-// Mode tabs - PORTRAIT | GROUP (CoachMode.WIDE), both live. The rail on the left switches the
+// Mode tabs - PORTRAIT | SCENE (CoachMode.WIDE), both live. The rail on the left switches the
 // same state; a stock camera shows modes in both places.
 // ---------------------------------------------------------------------------
 
@@ -126,7 +126,7 @@ fun ModeTabs(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Mod
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ModeTab("PORTRAIT", mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
-        ModeTab("GROUP", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+        ModeTab("SCENE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
         ModeTab("OBJECT", mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
         ModeTab("CREATIVE", mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
     }
@@ -291,7 +291,7 @@ private fun Shutter(locked: Boolean, onClick: () -> Unit) {
 }
 
 // ---------------------------------------------------------------------------
-// Mode rail - Portrait | Group (CoachMode.WIDE). Live, the same state as the tabs. Nothing on
+// Mode rail - Portrait | Scene (CoachMode.WIDE). Live, the same state as the tabs. Nothing on
 // this screen is decorative any more: every icon does something.
 // ---------------------------------------------------------------------------
 
@@ -306,7 +306,7 @@ fun ModeRail(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Mod
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         RailItem("Portrait", glyph = 0, active = mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
-        RailItem("Group", glyph = 1, active = mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+        RailItem("Scene", glyph = 1, active = mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
         RailItem("Object", glyph = 2, active = mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
         RailItem("Creative", glyph = 3, active = mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
     }
