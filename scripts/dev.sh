@@ -15,6 +15,7 @@ xThink dev helper
   scripts/dev.sh t                    run unit tests
   scripts/dev.sh run                  install the debug APK and launch it
   scripts/dev.sh log                  tail logcat, xThink tag only
+  scripts/dev.sh caps                 run the capability probe, save the report
   scripts/dev.sh ship <tag> <msg>     commit everything, tag, push, watch CI
   scripts/dev.sh dev                  print adb connection steps
   scripts/dev.sh pair <ip:port> <code>  pair and connect over wireless debugging
@@ -33,6 +34,26 @@ case "$cmd" in
 
   log)
     adb logcat -s xThink:V
+    ;;
+
+  caps)
+    # Reads what this phone actually exposes, into docs/evidence/.
+    # See docs/HARDWARE.md for why we measure instead of trusting a spec sheet.
+    ./gradlew installDebug
+    # Pre-granting avoids the runtime dialog. Needs "USB debugging (Security
+    # settings)" on OriginOS; if it fails the app just asks on screen instead.
+    adb shell pm grant "$APP_ID" android.permission.CAMERA 2>/dev/null || true
+    adb logcat -c
+    adb shell am start -n "${APP_ID}/.probe.DebugCapsActivity" >/dev/null
+    sleep 3
+    out="docs/evidence/capabilities-$(date +%Y-%m-%d).txt"
+    adb logcat -d -s xThink-CAPS:I | sed -e 's/^.*xThink-CAPS: //' > "$out"
+    if [ ! -s "$out" ]; then
+      echo "no report captured - is the phone connected and the app running?" >&2
+      exit 1
+    fi
+    echo "wrote $out"
+    cat "$out"
     ;;
 
   ship)

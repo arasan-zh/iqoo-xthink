@@ -2,6 +2,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="true" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+
     <application
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -21,6 +25,15 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <!-- Debug probe. Not the launcher, not product UI. Exported so
+             `adb shell am start` / scripts/dev.sh caps can reach it; it reads
+             only public device characteristics and never opens the camera. -->
+        <activity
+            android:name=".probe.DebugCapsActivity"
+            android:exported="true"
+            android:label="xThink capabilities"
+            android:theme="@style/Theme.XThink" />
+
     </application>
 
 </manifest>
