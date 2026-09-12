@@ -133,6 +133,7 @@ class PhotoEnhancer(private val context: Context) {
         uri: Uri,
         callbackExecutor: Executor,
         advisor: FinishAdvisor? = null,
+        paint: Boolean = true,
         onResult: (Result) -> Unit,
     ) {
         worker.execute {
@@ -166,7 +167,7 @@ class PhotoEnhancer(private val context: Context) {
                     val body = task.result?.takeIf { task.isSuccessful }?.let { toBodyPose(it, small.height) }
                     if (advisor == null) {
                         // The rules alone: the ladder's cut, reflected headroom, nothing painted out.
-                        finish(uri, small, box, eyesY, body, emptyList(), Finishing.Plan.NONE, soft, started, callbackExecutor, onResult)
+                        finish(uri, small, box, eyesY, body, emptyList(), Finishing.Plan.NONE, paint, soft, started, callbackExecutor, onResult)
                         return@addOnCompleteListener
                     }
                     // With a coach: everything the detectors know goes into one question.
@@ -185,7 +186,7 @@ class PhotoEnhancer(private val context: Context) {
                                 answered = true
                                 val plan = Finishing.parse(words, candidates.size)
                                 Log.i(TAG, "enhance: coach says '${words?.trim()?.replace('\n', '/')?.take(140)}' -> $plan")
-                                finish(uri, small, box, eyesY, body, candidates, plan, soft, started, callbackExecutor, onResult)
+                                finish(uri, small, box, eyesY, body, candidates, plan, paint, soft, started, callbackExecutor, onResult)
                             }
                         }
                     }
@@ -206,6 +207,7 @@ class PhotoEnhancer(private val context: Context) {
         body: BodyPose?,
         candidates: List<Retouch.Candidate>,
         plan: Finishing.Plan,
+        paint: Boolean,
         soft: Boolean,
         started: Long,
         callbackExecutor: Executor,
@@ -215,7 +217,8 @@ class PhotoEnhancer(private val context: Context) {
         // Room painted in first - the plan's, as far as the rules allow -
         // then the crop of the bigger picture. The preview gets a reflected
         // strip; LaMa paints the real one in the retouch.
-        val extensions = Finishing.extensions(plan, box, body, edgeSpread(small, box))
+        // With the retouch off nothing is painted: no strips, no holes, whatever the plan said.
+        val extensions = if (paint) Finishing.extensions(plan, box, body, edgeSpread(small, box)) else emptyList()
         val canvas = extend(small, extensions, null)
         val subject = Finishing.shift(box, extensions)
         val pose = Finishing.shift(body, extensions)
@@ -227,7 +230,7 @@ class PhotoEnhancer(private val context: Context) {
             // Nothing to crop, but the room painted in is worth having on its own.
             crop = CropProposal(CropRect(0f, 0f, 1f, 1f), emptyList())
         }
-        val job = Finishing.job(plan, candidates, extensions)
+        val job = if (paint) Finishing.job(plan, candidates, extensions) else Finishing.LamaJob.NONE
         val elapsed = System.currentTimeMillis() - started
         if (crop == null) {
             Log.i(TAG, "enhance: already framed face=%.2f body=%s remove=%d (%d ms)".format(box.h, body != null, job.remove.size, elapsed))

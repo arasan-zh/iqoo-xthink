@@ -215,6 +215,7 @@ class MainActivity : ComponentActivity() {
                             CameraScreen(
                                 coach = coach,
                                 debugEnhanceUri = intent.getStringExtra("enhance"),
+                                debugRetouchOff = !intent.getBooleanExtra("retouch", true),
                                 debugGenius = intent.getStringExtra("genius"),
                                 debugAsk = intent.getStringExtra("ask"),
                                 startIn = startIn,

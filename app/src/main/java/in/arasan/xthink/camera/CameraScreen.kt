@@ -179,6 +179,7 @@ private const val ANALYSIS_HEIGHT = 360
 fun CameraScreen(
     coach: LlmCoach? = null,
     debugEnhanceUri: String? = null,
+    debugRetouchOff: Boolean = false,
     debugGenius: String? = null,
     debugAsk: String? = null,
     startIn: String? = null,
@@ -197,7 +198,7 @@ fun CameraScreen(
     }
 
     if (granted) {
-        CameraAndGuidance(coach, debugEnhanceUri, debugGenius, debugAsk, startIn, onHome, onOpenRoom)
+        CameraAndGuidance(coach, debugEnhanceUri, debugRetouchOff, debugGenius, debugAsk, startIn, onHome, onOpenRoom)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -223,6 +224,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 private fun CameraAndGuidance(
     sharedCoach: LlmCoach? = null,
     debugEnhanceUri: String? = null,
+    debugRetouchOff: Boolean = false,
     debugGenius: String? = null,
     debugAsk: String? = null,
     startIn: String? = null,
@@ -232,7 +234,7 @@ private fun CameraAndGuidance(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
-    var overlayState by remember { mutableStateOf(OverlayState.EMPTY) }
+    var overlayState by remember { mutableStateOf(OverlayState.EMPTY.copy(retouch = !debugRetouchOff)) }
     var sensorMissing by remember { mutableStateOf(false) }
     var lastCaptureUri by remember { mutableStateOf<Uri?>(null) }
 
@@ -389,7 +391,7 @@ private fun CameraAndGuidance(
                 enhanced = proposal != null,
                 look = if (overlayState.look != 0) overlayState.look else (result.suggestedLook ?: 0),
                 soft = result.soft,
-                cleaning = true,
+                cleaning = !result.job.isEmpty,
             ),
         )
         cleanPending = result
@@ -480,7 +482,7 @@ private fun CameraAndGuidance(
         if (coachState == LlmCoach.State.MISSING && coach.modelFile() != null) { ensureCoach(); return@LaunchedEffect }
         if (coachState == LlmCoach.State.LOADING) return@LaunchedEffect
         val u = Uri.parse(debugEnhanceUri)
-        enhancer.analyse(u, ContextCompat.getMainExecutor(context), finishAdvisor()) { openReview(u, it) }
+        enhancer.analyse(u, ContextCompat.getMainExecutor(context), finishAdvisor(), overlayState.retouch) { openReview(u, it) }
     }
     var captureInFlight by remember { mutableStateOf(false) }
 
@@ -1083,7 +1085,7 @@ private fun CameraAndGuidance(
                     )
                     if (uri != null) {
                         if (overlayState.mode == CoachMode.PORTRAIT) {
-                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), finishAdvisor()) { openReview(uri, it) }
+                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), finishAdvisor(), overlayState.retouch) { openReview(uri, it) }
                         } else {
                             // Scenes, objects, creative: no crop to a person - the shot stands, with the look.
                             openReview(uri, PhotoEnhancer.Result(null, null))
@@ -1288,6 +1290,7 @@ private fun CameraAndGuidance(
                 focusNonce = overlayState.focusNonce,
                 review = overlayState.review,
                 easyShot = overlayState.easyShot,
+                retouch = overlayState.retouch,
                 look = overlayState.look,
                 showLooks = overlayState.showLooks,
                 lookPreview = overlayState.lookPreview,
@@ -1755,6 +1758,12 @@ private fun CameraAndGuidance(
                 haptics.play(HapticCue.TICK, 0.4f)
                 Log.i(TAG, "look -> ${Looks.ALL[i].name}")
             },
+            onToggleRetouch = {
+                val on = !overlayState.retouch
+                overlayState = overlayState.copy(retouch = on)
+                haptics.play(HapticCue.TICK, if (on) 0.6f else 0.3f)
+                Log.i(TAG, "retouch ${if (on) "on" else "off"}")
+            },
             onToggleEasyShot = {
                 val on = !overlayState.easyShot
                 autoCapture.relaxed = on
@@ -1810,6 +1819,7 @@ private fun buildOverlayState(
     focusNonce: Int,
     review: ReviewState?,
     easyShot: Boolean,
+    retouch: Boolean,
     look: Int,
     showLooks: Boolean,
     lookPreview: ImageBitmap?,
@@ -1870,6 +1880,7 @@ private fun buildOverlayState(
         focusNonce = focusNonce,
         review = review,
         easyShot = easyShot,
+        retouch = retouch,
         look = look,
         showLooks = showLooks,
         lookPreview = lookPreview,

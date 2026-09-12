@@ -75,6 +75,12 @@ data class OverlayState(
     val lookPreview: ImageBitmap? = null,
     /** "Near enough" auto-shutter: shoot when close to the lock, not only at it. */
     val easyShot: Boolean = false,
+    /**
+     * LaMa after the shutter: distractions painted out, room painted in.
+     * Off, the review offers the crop and the look only - nothing is
+     * added to the picture and nothing taken from it.
+     */
+    val retouch: Boolean = true,
     /** The review after a shutter, or null. While it is up, nothing else is. */
     val review: ReviewState? = null,
     /** Where the photographer last tapped, 0..1 of the preview; a ring is drawn there. */

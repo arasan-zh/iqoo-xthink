@@ -81,6 +81,7 @@ fun GuidanceOverlay(
     onReviewDiscard: () -> Unit,
     onReviewToggleClean: () -> Unit = {},
     onToggleEasyShot: () -> Unit,
+    onToggleRetouch: () -> Unit = {},
     onToggleLooks: () -> Unit,
     onPickLook: (Int) -> Unit,
     onToggleGuide: () -> Unit,
@@ -239,6 +240,9 @@ fun GuidanceOverlay(
                         if (state.assisted && state.guideMuted) GuideMutedChip()
                         else if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
+                        if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode) {
+                            RetouchToggle(on = state.retouch, onToggle = onToggleRetouch)
+                        }
                     }
                 }
             }

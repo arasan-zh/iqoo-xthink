@@ -468,6 +468,12 @@ piece device-verified on the iQOO 15 before it was committed.
   instruction set for LaMa: holes on the photo as shot, then strips. The
   model never draws a mask. A plan that keeps the frame but paints
   something out still opens the review (AS SHOT alone, then the chip).
+- **Opting out**: a *Retouch* chip in the tune row (Portrait only, on by
+  default, session-scoped like *Easy shot*). Off, LaMa never touches the
+  photo - no holes, no painted strips, not even the reflected headroom -
+  and the review offers the crop and the look only. Gemma is still asked
+  the same question, since the crop and the look come from it. The dev
+  hook takes `--ez retouch false` to start with it off.
 - **Measured on the iQOO 15** (E2B, warm): plan 2.6-3.2 s after a
   1.5-1.7 s first token; the very first ask after a fresh install pays a
   one-time 40 s GPU kernel compile that the driver then caches. A hole

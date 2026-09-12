@@ -714,6 +714,11 @@ fun ReferenceButton(
 fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) =
     OnOffChip(label = "Easy shot", on = on, onToggle = onToggle, modifier = modifier)
 
+/** LaMa after the shutter, on or off. Off: the photo is never painted on. */
+@Composable
+fun RetouchToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) =
+    OnOffChip(label = "Retouch", on = on, onToggle = onToggle, modifier = modifier)
+
 /** Shown while a Shot style mutes the words of guidance: a small crossed-out speech mark. */
 @Composable
 fun GuideMutedChip(modifier: Modifier = Modifier) {
