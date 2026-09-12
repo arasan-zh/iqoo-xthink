@@ -16,6 +16,7 @@ import `in`.arasan.xthink.guidance.GuidanceConstants.MAGNITUDE_BIG_FACTOR
 import `in`.arasan.xthink.guidance.GuidanceConstants.MAGNITUDE_MOVE_FACTOR
 import `in`.arasan.xthink.guidance.GuidanceConstants.STEP_PROGRESS_EPSILON
 import `in`.arasan.xthink.guidance.GuidanceConstants.STEP_STALL_MS
+import `in`.arasan.xthink.guidance.GuidanceConstants.SUBJECT_LOSS_GRACE_MS
 import `in`.arasan.xthink.guidance.GuidanceConstants.ZOOM_EPSILON
 import `in`.arasan.xthink.guidance.GuidanceConstants.ZOOM_MAX_ADVISED
 import `in`.arasan.xthink.guidance.GuidanceConstants.SCALE_PITCH_DEG
@@ -112,6 +113,13 @@ class GuidanceEngine(
     private var stepAdviceMs = 0L
     private var bestSizeErrAbs = Float.MAX_VALUE
 
+    // Subject-loss grace. The last SMOOTHED box and eye line, held for up to
+    // SUBJECT_LOSS_GRACE_MS after the detector stops reporting a face, so a
+    // one-frame blink neither flashes SEEKING nor breaks a lock.
+    private var heldBox: SubjectBox? = null
+    private var heldEye: EyeLine? = null
+    private var subjectMissingMs = 0L
+
     /** 0..1. Zero when every channel is inside its deadzone. Drives haptics. */
     var totalError: Float = 0f
         private set
@@ -151,8 +159,30 @@ class GuidanceEngine(
         val pitch = pitchEma.update(a.pitchDeg)
         updateStability(a, dt)
 
-        val box = smoothBox(subject)
-        val eye = smoothEyes(eyes)
+        val box: SubjectBox?
+        val eye: EyeLine?
+        if (subject != null) {
+            box = smoothBox(subject)
+            eye = smoothEyes(eyes)
+            heldBox = box
+            heldEye = eye
+            subjectMissingMs = 0L
+        } else {
+            subjectMissingMs += dt
+            if (heldBox != null && subjectMissingMs < SUBJECT_LOSS_GRACE_MS) {
+                // Within grace: carry on as if the subject were where we last
+                // saw it. The EMAs are deliberately NOT reset, so when the
+                // detector picks the face back up the smoothing continues
+                // instead of re-seeding from a raw sample.
+                box = heldBox
+                eye = heldEye
+            } else {
+                box = smoothBox(null)
+                eye = smoothEyes(null)
+                heldBox = null
+                heldEye = null
+            }
+        }
         updateFocus(box)
 
         // --- errors ---------------------------------------------------------
@@ -554,6 +584,9 @@ class GuidanceEngine(
         stepAdviceMs = 0L
         bestSizeErrAbs = Float.MAX_VALUE
         suggestedZoom = 1f
+        heldBox = null
+        heldEye = null
+        subjectMissingMs = 0L
         totalError = 0f
         focusOk = true
         stabilityOk = false

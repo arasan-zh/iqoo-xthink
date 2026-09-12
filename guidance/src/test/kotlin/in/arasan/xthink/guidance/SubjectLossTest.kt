@@ -25,31 +25,77 @@ class SubjectLossTest {
     /** Too small, so the engine is mid "step closer" when the subject leaves. */
     private fun tooSmall() = box(h = 0.20f)
 
+    /** Frames of 33ms that add up to just past SUBJECT_LOSS_GRACE_MS. */
+    private val pastGrace = (GuidanceConstants.SUBJECT_LOSS_GRACE_MS / 33L).toInt() + 1
+
+    /** Feed [n] empty frames; return the last instruction. */
+    private fun GuidanceEngine.lose(n: Int = pastGrace): Instruction {
+        var last: Instruction? = null
+        repeat(n) { last = update(LEVEL, null, null, 33L) }
+        return last!!
+    }
+
     // ---------------------------------------------------------------------
     // The instruction must not outlive the subject
     // ---------------------------------------------------------------------
 
     @Test
-    fun `losing the subject replaces the advice immediately, not in 600ms`() {
+    fun `losing the subject replaces the advice after the grace, not in 600ms`() {
         val engine = GuidanceEngine(headshot)
         assertEquals(
             Verb.STEP_CLOSER,
             engine.feed(4, subject = tooSmall(), eyeLine = eyes()).verb,
         )
 
-        // The subject walks out. The very next frame must stop telling the
-        // photographer to step closer to nothing - the 600ms lockout does not
-        // apply, because this is not two instructions competing.
-        val next = engine.update(LEVEL, null, null, 33L)
+        // The subject walks out. For the grace period the last advice holds
+        // (a detector blink must not flash "looking"); once the grace is
+        // spent, SEEKING replaces it without waiting out the 600ms lockout -
+        // this is not two instructions competing.
+        val stillHeld = engine.update(LEVEL, null, null, 33L)
+        assertEquals("one empty frame is a blink, not a loss", Verb.STEP_CLOSER, stillHeld.verb)
+
+        val next = engine.lose()
         assertEquals(Verb.SEEKING, next.verb)
         assertEquals("Looking for your subject", next.text)
+    }
+
+    @Test
+    fun `a one-frame detector blink neither flashes SEEKING nor breaks the lock`() {
+        val engine = GuidanceEngine(headshot)
+        engine.feed(10, subject = box(), eyeLine = eyes())
+        engine.reportFocusLocked(true)
+        assertEquals(Verb.LOCKED, engine.feed(20, subject = box(), eyeLine = eyes()).verb)
+
+        // Two empty frames - exactly what a ~22px face at the detection floor
+        // produces - then the face is back.
+        assertEquals(Verb.LOCKED, engine.update(LEVEL, null, null, 33L).verb)
+        assertEquals(Verb.LOCKED, engine.update(LEVEL, null, null, 33L).verb)
+        assertEquals(1f, engine.lockProgress, 1e-6f)
+        assertEquals(Verb.LOCKED, engine.update(LEVEL, box(), eyes(), 33L).verb)
+    }
+
+    @Test
+    fun `during the grace the last known position is held, not reset`() {
+        val engine = GuidanceEngine(headshot)
+        engine.feed(10, subject = box(cx = 0.70f), eyeLine = eyes())
+        val beforeX = engine.alignment.offsetX
+        val beforeOk = engine.compositionOk
+        engine.update(LEVEL, null, null, 33L)
+        assertEquals("framing error must not snap to zero on a blink", beforeX, engine.alignment.offsetX, 1e-6f)
+        assertEquals("composition verdict must not change on a blink", beforeOk, engine.compositionOk)
+    }
+
+    @Test
+    fun `the grace does not apply on a cold start - nothing to hold`() {
+        val engine = GuidanceEngine(headshot)
+        assertEquals(Verb.SEEKING, engine.update(LEVEL, null, null, 33L).verb)
     }
 
     @Test
     fun `finding the subject again is just as prompt`() {
         val engine = GuidanceEngine(headshot)
         engine.feed(4, subject = tooSmall(), eyeLine = eyes())
-        assertEquals(Verb.SEEKING, engine.update(LEVEL, null, null, 33L).verb)
+        assertEquals(Verb.SEEKING, engine.lose().verb)
 
         // Coming back must not wait out a lockout either.
         val back = engine.update(LEVEL, tooSmall(), eyes(), 33L)
@@ -74,7 +120,11 @@ class SubjectLossTest {
         engine.feed(4, subject = box(), eyeLine = eyes())
         assertTrue(engine.compositionOk)
 
+        // Within the grace, nothing changes - the held box keeps composing.
         engine.update(LEVEL, null, null, 33L)
+        assertTrue("a blink must not drop composition", engine.compositionOk)
+
+        engine.lose()
         assertFalse("composition cannot be judged without the subject", engine.compositionOk)
         assertEquals(0f, engine.lockProgress, 1e-6f)
     }
@@ -215,8 +265,11 @@ class SubjectLossTest {
         repeat(20) { tick(1, box()) }
         assertEquals(ShotType.HALF_BODY, selector.current)
 
-        // Face gone. Still a headshot, so the engine says it is looking.
-        assertEquals(Verb.SEEKING, tick(0, null))
+        // Face gone. Past the loss grace but inside the profile hold: still a
+        // portrait profile, so the engine says it is looking.
+        var verb = tick(0, null)
+        repeat(pastGrace) { verb = tick(0, null) }
+        assertEquals(Verb.SEEKING, verb)
         assertEquals(ShotType.HALF_BODY, selector.current)
 
         // Wait out the hold. The shot becomes a landscape and seeking stops.

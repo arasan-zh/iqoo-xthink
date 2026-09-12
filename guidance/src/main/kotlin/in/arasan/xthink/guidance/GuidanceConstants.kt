@@ -49,6 +49,18 @@ object GuidanceConstants {
     /** Zoom ratios within this of each other are the same ratio. */
     const val ZOOM_EPSILON = 0.05f
 
+    // --- Subject loss ---------------------------------------------------------
+    /**
+     * A subject has to be gone this long before the engine believes it. On a
+     * ten-minute run at full-body distance, 27% of all instruction changes
+     * were into SEEKING, and the dropouts split cleanly in two: detector
+     * blinks under ~200ms (a ~22px face at the MIN_FACE_SIZE floor), and real
+     * losses at 430-499ms, bounded by SHOT_TYPE_HOLD_MS. 300ms absorbs every
+     * blink - during it the engine holds the last known box, so a lock
+     * survives - and still fires before the profile flips to LANDSCAPE.
+     */
+    const val SUBJECT_LOSS_GRACE_MS = 300L
+
     // --- Shot type stability ------------------------------------------------
     /**
      * A new face count must hold this long before the composition target is
