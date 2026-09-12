@@ -100,7 +100,7 @@ class SubjectLossTest {
 
     @Test
     fun `a face dropped for a frame or two does not tear down the profile`() {
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         // Settle on a headshot.
         repeat(20) { selector.update(faceCount = 1, dtMs = 33L) }
         assertEquals(ShotType.HALF_BODY, selector.current)
@@ -116,7 +116,7 @@ class SubjectLossTest {
 
     @Test
     fun `a face count that really does persist switches the profile`() {
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         repeat(20) { selector.update(1, 33L) }
         assertEquals(ShotType.HALF_BODY, selector.current)
 
@@ -129,7 +129,7 @@ class SubjectLossTest {
 
     @Test
     fun `switching back and forth restarts the clock each time`() {
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         repeat(20) { selector.update(1, 33L) }
 
         repeat(10) { selector.update(0, 33L) }   // 330ms toward LANDSCAPE
@@ -142,7 +142,7 @@ class SubjectLossTest {
     fun `switchProgress reports how far a pending change has come`() {
         // Portrait-only: the only switch that ever pends is LANDSCAPE<->HALF_BODY,
         // since every face count from 1 up maps to the same HALF_BODY target.
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         assertEquals(ShotType.LANDSCAPE, selector.current)
         assertEquals(0f, selector.switchProgress, 1e-6f)
 
@@ -154,7 +154,7 @@ class SubjectLossTest {
     fun `a face count change that does not cross the landscape-headshot line is not a pending switch`() {
         // Going from one face to three is not a switch at all under the
         // portrait-only policy, so it must not start a hold timer.
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         repeat(20) { selector.update(1, 33L) }
         assertEquals(ShotType.HALF_BODY, selector.current)
 
@@ -166,18 +166,19 @@ class SubjectLossTest {
     @Test
     fun `the count to shot type mapping is the agreed policy - portrait only`() {
         // This build never switches to GROUP: with several faces in frame and
-        // no mode tab to say otherwise, HALF_BODY on the largest face is the
-        // one unambiguous choice.
-        assertEquals(ShotType.LANDSCAPE, ShotTypeSelector.shotTypeFor(0))
-        assertEquals(ShotType.HALF_BODY, ShotTypeSelector.shotTypeFor(1))
-        assertEquals(ShotType.HALF_BODY, ShotTypeSelector.shotTypeFor(2))
-        assertEquals(ShotType.HALF_BODY, ShotTypeSelector.shotTypeFor(9))
-        assertEquals(ShotType.LANDSCAPE, ShotTypeSelector.shotTypeFor(-1))
+        // no mode tab to say otherwise, a portrait of the largest face is the
+        // one unambiguous choice. With no height given, that is HALF_BODY.
+        val s = ShotTypeSelector(Fixtures.PROFILES)
+        assertEquals(ShotType.LANDSCAPE, s.shotTypeFor(0))
+        assertEquals(ShotType.HALF_BODY, s.shotTypeFor(1))
+        assertEquals(ShotType.HALF_BODY, s.shotTypeFor(2))
+        assertEquals(ShotType.HALF_BODY, s.shotTypeFor(9))
+        assertEquals(ShotType.LANDSCAPE, s.shotTypeFor(-1))
     }
 
     @Test
     fun `reset returns it to a known shot type`() {
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         repeat(20) { selector.update(3, 33L) }
         assertEquals(ShotType.HALF_BODY, selector.current)
         selector.reset()
@@ -187,7 +188,7 @@ class SubjectLossTest {
 
     @Test
     fun `a negative dt cannot drive a switch`() {
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         repeat(20) { selector.update(1, 33L) }
         repeat(50) { selector.update(0, -1000L) }
         assertEquals(ShotType.HALF_BODY, selector.current)
@@ -201,7 +202,7 @@ class SubjectLossTest {
      */
     @Test
     fun `the hysteresis window is what makes seeking meaningful`() {
-        val selector = ShotTypeSelector()
+        val selector = ShotTypeSelector(Fixtures.PROFILES)
         val profiles = Fixtures.PROFILES
         val engine = GuidanceEngine(profiles.getValue(ShotType.LANDSCAPE))
 

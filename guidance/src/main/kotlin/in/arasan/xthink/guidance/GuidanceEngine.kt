@@ -163,8 +163,13 @@ class GuidanceEngine(
 
         // Distance. A profile with targetSizeRatio 0 (LANDSCAPE) has nothing to
         // size against, so the rung is skipped rather than divided by zero.
+        // Inside the profile's accepted band the photographer has chosen the
+        // scale - full body, hip level, head and shoulders are all portraits -
+        // and distance is simply not an error. Outside it, the error is how
+        // far past the nearest edge we are, relative to that edge, so the
+        // sign convention (negative = too small = step closer) is unchanged.
         val sizeApplies = box != null && profile.targetSizeRatio > 0f
-        val sizeErr = if (sizeApplies) (box.sizeRatio - profile.targetSizeRatio) / profile.targetSizeRatio else 0f
+        val sizeErr = if (sizeApplies) bandError(box.sizeRatio, profile.sizeMin, profile.sizeMax) else 0f
         val sizeIn = if (sizeApplies) sizeGate.update(abs(sizeErr)) else { sizeGate.reset(); true }
 
         // Horizontal framing, against the gaze-adjusted target.
@@ -338,6 +343,13 @@ class GuidanceEngine(
             if (stepHasStalled() && zoomHeadroom()) instruction(Verb.ZOOM_IN, magnitude)
             else instruction(Verb.STEP_CLOSER, magnitude)
         }
+    }
+
+    /** Relative distance outside `lo..hi`; zero anywhere inside. */
+    private fun bandError(h: Float, lo: Float, hi: Float): Float = when {
+        h < lo -> (h - lo) / lo
+        h > hi -> (h - hi) / hi
+        else -> 0f
     }
 
     private fun stepHasStalled(): Boolean = stepAdviceMs >= STEP_STALL_MS

@@ -1,7 +1,7 @@
 {
   "HEADSHOT":  { "targetSizeRatio": 0.45, "targetEyeLineY": 0.33, "targetCx": 0.50, "headroomMin": 0.06, "targetPitchDeg": 0.0 },
-  "HALF_BODY": { "targetSizeRatio": 0.25, "targetEyeLineY": 0.33, "targetCx": 0.50, "headroomMin": 0.08, "targetPitchDeg": 0.0 },
-  "FULL_BODY": { "targetSizeRatio": 0.10, "targetEyeLineY": 0.28, "targetCx": 0.50, "headroomMin": 0.10, "targetPitchDeg": 0.0 },
+  "HALF_BODY": { "targetSizeRatio": 0.25, "sizeMin": 0.16, "sizeMax": 0.38, "targetEyeLineY": 0.33, "targetCx": 0.50, "headroomMin": 0.08, "targetPitchDeg": 0.0 },
+  "FULL_BODY": { "targetSizeRatio": 0.10, "sizeMin": 0.06, "sizeMax": 0.16, "targetEyeLineY": 0.28, "targetCx": 0.50, "headroomMin": 0.10, "targetPitchDeg": 0.0 },
   "GROUP":     { "targetSizeRatio": 0.18, "targetEyeLineY": 0.35, "targetCx": 0.50, "headroomMin": 0.08, "targetPitchDeg": 0.0 },
   "OBJECT":    { "targetSizeRatio": 0.55, "targetEyeLineY": 0.50, "targetCx": 0.50, "headroomMin": 0.08, "targetPitchDeg": 0.0 },
   "LANDSCAPE": { "targetSizeRatio": 0.00, "targetEyeLineY": 0.33, "targetCx": 0.50, "headroomMin": 0.00, "targetPitchDeg": 0.0 }

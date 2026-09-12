@@ -125,7 +125,7 @@ private fun CameraAndGuidance() {
     // A raw face count flaps - 0-2-1-2-0-1-4-3-0 inside ten seconds on the
     // phone - and every change used to reset the deadzone gates and the lock
     // dwell with it. The selector makes a change earn its place first.
-    val shotTypes = remember { ShotTypeSelector() }
+    val shotTypes = remember { ShotTypeSelector(profiles) }
 
     // The most recent attitude, held rather than acted on. See the analyser
     // comment below for why the sensor does not drive the engine.
@@ -172,7 +172,7 @@ private fun CameraAndGuidance() {
         // callback posts there, so the engine still only ever sees one thread.
         val analyzer = FaceAnalyzer { result ->
             val attitude = latestAttitude[0] ?: return@FaceAnalyzer
-            val stable = shotTypes.update(result.faceCount, result.dtMs)
+            val stable = shotTypes.update(result.faceCount, result.dtMs, result.subject?.h)
             engine.setProfile(profiles.getValue(stable))
             val next = engine.update(attitude.attitude, result.subject, result.eyes, result.dtMs)
 

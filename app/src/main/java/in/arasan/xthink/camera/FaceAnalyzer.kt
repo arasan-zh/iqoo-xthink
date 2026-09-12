@@ -13,8 +13,6 @@ import com.google.mlkit.vision.face.FaceLandmark
 import `in`.arasan.xthink.guidance.EyeLine
 import `in`.arasan.xthink.guidance.FrameMapping
 import `in`.arasan.xthink.guidance.FrameRect
-import `in`.arasan.xthink.guidance.ShotType
-import `in`.arasan.xthink.guidance.ShotTypeSelector
 import `in`.arasan.xthink.guidance.SubjectBox
 
 private const val TAG = "xThink"
@@ -24,7 +22,6 @@ data class FaceResult(
     val subject: SubjectBox?,
     val eyes: EyeLine?,
     val faceCount: Int,
-    val shotType: ShotType,
     val detectMs: Long,
     val dtMs: Long,
 )
@@ -121,7 +118,7 @@ class FaceAnalyzer(
         dtMs: Long,
     ): FaceResult {
         if (faces.isEmpty()) {
-            return FaceResult(null, null, 0, ShotTypeSelector.shotTypeFor(0), detectMs, dtMs)
+            return FaceResult(null, null, 0, detectMs, dtMs)
         }
 
         // Largest face wins, always - portrait-only, so a crowd in the
@@ -134,7 +131,6 @@ class FaceAnalyzer(
             subject = FrameMapping.normalize(rect, crop),
             eyes = eyeLineOf(target, rect, crop),
             faceCount = faces.size,
-            shotType = ShotTypeSelector.shotTypeFor(faces.size),
             detectMs = detectMs,
             dtMs = dtMs,
         )
@@ -176,8 +172,15 @@ class FaceAnalyzer(
         /** A backgrounded app must not return with a dt that instantly locks. */
         const val MAX_DT_MS = 250L
 
-        /** Ignore faces smaller than this fraction of the frame. */
-        const val MIN_FACE_SIZE = 0.1f
+        /**
+         * Smallest head to detect, as a fraction of image WIDTH. A full-body
+         * portrait on a phone puts the face at roughly a tenth of frame height,
+         * which in the 360-wide rotated analysis image is about 7% of width -
+         * the previous 0.1 floor could not see a full-body subject at all.
+         * 0.06 is ~22px in that image, near the bottom of what FAST mode finds
+         * reliably; smaller and detection drops out rather than degrading.
+         */
+        const val MIN_FACE_SIZE = 0.06f
 
         /** Eyes sit roughly this far down an ML Kit face box. */
         const val EYE_LINE_FRACTION_OF_FACE = 0.4f
