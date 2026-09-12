@@ -45,6 +45,7 @@ mlkit-objects = { group = "com.google.mlkit", name = "object-detection", version
 mlkit-pose = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkitPoseDetection" }
 mlkit-text = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitText" }
 mediapipe-core = { group = "com.google.mediapipe", name = "tasks-core", version.ref = "mediapipeGenai" }
+mediapipe-vision = { group = "com.google.mediapipe", name = "tasks-vision", version.ref = "mediapipeGenai" }
 mediapipe-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 

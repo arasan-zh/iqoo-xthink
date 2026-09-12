@@ -2,6 +2,19 @@ package `in`.arasan.xthink.camera
 
 import android.annotation.SuppressLint
 import android.os.SystemClock
+import android.graphics.Bitmap
+import android.graphics.Matrix
+import com.google.mediapipe.framework.image.BitmapImageBuilder
+import com.google.mediapipe.tasks.core.BaseOptions
+import com.google.mediapipe.tasks.vision.core.RunningMode
+import com.google.mediapipe.tasks.vision.gesturerecognizer.GestureRecognizer
+import com.google.mlkit.vision.pose.PoseDetection
+import com.google.mlkit.vision.pose.PoseLandmark
+import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
+import `in`.arasan.xthink.guidance.Exercise
+import `in`.arasan.xthink.guidance.Joint
+import `in`.arasan.xthink.guidance.JointAngles
+import android.content.Context
 import android.util.Log
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
@@ -56,6 +69,7 @@ data class FaceResult(
  *    deliberately, so it is not attempted here.
  */
 class FaceAnalyzer(
+    private val context: Context,
     private val onResult: (FaceResult) -> Unit,
 ) : ImageAnalysis.Analyzer {
 
@@ -134,6 +148,95 @@ class FaceAnalyzer(
         return (sumSq / n - mean * mean).toFloat()
     }
 
+    // ---- FIT: a body's joints and a hand's sign, from the same frames ----
+
+    /** Set while the FIT tab is up: the exercise whose joint to watch, or null. */
+    @Volatile
+    var fitExercise: Exercise? = null
+
+    /** Set while FIT watches for hand signs. */
+    @Volatile
+    var fitGestures: Boolean = false
+
+    /** Where FIT frames go: the joint angle (or null), the hand sign (or null), and dt. */
+    @Volatile
+    var onFit: ((angleDeg: Float?, gesture: String?, dtMs: Long) -> Unit)? = null
+
+    private val poseStream by lazy {
+        PoseDetection.getClient(
+            PoseDetectorOptions.Builder().setDetectorMode(PoseDetectorOptions.STREAM_MODE).build(),
+        )
+    }
+    private var gestureRecognizer: GestureRecognizer? = null
+    private var gestureFrame = 0
+    private var lastGesture: String? = null
+    private var lastGestureMs = 0L
+
+    private fun gestures(): GestureRecognizer? {
+        gestureRecognizer?.let { return it }
+        return runCatching {
+            GestureRecognizer.createFromOptions(
+                context,
+                GestureRecognizer.GestureRecognizerOptions.builder()
+                    .setBaseOptions(BaseOptions.builder().setModelAssetPath("gesture_recognizer.task").build())
+                    .setRunningMode(RunningMode.IMAGE)
+                    .setNumHands(1)
+                    .build(),
+            ).also { gestureRecognizer = it }
+        }.onFailure { Log.e(TAG, "gesture recognizer failed to load", it) }.getOrNull()
+    }
+
+    /** The FIT path: joints, then (every third frame) the hand. Runs instead of faces. */
+    private fun analyzeFit(imageProxy: ImageProxy, image: InputImage, exercise: Exercise?, dtMs: Long) {
+        // The hand is read every third frame; a sign holds for a moment so the
+        // frames in between do not blink it away.
+        var gesture: String? = null
+        val nowMs = SystemClock.uptimeMillis()
+        if (fitGestures && ++gestureFrame % 3 == 0) {
+            gesture = runCatching {
+                val bmp = imageProxy.toBitmap()
+                val rot = imageProxy.imageInfo.rotationDegrees
+                val upright = if (rot == 0) bmp else Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, Matrix().apply { postRotate(rot.toFloat()) }, true)
+                val result = gestures()?.recognize(BitmapImageBuilder(upright).build())
+                result?.gestures()?.firstOrNull()?.firstOrNull()?.let { if (it.score() >= 0.55f) it.categoryName() else null }
+            }.getOrNull()
+            if (gesture != null && gesture != "None") { lastGesture = gesture; lastGestureMs = nowMs }
+        }
+        if (fitGestures) gesture = if (nowMs - lastGestureMs <= GESTURE_HOLD_MS) lastGesture else null
+        if (exercise == null) {
+            onFit?.invoke(null, gesture, dtMs)
+            busy = false
+            imageProxy.close()
+            return
+        }
+        poseStream.process(image)
+            .addOnSuccessListener { pose ->
+                fun j(t: Int): Joint? = pose.getPoseLandmark(t)?.takeIf { it.inFrameLikelihood >= 0.5f }?.let { Joint(it.position.x, it.position.y) }
+                val angle: Float? = when (exercise) {
+                    Exercise.SQUAT -> bestAngle(j(PoseLandmark.LEFT_HIP), j(PoseLandmark.LEFT_KNEE), j(PoseLandmark.LEFT_ANKLE),
+                        j(PoseLandmark.RIGHT_HIP), j(PoseLandmark.RIGHT_KNEE), j(PoseLandmark.RIGHT_ANKLE))
+                    Exercise.PUSHUP -> bestAngle(j(PoseLandmark.LEFT_SHOULDER), j(PoseLandmark.LEFT_ELBOW), j(PoseLandmark.LEFT_WRIST),
+                        j(PoseLandmark.RIGHT_SHOULDER), j(PoseLandmark.RIGHT_ELBOW), j(PoseLandmark.RIGHT_WRIST))
+                }
+                onFit?.invoke(angle, gesture, dtMs)
+            }
+            .addOnFailureListener { Log.w(TAG, "pose stream failed", it) }
+            .addOnCompleteListener {
+                busy = false
+                imageProxy.close()
+            }
+    }
+
+    /** The angle from whichever side is fully in frame; both sides averaged when both are. */
+    private fun bestAngle(a1: Joint?, b1: Joint?, c1: Joint?, a2: Joint?, b2: Joint?, c2: Joint?): Float? {
+        val left = if (a1 != null && b1 != null && c1 != null) JointAngles.angle(a1, b1, c1) else null
+        val right = if (a2 != null && b2 != null && c2 != null) JointAngles.angle(a2, b2, c2) else null
+        return when {
+            left != null && right != null -> (left + right) / 2f
+            else -> left ?: right
+        }
+    }
+
     private fun deliver(result: FaceResult) {
         if (!mirrored) { onResult(result); return }
         onResult(
@@ -201,6 +304,10 @@ class FaceAnalyzer(
         val rotation = imageProxy.imageInfo.rotationDegrees
         val image = InputImage.fromMediaImage(mediaImage, rotation)
         val sharpness = runCatching { lumaSharpness(imageProxy) }.getOrDefault(0f)
+        if (fitExercise != null || fitGestures) {
+            analyzeFit(imageProxy, image, fitExercise, dtMs)
+            return
+        }
 
         // ML Kit reports faces against the ROTATED image; CameraX reports the
         // crop rect against the UNROTATED buffer. Put them in the same space
@@ -365,6 +472,7 @@ class FaceAnalyzer(
 
     /** Release both detectors' native resources. */
     fun close() {
+        runCatching { gestureRecognizer?.close() }
         runCatching { detector.close() }
         runCatching { objectDetector.close() }
     }
@@ -375,6 +483,8 @@ class FaceAnalyzer(
     companion object {
         /** ~30 Hz. Faster buys nothing the EMA would not smooth away. */
         const val SHARPNESS_STEP = 4
+        /** A recognised hand sign is shown for this long after its last frame. */
+        const val GESTURE_HOLD_MS = 800L
         /** A tap chooses the face under it for this long. */
         const val TAP_PICKS_MS = 1_500L
         const val MIN_INTERVAL_MS = 33L

@@ -4,6 +4,7 @@ plugins {
 }
 
 android {
+    androidResources { noCompress += "task" }
     namespace = "in.arasan.xthink"
     compileSdk {
         version = release(37)
@@ -88,6 +89,7 @@ dependencies {
     implementation(libs.mlkit.text)
     implementation(libs.mediapipe.genai)
     implementation(libs.mediapipe.core)
+    implementation(libs.mediapipe.vision)
     // QR code for the install link. Pure Java, generates a bit matrix; Compose draws it.
     implementation(libs.zxing.core)
     debugImplementation(libs.androidx.ui.tooling)

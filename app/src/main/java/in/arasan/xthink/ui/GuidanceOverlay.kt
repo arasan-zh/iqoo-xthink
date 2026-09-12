@@ -87,6 +87,9 @@ fun GuidanceOverlay(
     onListen: () -> Unit,
     onGeniusRun: () -> Unit,
     onGeniusStop: () -> Unit,
+    onFitMode: () -> Unit,
+    onFitPick: (String) -> Unit,
+    onFitReset: () -> Unit,
     onAskMode: () -> Unit,
     onAskSpeak: () -> Unit,
     onAskScan: () -> Unit,
@@ -201,7 +204,7 @@ fun GuidanceOverlay(
                             .horizontalScroll(rememberScrollState()),
                     ) {
                         if (state.recording) RecordingChip(ms = state.recordingMs)
-                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode) {
+                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode) {
                             ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)
                         }
                         if (state.assisted && !state.videoMode) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
@@ -241,7 +244,10 @@ fun GuidanceOverlay(
                 // else the words of guidance when they are switched on.
                 val genius = state.genius
                 val ask = state.ask
-                if (state.askMode && ask != null) {
+                val fit = state.fit
+                if (state.fitMode && fit != null) {
+                    FitPanel(state = fit, onMode = onFitPick, onReset = onFitReset)
+                } else if (state.askMode && ask != null) {
                     AskPanel(
                         state = ask,
                         onAsk = onAskSpeak,
@@ -282,6 +288,8 @@ fun GuidanceOverlay(
                         onType = onTypeMode,
                         askMode = state.askMode,
                         onAsk = onAskMode,
+                        fitMode = state.fitMode,
+                        onFit = onFitMode,
                     )
                     BottomBar(
                         locked = state.isLocked,
