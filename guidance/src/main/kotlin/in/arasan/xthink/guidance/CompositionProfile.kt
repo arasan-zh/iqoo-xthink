@@ -16,6 +16,10 @@ package `in`.arasan.xthink.guidance
  *        closer or step back. Defaults to [targetSizeRatio], which collapses
  *        the band to a point and gives the original single-target behaviour.
  * @param sizeMax upper edge of the accepted band. See [sizeMin].
+ * @param maxWidth widest the subject box may be before the engine says step
+ *        back. Height says little about a GROUP - a row of people is one face
+ *        tall however many there are - but a union box wider than this means
+ *        someone is being cut off at the edge. `1.0` disables the rule.
  * @param targetEyeLineY where the eye line should sit, 0..1 from the top.
  * @param targetCx horizontal target for the subject centre, before any
  *        gaze-aware lead room is applied.
@@ -31,6 +35,7 @@ data class CompositionProfile(
     val targetPitchDeg: Float,
     val sizeMin: Float = targetSizeRatio,
     val sizeMax: Float = targetSizeRatio,
+    val maxWidth: Float = 1f,
 ) {
     init {
         require(sizeMin <= sizeMax) { "$shotType: sizeMin $sizeMin > sizeMax $sizeMax" }
@@ -61,6 +66,7 @@ data class CompositionProfile(
                     targetPitchDeg = fields.float(type, "targetPitchDeg"),
                     sizeMin = fields.floatOr(type, "sizeMin", target),
                     sizeMax = fields.floatOr(type, "sizeMax", target),
+                    maxWidth = fields.floatOr(type, "maxWidth", 1f),
                 )
             }
             return out

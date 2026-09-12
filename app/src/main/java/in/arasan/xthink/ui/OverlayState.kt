@@ -2,6 +2,7 @@ package `in`.arasan.xthink.ui
 
 import androidx.compose.ui.graphics.ImageBitmap
 import `in`.arasan.xthink.guidance.AlignmentState
+import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.SubjectBox
 import `in`.arasan.xthink.guidance.Verb
@@ -32,6 +33,8 @@ data class OverlayState(
     val thumbnail: ImageBitmap? = null,
     /** Bumped on every capture; the overlay flashes when it changes. */
     val captureNonce: Int = 0,
+    /** The photographer's chosen mode, for the rail and the tabs. */
+    val mode: CoachMode = CoachMode.PORTRAIT,
 ) {
     val verb: Verb? get() = instruction?.verb
     val isLocked: Boolean get() = verb == Verb.LOCKED

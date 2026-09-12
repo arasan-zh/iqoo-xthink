@@ -10,6 +10,7 @@ import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark
+import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.EyeLine
 import `in`.arasan.xthink.guidance.FrameMapping
 import `in`.arasan.xthink.guidance.FrameRect
@@ -47,6 +48,13 @@ data class FaceResult(
 class FaceAnalyzer(
     private val onResult: (FaceResult) -> Unit,
 ) : ImageAnalysis.Analyzer {
+
+    /**
+     * Set from the UI thread, read on the analysis thread. PORTRAIT frames
+     * the largest face; WIDE frames every face as one subject.
+     */
+    @Volatile
+    var mode: CoachMode = CoachMode.PORTRAIT
 
     private val detector = FaceDetection.getClient(
         FaceDetectorOptions.Builder()
@@ -122,15 +130,37 @@ class FaceAnalyzer(
             return FaceResult(null, null, 0, detectMs, dtMs)
         }
 
-        // Largest face wins, always - portrait-only, so a crowd in the
-        // background never pulls the composition into a group shot it cannot
-        // reach in this build. See the class doc for why size, not centrality.
-        val target = faces.maxBy { it.boundingBox.width().toLong() * it.boundingBox.height() }
-        val rect = target.boundingBox.toFrameRect()
+        val rects = faces.map { it.boundingBox.toFrameRect() }
 
+        if (mode == CoachMode.WIDE && faces.size > 1) {
+            // Everyone is the subject, framed as one box spanning all faces.
+            // Averaging the eye lines keeps the horizon honest when heads are
+            // at different heights; averaging the yaws means a group all
+            // facing one way gets lead room, while a group looking every
+            // which way averages to roughly zero and stays centred.
+            val union = FrameMapping.union(rects)!!
+            val eyeY = faces.indices.map { eyeYOf(faces[it], rects[it]) }.average().toFloat()
+            val yaw = faces.map { it.headEulerAngleY }.average().toFloat()
+            return FaceResult(
+                subject = FrameMapping.normalize(union, crop),
+                eyes = EyeLine(
+                    y = FrameMapping.normalizeY(eyeY, crop),
+                    gazeDx = FrameMapping.gazeFromHeadYaw(yaw),
+                ),
+                faceCount = faces.size,
+                detectMs = detectMs,
+                dtMs = dtMs,
+            )
+        }
+
+        // PORTRAIT (or a group of one): the largest face wins. The nearest
+        // person is almost always who the photographer means, and size is the
+        // most stable signal ML Kit gives - "most central" hands the subject
+        // back and forth as the phone pans.
+        val i = faces.indices.maxBy { faces[it].boundingBox.width().toLong() * faces[it].boundingBox.height() }
         return FaceResult(
-            subject = FrameMapping.normalize(rect, crop),
-            eyes = eyeLineOf(target, rect, crop),
+            subject = FrameMapping.normalize(rects[i], crop),
+            eyes = eyeLineOf(faces[i], rects[i], crop),
             faceCount = faces.size,
             detectMs = detectMs,
             dtMs = dtMs,

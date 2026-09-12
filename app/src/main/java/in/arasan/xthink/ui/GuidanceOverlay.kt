@@ -3,7 +3,8 @@ package `in`.arasan.xthink.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -12,6 +13,9 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import `in`.arasan.xthink.guidance.CoachMode
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
@@ -43,6 +47,8 @@ fun GuidanceOverlay(
     state: OverlayState,
     onZoomSelected: (Float) -> Unit,
     onShutter: () -> Unit,
+    onGallery: () -> Unit,
+    onModeSelected: (CoachMode) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -78,6 +84,15 @@ fun GuidanceOverlay(
             .onGloballyPositioned {
                 overlayTop = it.positionInRoot().y
                 overlayHeight = it.size.height.toFloat()
+            }
+            // Pinch to zoom anywhere on the preview. Buttons consume their own
+            // taps first; this only sees the multi-touch gesture.
+            .pointerInput(state.maxZoomRatio) {
+                detectTransformGestures { _, _, zoomChange, _ ->
+                    if (zoomChange != 1f) {
+                        onZoomSelected((state.zoomRatio * zoomChange).coerceIn(1f, state.maxZoomRatio))
+                    }
+                }
             },
     ) {
         // The alignment layer sits directly on the preview, under every chip.
@@ -94,13 +109,12 @@ fun GuidanceOverlay(
                 .padding(horizontal = XT.Gutter),
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
-            // --- top: fake icon row, AI pill would go here in a future step ---
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                TopIconRow()
-            }
+            // --- top: nothing decorative. A small gap keeps the reticle's
+            //     safe area from starting at the status bar. ---
+            Spacer(Modifier.height(8.dp))
 
-            // --- middle: rails either side. Its own vertical centre, measured
-            //     above, is where the fixed guides get drawn. ---
+            // --- middle: the mode rail on the left. Its own vertical centre,
+            //     measured above, is where the fixed guides get drawn. ---
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -110,8 +124,11 @@ fun GuidanceOverlay(
                         safeCenterY = top + it.size.height / 2f
                     },
             ) {
-                LeftRail(modifier = Modifier.align(Alignment.CenterStart))
-                RightRail(modifier = Modifier.align(Alignment.CenterEnd))
+                ModeRail(
+                    mode = state.mode,
+                    onModeSelected = onModeSelected,
+                    modifier = Modifier.align(Alignment.CenterStart),
+                )
             }
 
             // --- bottom stack: guidance card, status strip, mode tab, zoom,
@@ -136,11 +153,12 @@ fun GuidanceOverlay(
                         onZoomSelected = onZoomSelected,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
-                    ModeTabs()
+                    ModeTabs(mode = state.mode, onModeSelected = onModeSelected)
                     BottomBar(
                         locked = state.isLocked,
                         thumbnail = state.thumbnail,
                         onShutter = onShutter,
+                        onGallery = onGallery,
                     )
                 }
             }

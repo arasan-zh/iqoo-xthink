@@ -40,6 +40,15 @@ data class EyeLine(val y: Float, val gazeDx: Float)
 
 enum class ShotType { HEADSHOT, HALF_BODY, FULL_BODY, GROUP, OBJECT, LANDSCAPE }
 
+/**
+ * What the photographer chose on the mode rail.
+ *
+ * PORTRAIT: one person, the largest face, framed at whatever scale they are
+ * at. WIDE: everyone in frame as one group, or a venue - an office, an event
+ * floor - coached on level and pitch when nobody is in it.
+ */
+enum class CoachMode { PORTRAIT, WIDE }
+
 enum class Verb {
     LEVEL_CW, LEVEL_CCW,
     TILT_UP, TILT_DOWN,

@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import `in`.arasan.xthink.guidance.CoachMode
 import kotlin.math.abs
 
 // ---------------------------------------------------------------------------
@@ -113,19 +114,40 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: 
 }
 
 // ---------------------------------------------------------------------------
-// Mode tabs - only Portrait exists. Nothing else is drawn, because a tab that
-// is visible but inert reads as broken rather than unfinished.
+// Mode tabs - PORTRAIT | WIDE, both live. The rail on the left switches the
+// same state; a stock camera shows modes in both places.
 // ---------------------------------------------------------------------------
 
 @Composable
-fun ModeTabs(modifier: Modifier = Modifier) {
-    Column(
+fun ModeTabs(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Modifier = Modifier) {
+    Row(
         modifier = modifier,
+        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ModeTab("PORTRAIT", mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
+        ModeTab("WIDE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+    }
+}
+
+@Composable
+private fun ModeTab(label: String, active: Boolean, onClick: () -> Unit) {
+    val tint by animateColorAsState(
+        targetValue = if (active) XT.Gold else XT.OnChip.copy(alpha = 0.8f),
+        animationSpec = tween(180),
+        label = "modeTab",
+    )
+    Column(
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick,
+        ),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
-            text = "PORTRAIT",
-            color = XT.Gold,
+            text = label,
+            color = tint,
             fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
             letterSpacing = 1.2.sp,
@@ -136,7 +158,7 @@ fun ModeTabs(modifier: Modifier = Modifier) {
                 .width(22.dp)
                 .height(2.dp)
                 .clip(CircleShape)
-                .background(XT.Gold),
+                .background(if (active) XT.Gold else Color.Transparent),
         )
     }
 }
@@ -151,6 +173,7 @@ fun BottomBar(
     locked: Boolean,
     thumbnail: ImageBitmap?,
     onShutter: () -> Unit,
+    onGallery: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -158,12 +181,18 @@ fun BottomBar(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        // Gallery: the most recent capture, or a placeholder until there is one.
+        // Gallery: the most recent capture, or a placeholder until there is
+        // one. Tapping opens it in the phone's viewer.
         Box(
             modifier = Modifier
                 .size(46.dp)
                 .clip(RoundedCornerShape(XT.CornerSmall))
-                .background(Color.White.copy(alpha = 0.14f)),
+                .background(Color.White.copy(alpha = 0.14f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onGallery,
+                ),
             contentAlignment = Alignment.Center,
         ) {
             if (thumbnail != null) {
@@ -192,31 +221,10 @@ fun BottomBar(
 
         Shutter(locked = locked, onClick = onShutter)
 
-        // Flip. Rear only in this build, so it is deliberately inert.
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.14f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(modifier = Modifier.size(22.dp)) {
-                val c = size.minDimension / 2f
-                val r = c * 0.68f
-                drawArc(
-                    color = XT.Inert,
-                    startAngle = 20f,
-                    sweepAngle = 300f,
-                    useCenter = false,
-                    topLeft = Offset(c - r, c - r),
-                    size = Size(r * 2f, r * 2f),
-                    style = Stroke(1.8f.dp.toPx(), cap = StrokeCap.Round),
-                )
-                val tip = Offset(c + r * 0.94f, c + r * 0.34f)
-                drawLine(XT.Inert, tip, Offset(tip.x - r * 0.45f, tip.y - r * 0.1f), 1.8f.dp.toPx(), StrokeCap.Round)
-                drawLine(XT.Inert, tip, Offset(tip.x - r * 0.05f, tip.y + r * 0.45f), 1.8f.dp.toPx(), StrokeCap.Round)
-            }
-        }
+        // Rear camera only, so there is no flip. A spacer the same size keeps
+        // the shutter centred - a real control belongs here when the front
+        // camera does (the engine already handles mirrored + fixed focus).
+        Spacer(Modifier.size(46.dp))
     }
 }
 
@@ -254,92 +262,12 @@ private fun Shutter(locked: Boolean, onClick: () -> Unit) {
 }
 
 // ---------------------------------------------------------------------------
-// FAKE chrome. Static, non-interactive, present so the app reads as a stock
-// camera rather than a demo harness. CLAUDE.md lists exactly these as fakes.
+// Mode rail - Portrait | Wide. Live, the same state as the tabs. Nothing on
+// this screen is decorative any more: every icon does something.
 // ---------------------------------------------------------------------------
 
 @Composable
-fun TopIconRow(modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 22.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        repeat(6) { i ->
-            Canvas(modifier = Modifier.size(21.dp)) { drawTopIcon(i, XT.Inert) }
-        }
-    }
-}
-
-private fun DrawScope.drawTopIcon(index: Int, color: Color) {
-    val c = size.minDimension / 2f
-    val r = c * 0.78f
-    val stroke = 1.6f.dp.toPx()
-    when (index) {
-        0 -> { // scan / AI focus
-            drawCircle(color, r * 0.34f, Offset(c, c))
-            listOf(-1f to -1f, 1f to -1f, -1f to 1f, 1f to 1f).forEach { (sx, sy) ->
-                val x = c + sx * r
-                val y = c + sy * r
-                drawLine(color, Offset(x, y), Offset(x - sx * r * 0.45f, y), stroke, StrokeCap.Round)
-                drawLine(color, Offset(x, y), Offset(x, y - sy * r * 0.45f), stroke, StrokeCap.Round)
-            }
-        }
-        1 -> { // flash off
-            drawLine(color, Offset(c - r * 0.3f, c - r), Offset(c + r * 0.25f, c - r * 0.1f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c + r * 0.25f, c - r * 0.1f), Offset(c - r * 0.1f, c + r), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c - r, c - r), Offset(c + r, c + r), stroke, StrokeCap.Round)
-        }
-        2 -> { // timer
-            drawCircle(color, r * 0.8f, Offset(c, c), style = Stroke(stroke))
-            drawLine(color, Offset(c, c), Offset(c, c - r * 0.45f), stroke, StrokeCap.Round)
-        }
-        3 -> { // AI badge
-            drawCircle(color, r * 0.9f, Offset(c, c), style = Stroke(stroke))
-            drawCircle(XT.Green, r * 0.26f, Offset(c + r * 0.72f, c - r * 0.72f))
-        }
-        4 -> { // mic off
-            drawRoundRect(
-                color = color,
-                topLeft = Offset(c - r * 0.34f, c - r * 0.9f),
-                size = Size(r * 0.68f, r * 1.15f),
-                cornerRadius = androidx.compose.ui.geometry.CornerRadius(r * 0.34f),
-                style = Stroke(stroke),
-            )
-            drawLine(color, Offset(c - r, c - r), Offset(c + r, c + r), stroke, StrokeCap.Round)
-        }
-        else -> { // settings
-            drawCircle(color, r * 0.85f, Offset(c, c), style = Stroke(stroke))
-            drawCircle(color, r * 0.3f, Offset(c, c), style = Stroke(stroke))
-        }
-    }
-}
-
-private data class RailItem(val label: String, val glyph: Int)
-
-@Composable
-fun LeftRail(modifier: Modifier = Modifier) {
-    val items = listOf(
-        RailItem("Macro", 0),
-        RailItem("Wide", 1),
-        RailItem("Portrait", 2),
-        RailItem("Night", 3),
-    )
-    Rail(items, activeIndex = 2, modifier = modifier)
-}
-
-@Composable
-fun RightRail(modifier: Modifier = Modifier) {
-    val items = listOf(
-        RailItem("Scene", 4),
-        RailItem("Lens", 5),
-        RailItem("Settings", 6),
-    )
-    Rail(items, activeIndex = -1, modifier = modifier)
-}
-
-@Composable
-private fun Rail(items: List<RailItem>, activeIndex: Int, modifier: Modifier = Modifier) {
+fun ModeRail(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
             .clip(RoundedCornerShape(XT.Corner))
@@ -348,19 +276,34 @@ private fun Rail(items: List<RailItem>, activeIndex: Int, modifier: Modifier = M
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        items.forEachIndexed { index, item ->
-            val tint = if (index == activeIndex) XT.Green else XT.Inert
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Canvas(modifier = Modifier.size(19.dp)) { drawRailGlyph(item.glyph, tint) }
-                Text(
-                    text = item.label,
-                    color = tint,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = 3.dp),
-                )
-            }
-        }
+        RailItem("Portrait", glyph = 0, active = mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
+        RailItem("Wide", glyph = 1, active = mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+    }
+}
+
+@Composable
+private fun RailItem(label: String, glyph: Int, active: Boolean, onClick: () -> Unit) {
+    val tint by animateColorAsState(
+        targetValue = if (active) XT.Green else XT.Inert,
+        animationSpec = tween(180),
+        label = "rail",
+    )
+    Column(
+        modifier = Modifier.clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null,
+            onClick = onClick,
+        ),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Canvas(modifier = Modifier.size(19.dp)) { drawRailGlyph(glyph, tint) }
+        Text(
+            text = label,
+            color = tint,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.padding(top = 3.dp),
+        )
     }
 }
 
@@ -369,36 +312,15 @@ private fun DrawScope.drawRailGlyph(index: Int, color: Color) {
     val r = c * 0.8f
     val stroke = 1.6f.dp.toPx()
     when (index) {
-        0 -> { // macro - a leaf
-            drawArc(color, -30f, 200f, false, Offset(c - r, c - r), Size(r * 2f, r * 2f), style = Stroke(stroke))
-            drawLine(color, Offset(c - r * 0.7f, c + r * 0.7f), Offset(c + r * 0.6f, c - r * 0.6f), stroke, StrokeCap.Round)
-        }
-        1 -> { // wide - two peaks
-            drawLine(color, Offset(c - r, c + r * 0.5f), Offset(c - r * 0.25f, c - r * 0.5f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c - r * 0.25f, c - r * 0.5f), Offset(c + r * 0.35f, c + r * 0.5f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c + r * 0.1f, c + r * 0.1f), Offset(c + r * 0.55f, c - r * 0.4f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c + r * 0.55f, c - r * 0.4f), Offset(c + r, c + r * 0.5f), stroke, StrokeCap.Round)
-        }
-        2 -> { // portrait - a person
+        0 -> { // portrait - a person
             drawCircle(color, r * 0.34f, Offset(c, c - r * 0.42f), style = Stroke(stroke))
             drawArc(color, 200f, 140f, false, Offset(c - r * 0.72f, c + r * 0.1f), Size(r * 1.44f, r * 1.3f), style = Stroke(stroke))
         }
-        3 -> { // night - a moon
-            drawArc(color, 40f, 280f, false, Offset(c - r, c - r), Size(r * 2f, r * 2f), style = Stroke(stroke))
-        }
-        4 -> { // scene
-            drawRoundRect(color, Offset(c - r, c - r * 0.8f), Size(r * 2f, r * 1.6f), androidx.compose.ui.geometry.CornerRadius(r * 0.25f), style = Stroke(stroke))
-            drawCircle(color, r * 0.2f, Offset(c - r * 0.4f, c - r * 0.25f))
-        }
-        5 -> { // lens
-            drawCircle(color, r * 0.9f, Offset(c, c), style = Stroke(stroke))
-            drawCircle(color, r * 0.38f, Offset(c, c), style = Stroke(stroke))
-        }
-        else -> { // sliders
-            drawLine(color, Offset(c - r, c - r * 0.5f), Offset(c + r, c - r * 0.5f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c - r, c + r * 0.5f), Offset(c + r, c + r * 0.5f), stroke, StrokeCap.Round)
-            drawCircle(color, r * 0.26f, Offset(c + r * 0.35f, c - r * 0.5f))
-            drawCircle(color, r * 0.26f, Offset(c - r * 0.35f, c + r * 0.5f))
+        else -> { // wide - two people side by side
+            drawCircle(color, r * 0.28f, Offset(c - r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
+            drawCircle(color, r * 0.28f, Offset(c + r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
+            drawArc(color, 200f, 140f, false, Offset(c - r * 1.0f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
+            drawArc(color, 200f, 140f, false, Offset(c - r * 0.15f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
         }
     }
 }

@@ -219,7 +219,16 @@ class GuidanceEngine(
         // far past the nearest edge we are, relative to that edge, so the
         // sign convention (negative = too small = step closer) is unchanged.
         val sizeApplies = box != null && profile.targetSizeRatio > 0f
-        val sizeErr = if (sizeApplies) bandError(box.sizeRatio, profile.sizeMin, profile.sizeMax) else 0f
+        val sizeErr = if (sizeApplies) {
+            val byHeight = bandError(box.sizeRatio, profile.sizeMin, profile.sizeMax)
+            // Too wide is too close, whatever the height says: a group that
+            // spills past the edge needs the photographer to step back.
+            val byWidth = if (box.w > profile.maxWidth) (box.w - profile.maxWidth) / profile.maxWidth else 0f
+            // Width can only ever ADD a "too close"; it must never cancel a
+            // "too far". A zero width error beats a negative height error
+            // numerically, which is exactly the wrong answer.
+            if (byWidth > 0f && byWidth > byHeight) byWidth else byHeight
+        } else 0f
         val sizeIn = if (sizeApplies) sizeGate.update(abs(sizeErr)) else { sizeGate.reset(); true }
 
         // Horizontal framing, against the gaze-adjusted target.

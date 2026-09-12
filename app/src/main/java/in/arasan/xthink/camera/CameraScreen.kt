@@ -3,6 +3,7 @@ package `in`.arasan.xthink.camera
 import android.Manifest
 import android.content.Context
 import android.content.ContentValues
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.net.Uri
@@ -57,6 +58,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.AutoCapturePolicy
+import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.HapticCue
 import `in`.arasan.xthink.guidance.LockHaptics
 import `in`.arasan.xthink.guidance.CompositionProfile
@@ -131,6 +133,7 @@ private fun CameraAndGuidance() {
 
     var overlayState by remember { mutableStateOf(OverlayState.EMPTY) }
     var sensorMissing by remember { mutableStateOf(false) }
+    var lastCaptureUri by remember { mutableStateOf<Uri?>(null) }
 
     val profiles = remember { loadProfiles(context) }
     val engine = remember { GuidanceEngine(profiles.getValue(ShotType.LANDSCAPE)) }
@@ -183,6 +186,7 @@ private fun CameraAndGuidance() {
                 override fun onImageSaved(output: ImageCapture.OutputFileResults) {
                     captureInFlight = false
                     val uri: Uri? = output.savedUri
+                    lastCaptureUri = uri ?: lastCaptureUri
                     Log.i(TAG, "captured auto=$auto -> $uri")
                     // An auto shot follows the lock thunk by a frame; a second
                     // click on top would read as a stutter. Manual gets its click.
@@ -221,6 +225,33 @@ private fun CameraAndGuidance() {
         }
     }
 
+    // The analyser is created inside the effect below; the mode switch needs
+    // to reach it from a click, so hold a reference here.
+    val analyzerRef = remember { arrayOfNulls<FaceAnalyzer>(1) }
+
+    fun selectMode(mode: CoachMode) {
+        if (overlayState.mode == mode) return
+        shotTypes.setMode(mode)
+        analyzerRef[0]?.mode = mode
+        engine.setProfile(profiles.getValue(shotTypes.current))
+        overlayState = overlayState.copy(mode = mode)
+        Log.i(TAG, "mode -> $mode")
+    }
+
+    fun openGallery() {
+        val uri = lastCaptureUri
+        val intent = if (uri != null) {
+            Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "image/*")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+        } else {
+            Intent(Intent.ACTION_VIEW, MediaStore.Images.Media.EXTERNAL_CONTENT_URI)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(intent) }.onFailure { Log.w(TAG, "no viewer for the gallery", it) }
+    }
+
     DisposableEffect(lifecycleOwner) {
         val mainHandler = Handler(Looper.getMainLooper())
         val analysisExecutor = Executors.newSingleThreadExecutor()
@@ -255,6 +286,7 @@ private fun CameraAndGuidance() {
                 hasAutofocus = telemetry.hasAutofocus,
                 thumbnail = overlayState.thumbnail,
                 captureNonce = overlayState.captureNonce,
+                mode = shotTypes.mode,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -294,6 +326,9 @@ private fun CameraAndGuidance() {
                 )
             }
         }
+
+        analyzerRef[0] = analyzer
+        analyzer.mode = shotTypes.mode
 
         val future = ProcessCameraProvider.getInstance(context)
         future.addListener({
@@ -390,6 +425,7 @@ private fun CameraAndGuidance() {
         onDispose {
             runCatching { future.get().unbindAll() }
             cameraControl = null
+            analyzerRef[0] = null
             analyzer.close()
             analysisExecutor.shutdown()
         }
@@ -406,6 +442,8 @@ private fun CameraAndGuidance() {
                 autoCapture.notifyManualCapture()
                 capture(auto = false)
             },
+            onGallery = { openGallery() },
+            onModeSelected = { selectMode(it) },
             modifier = Modifier.fillMaxSize(),
         )
         if (sensorMissing) {
@@ -433,6 +471,7 @@ private fun buildOverlayState(
     hasAutofocus: Boolean,
     thumbnail: androidx.compose.ui.graphics.ImageBitmap?,
     captureNonce: Int,
+    mode: CoachMode,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -465,6 +504,7 @@ private fun buildOverlayState(
         maxZoomRatio = telemetry.maxZoomRatio,
         thumbnail = thumbnail,
         captureNonce = captureNonce,
+        mode = mode,
     )
 }
 

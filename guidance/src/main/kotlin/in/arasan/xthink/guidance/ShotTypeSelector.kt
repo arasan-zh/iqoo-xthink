@@ -39,6 +39,23 @@ class ShotTypeSelector(
     var current: ShotType = initial
         private set
 
+    /** The photographer's chosen mode. Changing it is deliberate, so it takes effect at once. */
+    var mode: CoachMode = CoachMode.PORTRAIT
+        private set
+
+    private var lastCount = 0
+    private var lastHeight: Float? = null
+
+    /**
+     * Switch modes. No hysteresis: a tap on a mode is not detector noise, and
+     * making the photographer wait half a second for it would feel broken.
+     */
+    fun setMode(newMode: CoachMode) {
+        if (newMode == mode) return
+        mode = newMode
+        reset(shotTypeFor(lastCount, lastHeight, newMode))
+    }
+
     private var candidate: ShotType = initial
     private var candidateMs = 0L
 
@@ -54,6 +71,8 @@ class ShotTypeSelector(
      *        or null when there is no face. Decides which portrait scale.
      */
     fun update(faceCount: Int, dtMs: Long, faceHeight: Float? = null): ShotType {
+        lastCount = faceCount
+        lastHeight = faceHeight
         val proposed = shotTypeFor(faceCount, faceHeight)
         val dt = if (dtMs < 0L) 0L else dtMs
 
@@ -90,12 +109,16 @@ class ShotTypeSelector(
      * step closer), one larger than the tightest is still the tightest (and
      * will be told to step back). No height at all defaults to HALF_BODY.
      *
-     * GROUP needs a mode tab to reach deliberately: with several faces in
-     * frame and no tab to say otherwise, a portrait of whoever is nearest is
-     * the one unambiguous choice.
+     * In PORTRAIT, several faces are still a portrait of whoever is nearest -
+     * the one unambiguous choice without a tab saying otherwise. GROUP is
+     * reached by choosing WIDE.
      */
-    fun shotTypeFor(faceCount: Int, faceHeight: Float? = null): ShotType {
+    fun shotTypeFor(faceCount: Int, faceHeight: Float? = null, forMode: CoachMode = mode): ShotType {
         if (faceCount <= 0) return ShotType.LANDSCAPE
+        // WIDE: every face is the subject, framed as one group. A single
+        // person in a wide venue is a group of one - still GROUP, so the
+        // photographer gets the wider composition they asked for.
+        if (forMode == CoachMode.WIDE) return ShotType.GROUP
         val h = faceHeight ?: return ShotType.HALF_BODY
         for (type in PORTRAIT_LADDER) {
             val band = profiles[type] ?: continue
