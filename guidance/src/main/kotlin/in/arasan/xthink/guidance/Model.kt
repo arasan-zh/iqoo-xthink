@@ -47,9 +47,11 @@ enum class ShotType { HEADSHOT, HALF_BODY, FULL_BODY, GROUP, OBJECT, LANDSCAPE }
  * at. WIDE: everyone in frame as one group, or a venue - an office, an event
  * floor - coached on level and pitch when nobody is in it. OBJECT: the most
  * prominent thing in frame that is not a face - a vase, a plate, a product -
- * centred, at whatever scale it is at.
+ * centred, at whatever scale it is at. CREATIVE: no assistance at all - no
+ * detector, no coaching, no auto-capture, no haptics. The photographer
+ * composes; the app is a camera.
  */
-enum class CoachMode { PORTRAIT, WIDE, OBJECT }
+enum class CoachMode { PORTRAIT, WIDE, OBJECT, CREATIVE }
 
 enum class Verb {
     LEVEL_CW, LEVEL_CCW,

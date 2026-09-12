@@ -94,6 +94,13 @@ class FaceAnalyzer(
 
     @SuppressLint("UnsafeOptInUsageError")
     override fun analyze(imageProxy: ImageProxy) {
+        // CREATIVE: no assistance means no detector. Close the frame before
+        // any work - zero ML, zero heat, and the engine never ticks.
+        if (mode == CoachMode.CREATIVE) {
+            imageProxy.close()
+            return
+        }
+
         val now = SystemClock.uptimeMillis()
 
         // Throttled, per CLAUDE.md. STRATEGY_KEEP_ONLY_LATEST already drops

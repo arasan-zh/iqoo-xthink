@@ -41,6 +41,8 @@ data class OverlayState(
     val thermalHeadroom: Float = Float.NaN,
 ) {
     val verb: Verb? get() = instruction?.verb
+    /** False in CREATIVE: nothing coaches, only the camera controls draw. */
+    val assisted: Boolean get() = mode != CoachMode.CREATIVE
     val isLocked: Boolean get() = verb == Verb.LOCKED
     val isSeeking: Boolean get() = verb == Verb.SEEKING
 

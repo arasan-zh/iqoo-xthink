@@ -122,12 +122,13 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: 
 fun ModeTabs(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(22.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ModeTab("PORTRAIT", mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         ModeTab("WIDE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
         ModeTab("OBJECT", mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
+        ModeTab("CREATIVE", mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
     }
 }
 
@@ -149,9 +150,11 @@ private fun ModeTab(label: String, active: Boolean, onClick: () -> Unit) {
         Text(
             text = label,
             color = tint,
-            fontSize = 14.sp,
+            fontSize = 13.sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
+            letterSpacing = 0.9.sp,
+            maxLines = 1,
+            softWrap = false,
         )
         Spacer(Modifier.height(4.dp))
         Box(
@@ -280,6 +283,7 @@ fun ModeRail(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Mod
         RailItem("Portrait", glyph = 0, active = mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         RailItem("Wide", glyph = 1, active = mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
         RailItem("Object", glyph = 2, active = mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
+        RailItem("Creative", glyph = 3, active = mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
     }
 }
 
@@ -323,6 +327,19 @@ private fun DrawScope.drawRailGlyph(index: Int, color: Color) {
             drawCircle(color, r * 0.28f, Offset(c + r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
             drawArc(color, 200f, 140f, false, Offset(c - r * 1.0f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
             drawArc(color, 200f, 140f, false, Offset(c - r * 0.15f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
+        }
+        3 -> { // creative - an aperture: a ring with six blades
+            drawCircle(color, r * 0.9f, Offset(c, c), style = Stroke(stroke))
+            for (i in 0 until 6) {
+                val a = Math.toRadians(i * 60.0)
+                val b = Math.toRadians(i * 60.0 + 100.0)
+                drawLine(
+                    color,
+                    Offset(c + kotlin.math.cos(a).toFloat() * r * 0.9f, c + kotlin.math.sin(a).toFloat() * r * 0.9f),
+                    Offset(c + kotlin.math.cos(b).toFloat() * r * 0.35f, c + kotlin.math.sin(b).toFloat() * r * 0.35f),
+                    stroke, StrokeCap.Round,
+                )
+            }
         }
         else -> { // object - a cube in outline
             val s = r * 0.62f

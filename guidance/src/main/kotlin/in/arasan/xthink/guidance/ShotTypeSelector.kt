@@ -119,6 +119,9 @@ class ShotTypeSelector(
      */
     fun shotTypeFor(faceCount: Int, faceHeight: Float? = null, forMode: CoachMode = mode): ShotType {
         if (faceCount <= 0) return ShotType.LANDSCAPE
+        // CREATIVE never reaches the engine - the analyser skips frames - but
+        // if it did, there is nothing to compose against.
+        if (forMode == CoachMode.CREATIVE) return ShotType.LANDSCAPE
         // OBJECT: whatever the detector found is the subject, centred.
         if (forMode == CoachMode.OBJECT) return ShotType.OBJECT
         // WIDE: every face is the subject, framed as one group. A single

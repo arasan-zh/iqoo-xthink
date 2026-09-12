@@ -107,6 +107,14 @@ class ObjectModeTest {
     }
 
     @Test
+    fun `creative mode composes against nothing`() {
+        val s = ShotTypeSelector(Fixtures.PROFILES)
+        s.setMode(CoachMode.CREATIVE)
+        assertEquals(ShotType.LANDSCAPE, s.shotTypeFor(0))
+        assertEquals(ShotType.LANDSCAPE, s.shotTypeFor(3, 0.3f))
+    }
+
+    @Test
     fun `an object counts as a subject for the lock and auto-capture`() {
         val engine = GuidanceEngine(obj)
         val vase = box(cx = 0.5f, cy = 0.5f, h = 0.45f, w = 0.30f)

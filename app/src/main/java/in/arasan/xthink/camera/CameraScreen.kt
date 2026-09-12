@@ -263,7 +263,13 @@ private fun CameraAndGuidance() {
         shotTypes.setMode(mode)
         analyzerRef[0]?.mode = mode
         engine.setProfile(profiles.getValue(shotTypes.current))
-        overlayState = overlayState.copy(mode = mode)
+        overlayState = if (mode == CoachMode.CREATIVE) {
+            // No assistance: the analyser stops ticking the engine, so clear
+            // what it last said rather than leave a stale instruction up.
+            overlayState.copy(mode = mode, instruction = null, subject = null, alignment = AlignmentState.EMPTY)
+        } else {
+            overlayState.copy(mode = mode)
+        }
         Log.i(TAG, "mode -> $mode")
     }
 
@@ -350,10 +356,10 @@ private fun CameraAndGuidance() {
                 lastHeartbeat = now
                 Log.i(
                     TAG,
-                    "roll=%+.1f pitch=%+.1f faces=%d %s det=%dms err=%.3f lock=%.2f therm=%.2f/%s -> %s".format(
+                    "roll=%+.1f pitch=%+.1f faces=%d %s det=%dms err=%.3f lock=%.2f zoom=%.1fx therm=%.2f/%s -> %s".format(
                         attitude.attitude.rollDeg, attitude.attitude.pitchDeg,
                         result.faceCount, stable, result.detectMs,
-                        engine.totalError, engine.lockProgress,
+                        engine.totalError, engine.lockProgress, telemetry.zoomRatio,
                         overlayState.thermalHeadroom, thermalPlan[0].tier, next.text,
                     ),
                 )
@@ -377,12 +383,7 @@ private fun CameraAndGuidance() {
                     CaptureRequest.CONTROL_AF_MODE,
                     CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE,
                 )
-                // The HAL does not reset zoom to 1.0 on its own - on this
-                // phone a fresh bind can start at 2x, which is neither what
-                // the composition profiles assume nor what the zoom slider
-                // shows by default. Ask for 1x explicitly so a cold launch
-                // starts exactly where the mockup and the profiles expect.
-                .setCaptureRequestOption(CaptureRequest.CONTROL_ZOOM_RATIO, 1.0f)
+
                 .setSessionCaptureCallback(object : CameraCaptureSession.CaptureCallback() {
                     override fun onCaptureCompleted(
                         session: CameraCaptureSession,
@@ -436,6 +437,13 @@ private fun CameraAndGuidance() {
                         group,
                     )
                     cameraControl = camera
+                    // The HAL does not reset zoom on its own - a fresh bind
+                    // once opened at 2x. Reset through CameraControl, the
+                    // same path the slider and the pinch use. NOT through a
+                    // Camera2 interop request option: interop options override
+                    // CameraX's own controls, and a pinned CONTROL_ZOOM_RATIO
+                    // silently defeated every setZoomRatio that followed.
+                    camera.cameraControl.setZoomRatio(1f)
                     val characteristics =
                         Camera2CameraInfo.extractCameraCharacteristics(camera.cameraInfo)
                     val statics = CameraTelemetry.fromCharacteristics(characteristics)

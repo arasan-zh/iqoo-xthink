@@ -103,11 +103,14 @@ fun GuidanceOverlay(
             },
     ) {
         // The alignment layer sits directly on the preview, under every chip.
-        Reticle(
-            state = state,
-            safeCenterYFraction = safeCenterYFraction,
-            modifier = Modifier.fillMaxSize(),
-        )
+        // Absent in CREATIVE: no assistance means nothing drawn on the image.
+        if (state.assisted) {
+            Reticle(
+                state = state,
+                safeCenterYFraction = safeCenterYFraction,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
 
         Column(
             modifier = Modifier
@@ -148,8 +151,10 @@ fun GuidanceOverlay(
                     .padding(bottom = 8.dp),
             ) {
                 if (state.thermal != ThermalTier.COOL) ThermalChip(state.thermal)
-                GuidanceCard(state = state)
-                StatusStrip(state = state)
+                if (state.assisted) {
+                    GuidanceCard(state = state)
+                    StatusStrip(state = state)
+                }
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,

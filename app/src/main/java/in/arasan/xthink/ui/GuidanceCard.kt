@@ -211,6 +211,7 @@ private fun captionFor(instruction: Instruction?, mode: CoachMode): String = whe
         CoachMode.OBJECT -> "Point at the thing you want to frame."
         CoachMode.WIDE -> "Find the people, or frame the room."
         CoachMode.PORTRAIT -> "Find a face to start guidance."
+        CoachMode.CREATIVE -> "Compose freely." // the card is not drawn in this mode
     }
     Verb.HOLD_STEADY -> "Almost there, keep still."
     Verb.TAP_FOCUS -> "Tap your subject to focus."
