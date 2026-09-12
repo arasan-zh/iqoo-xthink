@@ -13,6 +13,7 @@ import com.google.mlkit.vision.face.FaceLandmark
 import `in`.arasan.xthink.guidance.EyeLine
 import `in`.arasan.xthink.guidance.FrameMapping
 import `in`.arasan.xthink.guidance.FrameRect
+import `in`.arasan.xthink.guidance.GuidanceConstants
 import `in`.arasan.xthink.guidance.SubjectBox
 
 private const val TAG = "xThink"
@@ -182,7 +183,7 @@ class FaceAnalyzer(
          */
         const val MIN_FACE_SIZE = 0.06f
 
-        /** Eyes sit roughly this far down an ML Kit face box. */
-        const val EYE_LINE_FRACTION_OF_FACE = 0.4f
+        /** Eyes sit roughly this far down an ML Kit face box. One source of truth, shared with the engine's target rect. */
+        const val EYE_LINE_FRACTION_OF_FACE = GuidanceConstants.EYE_LINE_FRACTION_OF_FACE
     }
 }

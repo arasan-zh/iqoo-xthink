@@ -82,6 +82,24 @@ data class AlignmentState(
     val framingInDeadzone: Boolean,
     /** 0..1 progress through the 400 ms lock dwell. Fills the lock ring. */
     val lockProgress: Float,
+    /**
+     * True once the engine has decided the photographer cannot move the
+     * camera vertically and is coaching with tilt instead. The pitch
+     * tolerance is relaxed while this holds.
+     */
+    val usingRotation: Boolean,
+    /**
+     * Where the subject box SHOULD be, in normalised frame coordinates, for
+     * the current profile and gaze - same size as the subject (scale is the
+     * photographer's choice), placed at the target centre and eye line. The
+     * reticle draws its brackets here so the instruction becomes "move the
+     * green frame into the gold one". False when there is no subject.
+     */
+    val hasTarget: Boolean,
+    val targetCx: Float,
+    val targetCy: Float,
+    val targetW: Float,
+    val targetH: Float,
     /** Zoom ratio that would fix the framing, or 1f when zoom is not the answer. */
     val suggestedZoom: Float,
     /** 0..1, same value as [GuidanceEngine.totalError]. Drives haptics. */
@@ -93,7 +111,9 @@ data class AlignmentState(
             offsetX = 0f, offsetY = 0f, sizeErr = 0f,
             rollInDeadzone = false, pitchInDeadzone = false,
             distanceInDeadzone = false, framingInDeadzone = false,
-            lockProgress = 0f, suggestedZoom = 1f, totalError = 0f,
+            lockProgress = 0f, usingRotation = false,
+            hasTarget = false, targetCx = 0.5f, targetCy = 0.5f, targetW = 0f, targetH = 0f,
+            suggestedZoom = 1f, totalError = 0f,
         )
     }
 }

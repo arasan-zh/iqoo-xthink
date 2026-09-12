@@ -71,8 +71,21 @@ fun Reticle(
         val safeCenterY = size.height * safeCenterYFraction
 
         state.subject?.let { drawSubjectFrame(it.cx, it.cy, it.w, it.h, accent, subjectAlpha) }
-        drawBrackets(accent, lockPulse, safeCenterY)
-        drawCentreCross(accent, safeCenterY)
+
+        // The brackets are the TARGET. With a subject in frame they sit where
+        // the subject box should be - same size, at the profile's centre and
+        // eye line, shifted by gaze lead room - so the instruction reads as
+        // "move the green frame into the gold one". With no subject they fall
+        // back to the stock centred square, so the app still looks like a
+        // camera app rather than an empty one.
+        val a = state.alignment
+        if (a.hasTarget && a.targetW > 0f && a.targetH > 0f) {
+            drawTargetBrackets(a.targetCx, a.targetCy, a.targetW, a.targetH, accent, lockPulse)
+            drawCentreCross(accent, a.targetCy * size.height, a.targetCx * size.width)
+        } else {
+            drawBrackets(accent, lockPulse, safeCenterY)
+            drawCentreCross(accent, safeCenterY)
+        }
         if (horizonAlpha > 0.01f) drawHorizon(state.alignment.rollDeg, horizonAlpha, safeCenterY)
         if (ladderAlpha > 0.01f) drawPitchLadder(state.alignment.pitchErrDeg, ladderAlpha, safeCenterY)
     }
@@ -129,7 +142,43 @@ private fun DrawScope.drawSubjectFrame(
     )
 }
 
-/** The four corner brackets from the overlay reference. */
+/**
+ * Corner brackets around the target rect - where the subject frame should go.
+ * Padded by the same factor as the subject frame so the two coincide exactly
+ * when the shot is framed. Capped like the subject frame, for the same reason.
+ */
+private fun DrawScope.drawTargetBrackets(
+    cx: Float,
+    cy: Float,
+    w: Float,
+    h: Float,
+    color: Color,
+    lockPulse: Float,
+) {
+    val pad = 1.35f
+    val maxFraction = 0.94f
+    val bw = (w * pad * size.width).coerceIn(1f, size.width * maxFraction)
+    val bh = (h * pad * size.height).coerceIn(1f, size.height * maxFraction)
+    val left = cx * size.width - bw / 2f
+    val top = cy * size.height - bh / 2f
+    val right = left + bw
+    val bottom = top + bh
+    val arm = min(bw, bh) * 0.28f
+    val stroke = (2.5f + lockPulse * 1.0f).dp.toPx()
+    val c = color.copy(alpha = 0.95f)
+
+    fun bracket(x: Float, y: Float, dx: Float, dy: Float) {
+        drawLine(c, Offset(x, y), Offset(x + dx * arm, y), stroke, StrokeCap.Round)
+        drawLine(c, Offset(x, y), Offset(x, y + dy * arm), stroke, StrokeCap.Round)
+    }
+
+    bracket(left, top, 1f, 1f)
+    bracket(right, top, -1f, 1f)
+    bracket(left, bottom, 1f, -1f)
+    bracket(right, bottom, -1f, -1f)
+}
+
+/** The stock centred square, used when there is no subject to target. */
 private fun DrawScope.drawBrackets(color: Color, lockPulse: Float, centerY: Float) {
     val half = min(size.width, size.height) * 0.22f
     val arm = half * 0.34f
@@ -149,8 +198,8 @@ private fun DrawScope.drawBrackets(color: Color, lockPulse: Float, centerY: Floa
     bracket(cx + half, cy + half, -1f, -1f)
 }
 
-private fun DrawScope.drawCentreCross(color: Color, centerY: Float) {
-    val cx = size.width / 2f
+private fun DrawScope.drawCentreCross(color: Color, centerY: Float, centerX: Float = size.width / 2f) {
+    val cx = centerX
     val cy = centerY
     val r = 7.dp.toPx()
     val c = color.copy(alpha = 0.8f)

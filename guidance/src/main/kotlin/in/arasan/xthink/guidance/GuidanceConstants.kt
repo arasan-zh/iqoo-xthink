@@ -49,6 +49,28 @@ object GuidanceConstants {
     /** Zoom ratios within this of each other are the same ratio. */
     const val ZOOM_EPSILON = 0.05f
 
+    // --- Vertical strategy: translate vs rotate ---------------------------------
+    /**
+     * MOVE_UP / MOVE_DOWN must be followed for this long without the vertical
+     * error improving before the engine concludes the photographer cannot
+     * move the camera that way - an arm has a reach - and switches to tilting.
+     * Same idea, same duration, as the step-closer -> zoom fallback.
+     */
+    const val VERTICAL_STALL_MS = 3000L
+    /** Vertical framing improvement that counts as the photographer moving. */
+    const val VERTICAL_PROGRESS_EPSILON = 0.02f
+    /**
+     * Once tilting is the strategy, the pitch rung tolerates this much instead
+     * of DEADZONE_PITCH_DEG. Without it the tilt that fixes the framing is
+     * immediately undone by "tilt back to level", and the two rungs fight
+     * forever - the "go above your head" trap. A modest tilt is a perfectly
+     * good portrait perspective; an overhead angle is a nice one.
+     */
+    const val PITCH_RELAXED_DEADZONE_DEG = 15.0f
+
+    /** Eyes sit roughly this far down a detector face box. Shared with :app. */
+    const val EYE_LINE_FRACTION_OF_FACE = 0.4f
+
     // --- Subject loss ---------------------------------------------------------
     /**
      * A subject has to be gone this long before the engine believes it. On a

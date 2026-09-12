@@ -1,6 +1,10 @@
 package `in`.arasan.xthink.guidance
 
 import `in`.arasan.xthink.guidance.GuidanceConstants.DEADZONE_PITCH_DEG
+import `in`.arasan.xthink.guidance.GuidanceConstants.EYE_LINE_FRACTION_OF_FACE
+import `in`.arasan.xthink.guidance.GuidanceConstants.PITCH_RELAXED_DEADZONE_DEG
+import `in`.arasan.xthink.guidance.GuidanceConstants.VERTICAL_PROGRESS_EPSILON
+import `in`.arasan.xthink.guidance.GuidanceConstants.VERTICAL_STALL_MS
 import `in`.arasan.xthink.guidance.GuidanceConstants.DEADZONE_ROLL_DEG
 import `in`.arasan.xthink.guidance.GuidanceConstants.DEADZONE_SIZE_RATIO
 import `in`.arasan.xthink.guidance.GuidanceConstants.DEADZONE_XY
@@ -86,6 +90,9 @@ class GuidanceEngine(
     // --- deadzones ----------------------------------------------------------
     private val rollGate = HysteresisGate(DEADZONE_ROLL_DEG)
     private val pitchGate = HysteresisGate(DEADZONE_PITCH_DEG)
+    // Both pitch gates run every frame so whichever one is in charge has a
+    // current hysteresis state the moment the strategy switches.
+    private val pitchRelaxedGate = HysteresisGate(PITCH_RELAXED_DEADZONE_DEG)
     private val sizeGate = HysteresisGate(DEADZONE_SIZE_RATIO)
     private val xGate = HysteresisGate(DEADZONE_XY)
     private val yGate = HysteresisGate(DEADZONE_XY)
@@ -112,6 +119,17 @@ class GuidanceEngine(
     // photographer to step closer without the subject actually getting bigger.
     private var stepAdviceMs = 0L
     private var bestSizeErrAbs = Float.MAX_VALUE
+
+    // Vertical strategy. TRANSLATE is CLAUDE.md's preference - moving the phone
+    // keeps perspective. But an arm has a reach: if MOVE_UP/DOWN is shown for
+    // VERTICAL_STALL_MS with no improvement, the photographer cannot do it,
+    // and the engine switches to ROTATE for the rest of the session (reach
+    // is a property of the photographer, not the frame). In ROTATE the pitch
+    // rung uses the relaxed gate, so the tilt that fixes framing stands.
+    private enum class VerticalMode { TRANSLATE, ROTATE }
+    private var verticalMode = VerticalMode.TRANSLATE
+    private var moveAdviceMs = 0L
+    private var bestYErrAbs = Float.MAX_VALUE
 
     // Subject-loss grace. The last SMOOTHED box and eye line, held for up to
     // SUBJECT_LOSS_GRACE_MS after the detector stops reporting a face, so a
@@ -189,7 +207,9 @@ class GuidanceEngine(
         val rollErr = roll
         val pitchErr = pitch - profile.targetPitchDeg
         val rollIn = rollGate.update(abs(rollErr))
-        val pitchIn = pitchGate.update(abs(pitchErr))
+        val pitchStrictIn = pitchGate.update(abs(pitchErr))
+        val pitchRelaxedIn = pitchRelaxedGate.update(abs(pitchErr))
+        val pitchIn = if (verticalMode == VerticalMode.ROTATE) pitchRelaxedIn else pitchStrictIn
 
         // Distance. A profile with targetSizeRatio 0 (LANDSCAPE) has nothing to
         // size against, so the rung is skipped rather than divided by zero.
@@ -241,6 +261,8 @@ class GuidanceEngine(
                     ?: instruction(Verb.HOLD_STEADY, Magnitude.NUDGE)
         }
 
+        updateVerticalStall(candidate, yErr, dt)
+
         // --- 600 ms instruction lockout -------------------------------------
         val current = shown
         val result: Instruction
@@ -270,7 +292,7 @@ class GuidanceEngine(
         }
         shown = result
 
-        updateTelemetry(roll, pitch, rollErr, pitchErr, rollIn, pitchIn, sizeErr, sizeIn, xErr, xIn, yErr, yIn)
+        updateTelemetry(roll, pitch, rollErr, pitchErr, rollIn, pitchIn, sizeErr, sizeIn, xErr, xIn, yErr, yIn, box, eye)
         return result
     }
 
@@ -292,11 +314,13 @@ class GuidanceEngine(
             magnitudeFor(rollErr, DEADZONE_ROLL_DEG),
         )
 
-        // 2. Pitch - but prefer translation over rotation.
+        // 2. Pitch - but prefer translation over rotation, while the
+        //    photographer can still translate.
         !pitchIn -> {
             // Camera aimed up (pitchErr > 0) drops the subject low in frame
             // (yErr > 0). When both agree, one move of the phone fixes both.
-            val translationFixesBoth = !yIn && sameSign(pitchErr, yErr)
+            val translationFixesBoth =
+                verticalMode == VerticalMode.TRANSLATE && !yIn && sameSign(pitchErr, yErr)
             if (translationFixesBoth) {
                 verticalMove(yErr)
             } else {
@@ -312,8 +336,10 @@ class GuidanceEngine(
         !sizeIn -> distanceAdvice(sizeErr)
 
         // 4. x/y framing. One axis at a time - whichever is further out, x on a tie.
+        //    Vertical framing is a move while the photographer can move, and a
+        //    tilt once the engine knows they cannot.
         !xIn || !yIn ->
-            if (!xIn && (yIn || abs(xErr) >= abs(yErr))) horizontalMove(xErr) else verticalMove(yErr)
+            if (!xIn && (yIn || abs(xErr) >= abs(yErr))) horizontalMove(xErr) else verticalFix(yErr)
 
         // 5. Focus, once the geometry is settled.
         !focusOk -> instruction(Verb.TAP_FOCUS, Magnitude.NUDGE)
@@ -413,6 +439,41 @@ class GuidanceEngine(
             .coerceIn(1f, minOf(maxZoomRatio, ZOOM_MAX_ADVISED))
     }
 
+    /** Vertical framing by whichever strategy is in force. */
+    private fun verticalFix(yErr: Float): Instruction =
+        if (verticalMode == VerticalMode.ROTATE) {
+            // Subject too low in frame (yErr > 0) -> aim down to bring it up.
+            instruction(if (yErr > 0f) Verb.TILT_DOWN else Verb.TILT_UP, magnitudeFor(yErr, DEADZONE_XY))
+        } else {
+            verticalMove(yErr)
+        }
+
+    /**
+     * Track whether "move the phone up/down" is being followed. Progress
+     * resets the clock; standing still runs it down until the engine accepts
+     * that the camera cannot go there and switches to tilting for good.
+     */
+    private fun updateVerticalStall(candidate: Instruction?, yErr: Float, dt: Long) {
+        val moving = candidate?.verb == Verb.MOVE_UP || candidate?.verb == Verb.MOVE_DOWN
+        if (!moving) {
+            moveAdviceMs = 0L
+            bestYErrAbs = Float.MAX_VALUE
+            return
+        }
+        val err = abs(yErr)
+        if (err < bestYErrAbs - VERTICAL_PROGRESS_EPSILON) {
+            bestYErrAbs = err
+            moveAdviceMs = 0L
+        } else {
+            moveAdviceMs += dt
+            if (moveAdviceMs >= VERTICAL_STALL_MS) {
+                verticalMode = VerticalMode.ROTATE
+                moveAdviceMs = 0L
+                bestYErrAbs = Float.MAX_VALUE
+            }
+        }
+    }
+
     private fun verticalMove(yErr: Float): Instruction = instruction(
         // Subject too low in frame -> aim the camera down to bring it up.
         if (yErr > 0f) Verb.MOVE_DOWN else Verb.MOVE_UP,
@@ -501,6 +562,8 @@ class GuidanceEngine(
         sizeErr: Float, sizeIn: Boolean,
         xErr: Float, xIn: Boolean,
         yErr: Float, yIn: Boolean,
+        box: SubjectBox?,
+        eye: EyeLine?,
     ) {
         val r = excess(rollErr, DEADZONE_ROLL_DEG, SCALE_ROLL_DEG)
         val p = excess(pitchErr, DEADZONE_PITCH_DEG, SCALE_PITCH_DEG)
@@ -525,6 +588,20 @@ class GuidanceEngine(
             distanceInDeadzone = sizeIn,
             framingInDeadzone = xIn && yIn,
             lockProgress = lockProgress,
+            usingRotation = verticalMode == VerticalMode.ROTATE,
+            hasTarget = box != null,
+            targetCx = if (box != null) effectiveTargetCx(eye) else 0.5f,
+            // The target keeps the subject's own size; only its position is
+            // prescribed. With an eye line, the box centre sits below the eyes
+            // by the same fraction the detector places them at; without one,
+            // verticalError measured the box centre itself, so mirror that.
+            targetCy = when {
+                box == null -> 0.5f
+                eye != null -> profile.targetEyeLineY + (0.5f - EYE_LINE_FRACTION_OF_FACE) * box.h
+                else -> profile.targetEyeLineY
+            },
+            targetW = box?.w ?: 0f,
+            targetH = box?.h ?: 0f,
             suggestedZoom = suggestedZoom,
             totalError = totalError,
         )
@@ -572,7 +649,7 @@ class GuidanceEngine(
         rollEma.reset(); pitchEma.reset(); rateEma.reset()
         cxEma.reset(); cyEma.reset(); wEma.reset(); hEma.reset()
         eyeYEma.reset(); gazeEma.reset()
-        rollGate.reset(); pitchGate.reset(); sizeGate.reset()
+        rollGate.reset(); pitchGate.reset(); pitchRelaxedGate.reset(); sizeGate.reset()
         xGate.reset(); yGate.reset(); stabilityGate.reset()
         lastRawRoll = null
         lastRawPitch = null
@@ -587,6 +664,9 @@ class GuidanceEngine(
         heldBox = null
         heldEye = null
         subjectMissingMs = 0L
+        verticalMode = VerticalMode.TRANSLATE
+        moveAdviceMs = 0L
+        bestYErrAbs = Float.MAX_VALUE
         totalError = 0f
         focusOk = true
         stabilityOk = false
