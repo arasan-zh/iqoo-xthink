@@ -700,7 +700,6 @@ val SHOT_STYLES: List<ShotStyleTile> = listOf(
     ShotStyleTile(ShotType.DUTCH_ANGLE, "Dutch angle", R.drawable.shot_dutch_angle),
     ShotStyleTile(ShotType.BIRDS_EYE, "Bird's eye", R.drawable.shot_birds_eye),
     ShotStyleTile(ShotType.OVER_SHOULDER, "Over the shoulder", R.drawable.shot_over_shoulder),
-    ShotStyleTile(ShotType.POV, "POV", R.drawable.shot_pov),
 )
 
 @Composable
@@ -751,7 +750,7 @@ fun ShotsRow(style: ShotType?, onPick: (ShotType?) -> Unit, modifier: Modifier =
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
             Box(
                 modifier = Modifier
-                    .size(width = 60.dp, height = 80.dp)
+                    .size(width = 66.dp, height = 68.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(XT.ChipStrong)
                     .border(if (style == null) 2.dp else 0.dp, if (style == null) XT.Amber else Color.Transparent, RoundedCornerShape(12.dp))
@@ -772,7 +771,7 @@ fun ShotsRow(style: ShotType?, onPick: (ShotType?) -> Unit, modifier: Modifier =
                     contentDescription = tile.name,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(width = 60.dp, height = 80.dp)
+                        .size(width = 66.dp, height = 68.dp)
                         .clip(RoundedCornerShape(12.dp))
                         .border(if (chosen) 2.dp else 0.dp, if (chosen) XT.Amber else Color.Transparent, RoundedCornerShape(12.dp))
                         .clickable(
