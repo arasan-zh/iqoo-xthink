@@ -1,0 +1,96 @@
+package `in`.arasan.xthink.guidance
+
+/**
+ * Device attitude, already converted from TYPE_GAME_ROTATION_VECTOR by :app.
+ *
+ * Sign conventions, fixed here and relied on by every rule below:
+ *  - [rollDeg]  positive = phone rotated clockwise as the photographer sees it.
+ *               Correcting a positive roll means rotating counter-clockwise.
+ *  - [pitchDeg] positive = camera aimed upwards above the horizon.
+ *               Correcting a positive pitch means tilting down.
+ */
+data class Attitude(val rollDeg: Float, val pitchDeg: Float)
+
+/**
+ * Subject bounding box in normalised frame coordinates, 0..1, origin top-left.
+ *
+ * For people this is the ML Kit face box, which is why [CompositionProfile]
+ * target sizes are small for wider shots: a FULL_BODY frame puts the face at
+ * roughly a tenth of the frame height.
+ */
+data class SubjectBox(val cx: Float, val cy: Float, val w: Float, val h: Float) {
+    /** Fraction of frame height the subject occupies. Drives the distance rung. */
+    val sizeRatio: Float get() = h
+
+    /** Gap between the top of the frame and the top of the box. */
+    val headroom: Float get() = cy - h / 2f
+
+    val top: Float get() = cy - h / 2f
+    val bottom: Float get() = cy + h / 2f
+}
+
+/**
+ * Eye line of the primary face.
+ *
+ * @param y normalised height of the line through both eyes, 0..1.
+ * @param gazeDx which way the subject is looking, -1..1. Positive = looking
+ *        towards frame right, negative = towards frame left, ~0 = at the lens.
+ */
+data class EyeLine(val y: Float, val gazeDx: Float)
+
+enum class ShotType { HEADSHOT, HALF_BODY, FULL_BODY, GROUP, OBJECT, LANDSCAPE }
+
+enum class Verb {
+    LEVEL_CW, LEVEL_CCW,
+    TILT_UP, TILT_DOWN,
+    MOVE_UP, MOVE_DOWN,
+    MOVE_LEFT, MOVE_RIGHT,
+    STEP_CLOSER, STEP_BACK,
+    TAP_FOCUS, LOCKED,
+}
+
+/** How far off we are, in units of the channel's deadzone. */
+enum class Magnitude { NUDGE, MOVE, BIG }
+
+/** Exactly one of these comes out of the engine per frame. Never two arrows. */
+data class Instruction(val verb: Verb, val magnitude: Magnitude, val text: String)
+
+/**
+ * Everything a fighter-jet style alignment HUD needs, as pure numbers.
+ *
+ * The engine emits one *instruction*; this is the continuous state behind it,
+ * so the overlay can draw an artificial horizon, a pitch ladder and a drifting
+ * reticle that all move smoothly between instruction changes. No UI code here
+ * and none in this module - :app renders it in v0.3.
+ */
+data class AlignmentState(
+    /** Smoothed roll, signed. Rotate the horizon bar by -rollDeg. */
+    val rollDeg: Float,
+    /** Smoothed pitch, signed. Slides the pitch ladder. */
+    val pitchDeg: Float,
+    val rollErrDeg: Float,
+    val pitchErrDeg: Float,
+    /** Signed framing error, fraction of frame. Offsets the reticle. */
+    val offsetX: Float,
+    val offsetY: Float,
+    /** Signed relative size error. Negative = subject too small, step closer. */
+    val sizeErr: Float,
+    val rollInDeadzone: Boolean,
+    val pitchInDeadzone: Boolean,
+    val distanceInDeadzone: Boolean,
+    val framingInDeadzone: Boolean,
+    /** 0..1 progress through the 400 ms lock dwell. Fills the lock ring. */
+    val lockProgress: Float,
+    /** 0..1, same value as [GuidanceEngine.totalError]. Drives haptics. */
+    val totalError: Float,
+) {
+    companion object {
+        val EMPTY = AlignmentState(
+            rollDeg = 0f, pitchDeg = 0f, rollErrDeg = 0f, pitchErrDeg = 0f,
+            offsetX = 0f, offsetY = 0f, sizeErr = 0f,
+            rollInDeadzone = false, pitchInDeadzone = false,
+            distanceInDeadzone = false, framingInDeadzone = false,
+            lockProgress = 0f, totalError = 0f,
+        )
+    }
+}

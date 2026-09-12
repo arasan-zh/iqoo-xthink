@@ -24,3 +24,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "xThink"
 include(":app")
+include(":guidance")
