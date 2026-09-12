@@ -368,3 +368,24 @@ piece device-verified on the iQOO 15 before it was committed.
 17. The E2B model copies the nearest example: "open safari" as the last
     few-shot example made every request `OPEN Safari`. Narrow the question
     (one line, `KIND | ARG`) and check the answer against the words.
+
+### The last two hours: Shots and ASK
+- **Shots** (PORTRAIT): nine reference styles from the photographer's own
+  sheet - close up, extreme close up, medium, wide, low angle, high angle,
+  dutch angle, bird's eye, over the shoulder. Each is a composition profile
+  (`targetRollDeg`, `centerTolerance`, `focusRequired` were added to the
+  document format); a chosen style replaces the distance ladder and the
+  coach guides into it - a dutch angle is level at 15°. Styles are optional
+  in `composition_profiles.json`; a missing one borrows HALF_BODY.
+- **ASK**: Ask (a spoken question, Gemma answers through the camera in text
+  and voice, ~3 s), Scan (ML Kit reads, Gemma tidies, Copy), Translate
+  (Gemma reads any script - ML Kit has no Tamil model - into English), Save
+  (a dated Markdown entry in `Documents/xThink/xthink-notes.md`). One look
+  per tap; nothing on a timer.
+- **Kept cool**: the model no longer loads at launch. That load had put the
+  phone at WARM/HOT, doubled the analysis interval and, with the sharpness
+  gate at 0.55 of a slow-decaying reference, refused frames at a green
+  lock. STEVE and ASK load it on entry; otherwise a minute in, only COOL.
+  The gate is 0.35 of a fast-decaying reference. SCENE never crops to a
+  person, is forgiven off-centre framing (2× deadzone) and needs no focus
+  tap. The status rail is icons only.
