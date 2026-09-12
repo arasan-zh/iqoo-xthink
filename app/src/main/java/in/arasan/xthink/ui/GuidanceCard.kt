@@ -26,6 +26,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.Magnitude
 import `in`.arasan.xthink.guidance.Verb
@@ -91,7 +92,7 @@ fun GuidanceCard(state: OverlayState, modifier: Modifier = Modifier) {
                 fontWeight = FontWeight.Bold,
             )
             Text(
-                text = captionFor(state.instruction),
+                text = captionFor(state.instruction, state.mode),
                 color = XT.OnChipMuted,
                 fontSize = 12.sp,
             )
@@ -202,10 +203,15 @@ private fun VerbGlyph(verb: Verb?, color: Color, modifier: Modifier = Modifier) 
 }
 
 /** The second line: what to expect, not a restatement of the instruction. */
-private fun captionFor(instruction: Instruction?): String = when (instruction?.verb) {
+private fun captionFor(instruction: Instruction?, mode: CoachMode): String = when (instruction?.verb) {
     null -> "Point the camera at your subject."
     Verb.LOCKED -> "Hold steady and capture."
-    Verb.SEEKING -> "Find a face to start guidance."
+    // The noun depends on what the mode is looking for.
+    Verb.SEEKING -> when (mode) {
+        CoachMode.OBJECT -> "Point at the thing you want to frame."
+        CoachMode.WIDE -> "Find the people, or frame the room."
+        CoachMode.PORTRAIT -> "Find a face to start guidance."
+    }
     Verb.HOLD_STEADY -> "Almost there, keep still."
     Verb.TAP_FOCUS -> "Tap your subject to focus."
     else -> when (instruction.magnitude) {

@@ -209,7 +209,14 @@ class GuidanceEngine(
         val rollIn = rollGate.update(abs(rollErr))
         val pitchStrictIn = pitchGate.update(abs(pitchErr))
         val pitchRelaxedIn = pitchRelaxedGate.update(abs(pitchErr))
-        val pitchIn = if (verticalMode == VerticalMode.ROTATE) pitchRelaxedIn else pitchStrictIn
+        // A pitch-free profile (OBJECT) has no pitch rung: the angle is the
+        // photographer's choice. The gates still run so they are current if
+        // the profile changes to one that cares.
+        val pitchIn = when {
+            profile.pitchFree -> true
+            verticalMode == VerticalMode.ROTATE -> pitchRelaxedIn
+            else -> pitchStrictIn
+        }
 
         // Distance. A profile with targetSizeRatio 0 (LANDSCAPE) has nothing to
         // size against, so the rung is skipped rather than divided by zero.
@@ -575,7 +582,7 @@ class GuidanceEngine(
         eye: EyeLine?,
     ) {
         val r = excess(rollErr, DEADZONE_ROLL_DEG, SCALE_ROLL_DEG)
-        val p = excess(pitchErr, DEADZONE_PITCH_DEG, SCALE_PITCH_DEG)
+        val p = if (profile.pitchFree) 0f else excess(pitchErr, DEADZONE_PITCH_DEG, SCALE_PITCH_DEG)
         val s = excess(sizeErr, DEADZONE_SIZE_RATIO, SCALE_SIZE)
         val x = excess(xErr, DEADZONE_XY, SCALE_XY)
         val y = excess(yErr, DEADZONE_XY, SCALE_XY)

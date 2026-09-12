@@ -49,6 +49,14 @@ object GuidanceConstants {
     /** Zoom ratios within this of each other are the same ratio. */
     const val ZOOM_EPSILON = 0.05f
 
+    /**
+     * A profile whose pitch tolerance is this or more has no pitch rung at
+     * all: the angle is the photographer's choice. OBJECT uses it - a thing on
+     * a desk is shot from above, and "tilt back to level" is an instruction
+     * that cannot be followed without lying on the table.
+     */
+    const val PITCH_FREE_DEG = 90f
+
     // --- Vertical strategy: translate vs rotate ---------------------------------
     /**
      * MOVE_UP / MOVE_DOWN must be followed for this long without the vertical

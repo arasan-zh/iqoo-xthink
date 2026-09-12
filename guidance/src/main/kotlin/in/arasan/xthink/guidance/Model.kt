@@ -45,9 +45,11 @@ enum class ShotType { HEADSHOT, HALF_BODY, FULL_BODY, GROUP, OBJECT, LANDSCAPE }
  *
  * PORTRAIT: one person, the largest face, framed at whatever scale they are
  * at. WIDE: everyone in frame as one group, or a venue - an office, an event
- * floor - coached on level and pitch when nobody is in it.
+ * floor - coached on level and pitch when nobody is in it. OBJECT: the most
+ * prominent thing in frame that is not a face - a vase, a plate, a product -
+ * centred, at whatever scale it is at.
  */
-enum class CoachMode { PORTRAIT, WIDE }
+enum class CoachMode { PORTRAIT, WIDE, OBJECT }
 
 enum class Verb {
     LEVEL_CW, LEVEL_CCW,

@@ -16,6 +16,12 @@ package `in`.arasan.xthink.guidance
  *        closer or step back. Defaults to [targetSizeRatio], which collapses
  *        the band to a point and gives the original single-target behaviour.
  * @param sizeMax upper edge of the accepted band. See [sizeMin].
+ * @param pitchToleranceDeg how far from [targetPitchDeg] the camera may
+ *        pitch before the pitch rung fires. Defaults to the engine's 6-degree
+ *        deadzone. At [GuidanceConstants.PITCH_FREE_DEG] or more the rung is
+ *        skipped entirely - the angle is the photographer's choice, which is
+ *        what a still life wants: flat lay, thirty degrees and eye level are
+ *        all valid, and only one of them is anywhere near level.
  * @param maxWidth widest the subject box may be before the engine says step
  *        back. Height says little about a GROUP - a row of people is one face
  *        tall however many there are - but a union box wider than this means
@@ -36,6 +42,7 @@ data class CompositionProfile(
     val sizeMin: Float = targetSizeRatio,
     val sizeMax: Float = targetSizeRatio,
     val maxWidth: Float = 1f,
+    val pitchToleranceDeg: Float = GuidanceConstants.DEADZONE_PITCH_DEG,
 ) {
     init {
         require(sizeMin <= sizeMax) { "$shotType: sizeMin $sizeMin > sizeMax $sizeMax" }
@@ -43,6 +50,9 @@ data class CompositionProfile(
 
     /** True when a subject of this height needs no distance correction. */
     fun acceptsSize(h: Float): Boolean = h >= sizeMin && h <= sizeMax
+
+    /** True when this profile has no pitch rung - any camera angle is accepted. */
+    val pitchFree: Boolean get() = pitchToleranceDeg >= GuidanceConstants.PITCH_FREE_DEG
 
     companion object {
 
@@ -67,6 +77,7 @@ data class CompositionProfile(
                     sizeMin = fields.floatOr(type, "sizeMin", target),
                     sizeMax = fields.floatOr(type, "sizeMax", target),
                     maxWidth = fields.floatOr(type, "maxWidth", 1f),
+                    pitchToleranceDeg = fields.floatOr(type, "pitchToleranceDeg", GuidanceConstants.DEADZONE_PITCH_DEG),
                 )
             }
             return out

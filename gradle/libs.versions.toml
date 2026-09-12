@@ -12,6 +12,7 @@ composeBom = "2026.09.00"
 lifecycleRuntimeKtx = "2.11.0"
 cameraX = "1.5.0"
 mlkitFaceDetection = "16.1.7"
+mlkitObjectDetection = "17.0.2"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -34,6 +35,8 @@ androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", 
 androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraX" }
 androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraX" }
 mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", version.ref = "mlkitFaceDetection" }
+# "object" is a Kotlin keyword, so the alias avoids it: libs.mlkit.objects
+mlkit-objects = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkitObjectDetection" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

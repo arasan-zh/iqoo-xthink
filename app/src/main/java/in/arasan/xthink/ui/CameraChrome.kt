@@ -122,11 +122,12 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: 
 fun ModeTabs(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(22.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ModeTab("PORTRAIT", mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         ModeTab("WIDE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+        ModeTab("OBJECT", mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
     }
 }
 
@@ -278,6 +279,7 @@ fun ModeRail(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Mod
     ) {
         RailItem("Portrait", glyph = 0, active = mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         RailItem("Wide", glyph = 1, active = mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+        RailItem("Object", glyph = 2, active = mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
     }
 }
 
@@ -316,11 +318,25 @@ private fun DrawScope.drawRailGlyph(index: Int, color: Color) {
             drawCircle(color, r * 0.34f, Offset(c, c - r * 0.42f), style = Stroke(stroke))
             drawArc(color, 200f, 140f, false, Offset(c - r * 0.72f, c + r * 0.1f), Size(r * 1.44f, r * 1.3f), style = Stroke(stroke))
         }
-        else -> { // wide - two people side by side
+        1 -> { // wide - two people side by side
             drawCircle(color, r * 0.28f, Offset(c - r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
             drawCircle(color, r * 0.28f, Offset(c + r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
             drawArc(color, 200f, 140f, false, Offset(c - r * 1.0f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
             drawArc(color, 200f, 140f, false, Offset(c - r * 0.15f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
+        }
+        else -> { // object - a cube in outline
+            val s = r * 0.62f
+            val dx = r * 0.32f
+            val dy = r * 0.28f
+            // front face
+            drawRoundRect(color, Offset(c - s / 2f - dx / 2f, c - s / 2f + dy / 2f), Size(s, s), androidx.compose.ui.geometry.CornerRadius(1.5f.dp.toPx()), style = Stroke(stroke))
+            // top edge
+            drawLine(color, Offset(c - s / 2f - dx / 2f, c - s / 2f + dy / 2f), Offset(c - s / 2f + dx / 2f, c - s / 2f - dy / 2f), stroke, StrokeCap.Round)
+            drawLine(color, Offset(c + s / 2f - dx / 2f, c - s / 2f + dy / 2f), Offset(c + s / 2f + dx / 2f, c - s / 2f - dy / 2f), stroke, StrokeCap.Round)
+            drawLine(color, Offset(c - s / 2f + dx / 2f, c - s / 2f - dy / 2f), Offset(c + s / 2f + dx / 2f, c - s / 2f - dy / 2f), stroke, StrokeCap.Round)
+            // right edge
+            drawLine(color, Offset(c + s / 2f + dx / 2f, c - s / 2f - dy / 2f), Offset(c + s / 2f + dx / 2f, c + s / 2f - dy / 2f), stroke, StrokeCap.Round)
+            drawLine(color, Offset(c + s / 2f - dx / 2f, c + s / 2f + dy / 2f), Offset(c + s / 2f + dx / 2f, c + s / 2f - dy / 2f), stroke, StrokeCap.Round)
         }
     }
 }

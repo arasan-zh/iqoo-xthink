@@ -81,6 +81,8 @@ dependencies {
     // Bundled, not Play-Services-backed: the APK is sideloaded at a venue and
     // must detect faces the instant it installs, with no model download.
     implementation(libs.mlkit.face.detection)
+    // Bundled for the same reason as the face model: it must work on first launch, offline.
+    implementation(libs.mlkit.objects)
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)

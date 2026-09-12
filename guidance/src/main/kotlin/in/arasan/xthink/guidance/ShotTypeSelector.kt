@@ -113,8 +113,14 @@ class ShotTypeSelector(
      * the one unambiguous choice without a tab saying otherwise. GROUP is
      * reached by choosing WIDE.
      */
+    /**
+     * @param faceCount subjects found this frame. Faces in PORTRAIT and WIDE;
+     *        in OBJECT it is 1 when the detector found something, else 0.
+     */
     fun shotTypeFor(faceCount: Int, faceHeight: Float? = null, forMode: CoachMode = mode): ShotType {
         if (faceCount <= 0) return ShotType.LANDSCAPE
+        // OBJECT: whatever the detector found is the subject, centred.
+        if (forMode == CoachMode.OBJECT) return ShotType.OBJECT
         // WIDE: every face is the subject, framed as one group. A single
         // person in a wide venue is a group of one - still GROUP, so the
         // photographer gets the wider composition they asked for.

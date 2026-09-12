@@ -10,6 +10,9 @@ import com.google.mlkit.vision.face.Face
 import com.google.mlkit.vision.face.FaceDetection
 import com.google.mlkit.vision.face.FaceDetectorOptions
 import com.google.mlkit.vision.face.FaceLandmark
+import com.google.mlkit.vision.objects.DetectedObject
+import com.google.mlkit.vision.objects.ObjectDetection
+import com.google.mlkit.vision.objects.defaults.ObjectDetectorOptions
 import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.EyeLine
 import `in`.arasan.xthink.guidance.FrameMapping
@@ -73,6 +76,19 @@ class FaceAnalyzer(
             .build()
     )
 
+    /**
+     * OBJECT mode's detector. Stream mode for latency and tracking; a single
+     * object, the most prominent, because a still life has one subject; no
+     * classification, because we need a box, not a label. Only one of the
+     * two detectors runs per frame - the mode picks - which is what keeps
+     * OBJECT mode from doubling the heat.
+     */
+    private val objectDetector = ObjectDetection.getClient(
+        ObjectDetectorOptions.Builder()
+            .setDetectorMode(ObjectDetectorOptions.STREAM_MODE)
+            .build()
+    )
+
     private var lastAnalysisMs = 0L
     private var busy = false
 
@@ -117,6 +133,18 @@ class FaceAnalyzer(
         )
 
         val started = SystemClock.uptimeMillis()
+        if (mode == CoachMode.OBJECT) {
+            objectDetector.process(image)
+                .addOnSuccessListener { objects ->
+                    onResult(interpretObjects(objects, crop, SystemClock.uptimeMillis() - started, dtMs))
+                }
+                .addOnFailureListener { Log.w(TAG, "object detection failed", it) }
+                .addOnCompleteListener {
+                    busy = false
+                    imageProxy.close()
+                }
+            return
+        }
         detector.process(image)
             .addOnSuccessListener { faces ->
                 onResult(interpret(faces, crop, SystemClock.uptimeMillis() - started, dtMs))
@@ -126,6 +154,29 @@ class FaceAnalyzer(
                 busy = false
                 imageProxy.close()
             }
+    }
+
+    /**
+     * The most prominent object is the subject. No eye line - the engine
+     * composes the box centre, and the OBJECT profile puts it at 0.50.
+     * faceCount carries the subject count so the selector treats "found one"
+     * the same way it treats a face.
+     */
+    private fun interpretObjects(
+        objects: List<DetectedObject>,
+        crop: FrameRect,
+        detectMs: Long,
+        dtMs: Long,
+    ): FaceResult {
+        val target = objects.maxByOrNull { it.boundingBox.width().toLong() * it.boundingBox.height() }
+            ?: return FaceResult(null, null, 0, detectMs, dtMs)
+        return FaceResult(
+            subject = FrameMapping.normalize(target.boundingBox.toFrameRect(), crop),
+            eyes = null,
+            faceCount = 1,
+            detectMs = detectMs,
+            dtMs = dtMs,
+        )
     }
 
     private fun interpret(
@@ -196,9 +247,10 @@ class FaceAnalyzer(
         }
     }
 
-    /** Release the detector's native resources. */
+    /** Release both detectors' native resources. */
     fun close() {
         runCatching { detector.close() }
+        runCatching { objectDetector.close() }
     }
 
     private fun android.graphics.Rect.toFrameRect() =
