@@ -50,7 +50,28 @@ data class CropProposal(val crop: CropRect, val rationale: List<String>)
  * Everything is a fraction of the photo, so the same rule works on the
  * 12 MP JPEG and the 480px thumbnail used to find the body.
  */
+/**
+ * Where a portrait may be cut, in a photographer's words. The rules know
+ * the geometry; a coach - human or model - may name the cut it wants.
+ */
+enum class Cut { FEET, THIGH, HIP, CHEST }
+
 object PhotographerCrop {
+
+    /**
+     * Parse a coach's answer - "thigh", "mid-thigh", "head and shoulders",
+     * "full body", "feet"... - into a [Cut], or null when it names none.
+     */
+    fun parseCut(text: String?): Cut? {
+        val t = text?.lowercase() ?: return null
+        return when {
+            "feet" in t || "full" in t || "ankle" in t -> Cut.FEET
+            "thigh" in t || "three" in t || "3/4" in t || "knee" in t -> Cut.THIGH
+            "hip" in t || "waist" in t || "half" in t -> Cut.HIP
+            "chest" in t || "shoulder" in t || "head" in t || "close" in t -> Cut.CHEST
+            else -> null
+        }
+    }
 
     /** Least headroom above the face, in face heights. */
     const val HEADROOM_FACES = 0.35f
@@ -110,6 +131,7 @@ object PhotographerCrop {
         pose: BodyPose?,
         sourceAspect: Float,
         targetAspect: Float? = null,
+        preferredCut: Cut? = null,
     ): CropProposal? {
         if (face.h <= 0f || sourceAspect <= 0f) return null
         val faceTop = face.cy - face.h / 2f
@@ -127,12 +149,18 @@ object PhotographerCrop {
         val ankle = pose?.ankleY
         val knee = pose?.kneeY
         val hip = pose?.hipY
-        val cuts = mutableListOf<Pair<Float, String>>()
-        if (ankle != null && ankle < 0.98f) cuts += (ankle + FLOOR_FACES * face.h) to "Feet kept, with a little floor"
-        if (knee != null && hip != null) cuts += (hip + THIGH_CUT * (knee - hip)) to "Mid-thigh crop, not at the knee"
-        if (hip != null) cuts += (hip + 0.4f * (hip - faceBottom).coerceAtLeast(0f)) to "Cropped below the hip"
+        val cuts = mutableListOf<Triple<Cut, Float, String>>()
+        if (ankle != null && ankle < 0.98f) cuts += Triple(Cut.FEET, ankle + FLOOR_FACES * face.h, "Feet kept, with a little floor")
+        if (knee != null && hip != null) cuts += Triple(Cut.THIGH, hip + THIGH_CUT * (knee - hip), "Mid-thigh crop, not at the knee")
+        if (hip != null) cuts += Triple(Cut.HIP, hip + 0.4f * (hip - faceBottom).coerceAtLeast(0f), "Cropped below the hip")
         val chestFrom = pose?.shoulderY ?: faceBottom
-        cuts += (chestFrom + CHEST_FACES * face.h) to "Head and shoulders"
+        cuts += Triple(Cut.CHEST, chestFrom + CHEST_FACES * face.h, "Head and shoulders")
+        // A named cut goes first when the body offers it; the ladder still
+        // stands behind it in case that cut does not fit any shape.
+        if (preferredCut != null) {
+            val i = cuts.indexOfFirst { it.first == preferredCut }
+            if (i > 0) cuts.add(0, cuts.removeAt(i))
+        }
 
         // In per-axis fractions a crop of height h has width h * (target /
         // source), so each shape caps how tall the crop can be. Longest cut
@@ -141,7 +169,7 @@ object PhotographerCrop {
         var widthPerHeight = shapes[0].first / sourceAspect
         var maxHeight = minOf(1f, 1f / widthPerHeight)
         var shapeName = shapes[0].second
-        search@ for ((cut, why) in cuts) {
+        search@ for ((_, cut, why) in cuts) {
             val b = cut.coerceIn(faceBottom + 0.5f * face.h, 1f)
             for ((aspect, name) in shapes) {
                 val wph = aspect / sourceAspect

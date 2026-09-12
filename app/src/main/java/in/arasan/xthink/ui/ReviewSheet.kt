@@ -52,6 +52,8 @@ data class ReviewState(
     val enhanced: Boolean,
     val look: Int,
     val saving: Boolean = false,
+    /** The photo is soft - missed focus or motion. Said once, plainly. */
+    val soft: Boolean = false,
 )
 
 /**
@@ -125,6 +127,15 @@ fun ReviewSheet(
                 fontSize = 12.sp,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+
+        if (review.soft) {
+            Text(
+                text = "This one looks soft \u2014 worth a retake.",
+                color = XT.Amber,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
             )
         }
 
@@ -247,7 +258,7 @@ private fun Choice(
 }
 
 @Composable
-private fun LookTile(look: Look, image: ImageBitmap, chosen: Boolean, onClick: () -> Unit) {
+fun LookTile(look: Look, image: ImageBitmap, chosen: Boolean, onClick: () -> Unit) {
     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
         Box(
             modifier = Modifier

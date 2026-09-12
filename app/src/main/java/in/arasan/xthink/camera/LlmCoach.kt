@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, AFTER_SHOT, REFERENCE }
+    enum class Kind { LIVE, CROP, REFERENCE }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -172,9 +172,12 @@ class LlmCoach(private val context: Context) {
             Be specific to what you see. No greeting, no preamble, no punctuation flourishes.
         """.trimIndent()
 
-        val AFTER_SHOT_PROMPT = """
-            You are a warm photographer looking at a photo your friend just took. In ONE sentence of at most
-            18 words: name the one thing that is genuinely good about it, then a tiny tip. No greeting, no preamble.
+        /** The crop decision. The answer is parsed by PhotographerCrop.parseCut. */
+        val CROP_PROMPT = """
+            You are a portrait photographer deciding how to crop this photo of a person.
+            Choose exactly one: FEET (full body), THIGH (three-quarter length), HIP (half length), CHEST (head and shoulders).
+            Prefer the crop that removes clutter and flatters the person; never cut at a joint.
+            Answer with only the one word.
         """.trimIndent()
 
         val REFERENCE_PROMPT = """

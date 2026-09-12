@@ -29,6 +29,13 @@ data class FaceResult(
     val faceCount: Int,
     val detectMs: Long,
     val dtMs: Long,
+    /**
+     * Focus measure of the frame: variance of a Laplacian over the luma
+     * plane, sampled on a grid. Scene-relative - only meaningful against
+     * recent frames of the same scene - so the caller keeps a running
+     * reference. 0 when it could not be measured.
+     */
+    val sharpness: Float = 0f,
 )
 
 /**
@@ -85,6 +92,40 @@ class FaceAnalyzer(
 
     @Volatile
     var focusY: Float = 0.5f
+
+    /**
+     * Variance of the 4-neighbour Laplacian on the Y plane, every 4th pixel
+     * each way: ~11k samples of a 480x360 frame, well under a millisecond.
+     * Blur flattens the Laplacian; the number collapses.
+     */
+    private fun lumaSharpness(proxy: ImageProxy): Float {
+        val plane = proxy.planes[0]
+        val buf = plane.buffer
+        val rs = plane.rowStride
+        val ps = plane.pixelStride
+        val w = proxy.width
+        val h = proxy.height
+        val step = SHARPNESS_STEP
+        var n = 0
+        var sum = 0.0
+        var sumSq = 0.0
+        fun y(x: Int, yy: Int): Int = buf.get(yy * rs + x * ps).toInt() and 0xFF
+        var yy = step
+        while (yy < h - step) {
+            var x = step
+            while (x < w - step) {
+                val l = 4 * y(x, yy) - y(x - step, yy) - y(x + step, yy) - y(x, yy - step) - y(x, yy + step)
+                sum += l
+                sumSq += l.toDouble() * l
+                n++
+                x += step
+            }
+            yy += step
+        }
+        if (n == 0) return 0f
+        val mean = sum / n
+        return (sumSq / n - mean * mean).toFloat()
+    }
 
     private fun deliver(result: FaceResult) {
         if (!mirrored) { onResult(result); return }
@@ -152,6 +193,7 @@ class FaceAnalyzer(
 
         val rotation = imageProxy.imageInfo.rotationDegrees
         val image = InputImage.fromMediaImage(mediaImage, rotation)
+        val sharpness = runCatching { lumaSharpness(imageProxy) }.getOrDefault(0f)
 
         // ML Kit reports faces against the ROTATED image; CameraX reports the
         // crop rect against the UNROTATED buffer. Put them in the same space
@@ -172,7 +214,7 @@ class FaceAnalyzer(
         if (mode == CoachMode.OBJECT) {
             objectDetector.process(image)
                 .addOnSuccessListener { objects ->
-                    deliver(interpretObjects(objects, crop, SystemClock.uptimeMillis() - started, dtMs))
+                    deliver(interpretObjects(objects, crop, SystemClock.uptimeMillis() - started, dtMs).copy(sharpness = sharpness))
                 }
                 .addOnFailureListener { Log.w(TAG, "object detection failed", it) }
                 .addOnCompleteListener {
@@ -183,7 +225,7 @@ class FaceAnalyzer(
         }
         detector.process(image)
             .addOnSuccessListener { faces ->
-                deliver(interpret(faces, crop, SystemClock.uptimeMillis() - started, dtMs))
+                deliver(interpret(faces, crop, SystemClock.uptimeMillis() - started, dtMs).copy(sharpness = sharpness))
             }
             .addOnFailureListener { Log.w(TAG, "face detection failed", it) }
             .addOnCompleteListener {
@@ -303,6 +345,7 @@ class FaceAnalyzer(
 
     companion object {
         /** ~30 Hz. Faster buys nothing the EMA would not smooth away. */
+        const val SHARPNESS_STEP = 4
         const val MIN_INTERVAL_MS = 33L
 
         /** A backgrounded app must not return with a dt that instantly locks. */

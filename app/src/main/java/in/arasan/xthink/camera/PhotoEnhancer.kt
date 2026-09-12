@@ -22,6 +22,7 @@ import com.google.mlkit.vision.pose.defaults.PoseDetectorOptions
 import `in`.arasan.xthink.guidance.BodyPose
 import `in`.arasan.xthink.guidance.CropProposal
 import `in`.arasan.xthink.guidance.CropRect
+import `in`.arasan.xthink.guidance.Cut
 import `in`.arasan.xthink.guidance.HeadroomExtension
 import `in`.arasan.xthink.guidance.PhotographerCrop
 import `in`.arasan.xthink.guidance.SubjectBox
@@ -71,10 +72,27 @@ class PhotoEnhancer(private val context: Context) {
      * with a proposal, or null when the photo is already framed or has no
      * person in it.
      */
-    /** The look at a photo: the small decode for the review, and a crop if one is worth it. */
-    class Result(val small: Bitmap?, val proposal: Proposal?)
+    /**
+     * The look at a photo: the small decode for the review, a crop if one is
+     * worth it, and whether the photo is soft (missed focus or motion).
+     */
+    class Result(val small: Bitmap?, val proposal: Proposal?, val soft: Boolean = false)
 
-    fun analyse(uri: Uri, callbackExecutor: Executor, onResult: (Result) -> Unit) {
+    /**
+     * Someone who names the cut - the on-device model. Called with the small
+     * photo; must answer exactly once, on any thread, with the coach's words
+     * or null. Absent, the rules decide alone.
+     */
+    fun interface CutAdvisor {
+        fun advise(photo: Bitmap, answer: (String?) -> Unit)
+    }
+
+    fun analyse(
+        uri: Uri,
+        callbackExecutor: Executor,
+        advisor: CutAdvisor? = null,
+        onResult: (Result) -> Unit,
+    ) {
         worker.execute {
             val started = System.currentTimeMillis()
             val small = runCatching { decode(uri, ANALYSIS_LONG_EDGE) }.getOrElse {
@@ -83,15 +101,52 @@ class PhotoEnhancer(private val context: Context) {
                 return@execute
             }
             val image = InputImage.fromBitmap(small, 0)
+            val soft = isSoft(small)
             faces.process(image).addOnSuccessListener(worker) { found ->
                 val face = found.maxByOrNull { it.boundingBox.width().toLong() * it.boundingBox.height() }
                 if (face == null) {
-                    Log.i(TAG, "enhance: no face, nothing to crop (%d ms)".format(System.currentTimeMillis() - started))
-                    callbackExecutor.execute { onResult(Result(small, null)) }
+                    Log.i(TAG, "enhance: no face, nothing to crop soft=%s (%d ms)".format(soft, System.currentTimeMillis() - started))
+                    callbackExecutor.execute { onResult(Result(small, null, soft)) }
                     return@addOnSuccessListener
                 }
                 pose.process(image).addOnCompleteListener(worker) { task ->
                     val body = task.result?.takeIf { task.isSuccessful }?.let { toBodyPose(it, small.height) }
+                    // The cut: the coach's word if there is a coach, else the rules'.
+                    if (advisor == null) {
+                        finish(uri, small, face, body, null, soft, started, callbackExecutor, onResult)
+                    } else {
+                        var answered = false
+                        advisor.advise(small) { words ->
+                            worker.execute {
+                                if (answered) return@execute
+                                answered = true
+                                val cut = PhotographerCrop.parseCut(words)
+                                Log.i(TAG, "enhance: coach says '${words?.trim()?.take(40)}' -> cut=$cut")
+                                finish(uri, small, face, body, cut, soft, started, callbackExecutor, onResult)
+                            }
+                        }
+                    }
+                }
+            }.addOnFailureListener(worker) {
+                Log.w(TAG, "enhance: face detection failed", it)
+                callbackExecutor.execute { onResult(Result(small, null, soft)) }
+            }
+        }
+    }
+
+    /** The geometry, once the face, the body and (maybe) the coach's cut are known. */
+    private fun finish(
+        uri: Uri,
+        small: Bitmap,
+        face: com.google.mlkit.vision.face.Face,
+        body: BodyPose?,
+        preferredCut: Cut?,
+        soft: Boolean,
+        started: Long,
+        callbackExecutor: Executor,
+        onResult: (Result) -> Unit,
+    ) {
+        run {
                     val w = small.width.toFloat()
                     val h = small.height.toFloat()
                     val box = SubjectBox(
@@ -118,7 +173,7 @@ class PhotoEnhancer(private val context: Context) {
                     }
                     val cw = canvas.width.toFloat()
                     val ch = canvas.height.toFloat()
-                    var crop = PhotographerCrop.propose(subject, eyesY, pose, cw / ch)
+                    var crop = PhotographerCrop.propose(subject, eyesY, pose, cw / ch, preferredCut = preferredCut)
                     if (crop == null && extra > 0f) {
                         // Nothing to crop, but the room above was worth adding on its own.
                         crop = CropProposal(CropRect(0f, 0f, 1f, 1f), emptyList())
@@ -126,8 +181,8 @@ class PhotoEnhancer(private val context: Context) {
                     val elapsed = System.currentTimeMillis() - started
                     if (crop == null) {
                         Log.i(TAG, "enhance: already framed face=%.2f body=%s (%d ms)".format(box.h, body != null, elapsed))
-                        callbackExecutor.execute { onResult(Result(small, null)) }
-                        return@addOnCompleteListener
+                        callbackExecutor.execute { onResult(Result(small, null, soft)) }
+                        return
                     }
                     val reasons = if (extra > 0f) listOf("Added space above the head") + crop.rationale else crop.rationale
                     val px = PhotographerCrop.toPixels(crop.crop, canvas.width, canvas.height)
@@ -140,15 +195,48 @@ class PhotoEnhancer(private val context: Context) {
                     )
                     val name = uri.lastPathSegment ?: "xthink"
                     callbackExecutor.execute {
-                        onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra)))
+                        onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra), soft))
                     }
-                }
-            }.addOnFailureListener(worker) {
-                Log.w(TAG, "enhance: face detection failed", it)
-                callbackExecutor.execute { onResult(Result(small, null)) }
-            }
         }
     }
+
+    /**
+     * Soft or not: the same Laplacian measure the live gate uses, on the
+     * 1024px decode, against a fixed floor. A sharp phone photo scores in
+     * the hundreds; a missed focus or a shaken frame in the tens.
+     */
+    private fun isSoft(bmp: Bitmap): Boolean {
+        val step = 3
+        var n = 0
+        var sum = 0.0
+        var sumSq = 0.0
+        val w = bmp.width
+        val h = bmp.height
+        val row = IntArray(w)
+        val prev = IntArray(w)
+        val next = IntArray(w)
+        var y = step
+        while (y < h - step) {
+            bmp.getPixels(row, 0, w, 0, y, w, 1)
+            bmp.getPixels(prev, 0, w, 0, y - step, w, 1)
+            bmp.getPixels(next, 0, w, 0, y + step, w, 1)
+            var x = step
+            while (x < w - step) {
+                val l = 4 * lum(row[x]) - lum(row[x - step]) - lum(row[x + step]) - lum(prev[x]) - lum(next[x])
+                sum += l
+                sumSq += l.toDouble() * l
+                n++
+                x += step
+            }
+            y += step
+        }
+        if (n == 0) return false
+        val mean = sum / n
+        val variance = sumSq / n - mean * mean
+        return variance < SOFT_FLOOR
+    }
+
+    private fun lum(c: Int): Int = ((c shr 16 and 0xFF) * 77 + (c shr 8 and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
 
     /**
      * Write what the photographer chose: the crop (if [useCrop]) and the
@@ -307,6 +395,8 @@ class PhotoEnhancer(private val context: Context) {
         const val TAG = "xThink"
         const val ANALYSIS_LONG_EDGE = 1024
         const val JPEG_QUALITY = 95
+        /** Laplacian variance below which a 1024px decode is called soft. */
+        const val SOFT_FLOOR = 60.0
         /** Below this ML Kit is extrapolating a landmark it cannot see. */
         const val IN_FRAME = 0.6f
     }

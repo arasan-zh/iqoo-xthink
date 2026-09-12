@@ -42,6 +42,9 @@ class AutoCapturePolicy {
     private var sinceCaptureMs = AUTO_CAPTURE_COOLDOWN_MS
     private var nearMs = 0L
 
+    /** How long the photographer has had a subject without reaching the lock. */
+    private var struggleMs = 0L
+
     /** Milliseconds until another automatic shot is allowed; 0 when ready. */
     val cooldownRemainingMs: Long
         get() = (AUTO_CAPTURE_COOLDOWN_MS - sinceCaptureMs).coerceAtLeast(0L)
@@ -50,17 +53,30 @@ class AutoCapturePolicy {
      * @param totalError the engine's aggregate error, 0 at the lock; only
      *        consulted when [relaxed].
      */
+    /**
+     * @param totalError the engine's aggregate error, 0 at the lock; only
+     *        consulted when [relaxed].
+     * @param sharp false when the frame itself is soft - motion or missed
+     *        focus - whatever the gyro says. A blurred picture is never
+     *        worth taking automatically.
+     */
     fun update(
         verb: Verb,
         stabilityOk: Boolean,
         subjectPresent: Boolean,
         dtMs: Long,
         totalError: Float = 1f,
+        sharp: Boolean = true,
     ): Boolean {
         val dt = if (dtMs < 0L) 0L else dtMs
         sinceCaptureMs = (sinceCaptureMs + dt).coerceAtMost(AUTO_CAPTURE_COOLDOWN_MS)
 
-        val near = relaxed && subjectPresent && isNear(verb, totalError)
+        // The struggle clock: a subject in frame, no lock. "Near enough" is
+        // only offered once this has run for NEAR_AFTER_MS - the correct
+        // capture is always tried for first.
+        struggleMs = if (subjectPresent && verb != Verb.LOCKED) (struggleMs + dt).coerceAtMost(NEAR_AFTER_MS) else 0L
+
+        val near = relaxed && subjectPresent && struggleMs >= NEAR_AFTER_MS && isNear(verb, totalError)
         nearMs = if (near) (nearMs + dt).coerceAtMost(NEAR_DWELL_MS) else 0L
         val goodEnough = verb == Verb.LOCKED || (near && nearMs >= NEAR_DWELL_MS)
 
@@ -71,11 +87,12 @@ class AutoCapturePolicy {
             return false
         }
         if (capturedThisLock) return false
-        if (!stabilityOk) return false
+        if (!stabilityOk || !sharp) return false
         if (sinceCaptureMs < AUTO_CAPTURE_COOLDOWN_MS) return false
 
         capturedThisLock = true
         sinceCaptureMs = 0L
+        struggleMs = 0L
         return true
     }
 
@@ -89,6 +106,7 @@ class AutoCapturePolicy {
         capturedThisLock = false
         sinceCaptureMs = AUTO_CAPTURE_COOLDOWN_MS
         nearMs = 0L
+        struggleMs = 0L
     }
 
     companion object {
@@ -97,6 +115,9 @@ class AutoCapturePolicy {
 
         /** Held near for this long before the shutter treats it as a lock. */
         const val NEAR_DWELL_MS = 700L
+
+        /** Only after this long with a subject and no lock is "near enough" offered. */
+        const val NEAR_AFTER_MS = 30_000L
 
         /**
          * Only the fine adjustments count as near. A zoom or a seek is not

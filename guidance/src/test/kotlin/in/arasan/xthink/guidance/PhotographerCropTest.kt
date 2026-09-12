@@ -129,6 +129,30 @@ class PhotographerCropTest {
     }
 
     @Test
+    fun `a preferred cut from the coach goes first when the body offers it`() {
+        val face = SubjectBox(cx = 0.5f, cy = 0.15f, w = 0.08f, h = 0.07f)
+        val pose = BodyPose(shoulderY = 0.24f, hipY = 0.45f, kneeY = 0.65f, ankleY = 0.86f)
+        val feet = req(PhotographerCrop.propose(face, 0.14f, pose, 0.75f, 0.75f))
+        assertTrue(feet.rationale.any { it.contains("Feet") })
+        val chest = req(PhotographerCrop.propose(face, 0.14f, pose, 0.75f, 0.75f, preferredCut = Cut.CHEST))
+        assertTrue(chest.rationale.any { it.contains("Head and shoulders") })
+        assertTrue(chest.crop.bottom < feet.crop.bottom)
+        // A cut the body does not offer is ignored: no ankles, FEET asked -> ladder as usual.
+        val noFeet = BodyPose(shoulderY = 0.24f, hipY = 0.45f, kneeY = 0.65f, ankleY = null)
+        val p = req(PhotographerCrop.propose(face, 0.14f, noFeet, 0.75f, 0.75f, preferredCut = Cut.FEET))
+        assertTrue(p.rationale.any { it.contains("Mid-thigh") })
+    }
+
+    @Test
+    fun `a coach's words parse into a cut`() {
+        assertEquals(Cut.THIGH, PhotographerCrop.parseCut("cut at mid-thigh"))
+        assertEquals(Cut.CHEST, PhotographerCrop.parseCut("Head and shoulders"))
+        assertEquals(Cut.FEET, PhotographerCrop.parseCut("keep the full body"))
+        assertEquals(Cut.HIP, PhotographerCrop.parseCut("waist up"))
+        assertEquals(null, PhotographerCrop.parseCut("lovely light"))
+    }
+
+    @Test
     fun `pixel mapping clamps and never yields an empty rect`() {
         val px = PhotographerCrop.toPixels(CropRect(0.1f, 0.2f, 0.9f, 1.0f), 3000, 4000)
         assertEquals(300, px[0]); assertEquals(800, px[1]); assertEquals(2400, px[2]); assertEquals(3200, px[3])

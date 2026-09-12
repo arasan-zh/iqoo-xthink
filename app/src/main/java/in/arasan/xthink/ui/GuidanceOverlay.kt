@@ -31,6 +31,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
@@ -75,6 +77,8 @@ fun GuidanceOverlay(
     onPickReference: () -> Unit,
     onClearReference: () -> Unit,
     onToggleEasyShot: () -> Unit,
+    onToggleLooks: () -> Unit,
+    onPickLook: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -172,13 +176,21 @@ fun GuidanceOverlay(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(end = 8.dp)
+                            .horizontalScroll(rememberScrollState()),
+                    ) {
                         if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
+                        LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
                         if (state.coachAvailable) {
                             ReferenceButton(thumbnail = state.reference, onPick = onPickReference, onClear = onClearReference)
                         }
                     }
-                    FlipButton(onClick = onFlip)
+                    QrButton(onClick = { showQr = true })
                 }
                 CoachPanel(coach = state.coach)
             }
@@ -219,6 +231,9 @@ fun GuidanceOverlay(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
+                    if (state.showLooks) {
+                        LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
+                    }
                     ZoomSlider(
                         zoomRatio = state.zoomRatio,
                         maxZoomRatio = state.maxZoomRatio,
@@ -231,7 +246,7 @@ fun GuidanceOverlay(
                         thumbnail = state.thumbnail,
                         onShutter = onShutter,
                         onGallery = onGallery,
-                        onQr = { showQr = true },
+                        onFlip = onFlip,
                     )
                 }
             }

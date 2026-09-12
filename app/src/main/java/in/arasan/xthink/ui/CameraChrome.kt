@@ -20,6 +20,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -178,7 +180,7 @@ fun BottomBar(
     thumbnail: ImageBitmap?,
     onShutter: () -> Unit,
     onGallery: () -> Unit,
-    onQr: () -> Unit,
+    onFlip: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -226,33 +228,37 @@ fun BottomBar(
 
         Shutter(locked = locked, onClick = onShutter)
 
-        // Install link. Rear camera only, so the slot a flip button would
-        // take holds the QR instead - anyone at the demo scans it and gets
-        // the latest build.
-        Box(
-            modifier = Modifier
-                .size(46.dp)
-                .clip(CircleShape)
-                .background(Color.White.copy(alpha = 0.14f))
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = onQr,
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Canvas(modifier = Modifier.size(20.dp)) {
-                val u = size.minDimension / 7f
-                val c = XT.Inert
-                fun finder(x: Float, y: Float) {
-                    drawRect(c, Offset(x * u, y * u), Size(3 * u, 3 * u), style = Stroke(u * 0.8f))
-                    drawRect(c, Offset((x + 1) * u, (y + 1) * u), Size(u, u))
-                }
-                finder(0f, 0f); finder(4f, 0f); finder(0f, 4f)
-                drawRect(c, Offset(4 * u, 4 * u), Size(u, u))
-                drawRect(c, Offset(6 * u, 5 * u), Size(u, u))
-                drawRect(c, Offset(5 * u, 6 * u), Size(u, u))
+        // Flip - where a camera app keeps it.
+        FlipButton(onClick = onFlip, diameter = 46.dp, background = Color.White.copy(alpha = 0.14f))
+    }
+}
+
+/** Install link: anyone at the demo scans it and gets the latest build. */
+@Composable
+fun QrButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(XT.Chip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        Canvas(modifier = Modifier.size(18.dp)) {
+            val u = size.minDimension / 7f
+            val c = XT.OnChip
+            fun finder(x: Float, y: Float) {
+                drawRect(c, Offset(x * u, y * u), Size(3 * u, 3 * u), style = Stroke(u * 0.8f))
+                drawRect(c, Offset((x + 1) * u, (y + 1) * u), Size(u, u))
             }
+            finder(0f, 0f); finder(4f, 0f); finder(0f, 4f)
+            drawRect(c, Offset(4 * u, 4 * u), Size(u, u))
+            drawRect(c, Offset(6 * u, 5 * u), Size(u, u))
+            drawRect(c, Offset(5 * u, 6 * u), Size(u, u))
         }
     }
 }
@@ -389,12 +395,17 @@ private fun DrawScope.drawRailGlyph(index: Int, color: Color) {
 // ---------------------------------------------------------------------------
 
 @Composable
-fun FlipButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun FlipButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    diameter: androidx.compose.ui.unit.Dp = 44.dp,
+    background: Color = XT.Chip,
+) {
     Box(
         modifier = modifier
-            .size(44.dp)
+            .size(diameter)
             .clip(CircleShape)
-            .background(XT.Chip)
+            .background(background)
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
@@ -402,21 +413,110 @@ fun FlipButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
             ),
         contentAlignment = Alignment.Center,
     ) {
-        Canvas(modifier = Modifier.size(22.dp)) {
-            val c = size.minDimension / 2f
-            val r = c * 0.68f
-            drawArc(
-                color = XT.OnChip,
-                startAngle = 20f,
-                sweepAngle = 300f,
-                useCenter = false,
-                topLeft = Offset(c - r, c - r),
-                size = Size(r * 2f, r * 2f),
-                style = Stroke(1.8f.dp.toPx(), cap = StrokeCap.Round),
+        // A camera body with a circular arrow in the lens: the glyph every
+        // camera app uses for front/rear.
+        Canvas(modifier = Modifier.size(24.dp)) {
+            val w = size.width
+            val h = size.height
+            val stroke = 1.7f.dp.toPx()
+            val c = XT.OnChip
+            val bodyTop = h * 0.28f
+            drawRoundRect(
+                color = c,
+                topLeft = Offset(w * 0.06f, bodyTop),
+                size = Size(w * 0.88f, h * 0.62f),
+                cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.12f),
+                style = Stroke(stroke),
             )
-            val tip = Offset(c + r * 0.94f, c + r * 0.34f)
-            drawLine(XT.OnChip, tip, Offset(tip.x - r * 0.45f, tip.y - r * 0.1f), 1.8f.dp.toPx(), StrokeCap.Round)
-            drawLine(XT.OnChip, tip, Offset(tip.x - r * 0.05f, tip.y + r * 0.45f), 1.8f.dp.toPx(), StrokeCap.Round)
+            // the viewfinder bump
+            drawLine(c, Offset(w * 0.32f, bodyTop), Offset(w * 0.40f, h * 0.14f), stroke, StrokeCap.Round)
+            drawLine(c, Offset(w * 0.40f, h * 0.14f), Offset(w * 0.60f, h * 0.14f), stroke, StrokeCap.Round)
+            drawLine(c, Offset(w * 0.60f, h * 0.14f), Offset(w * 0.68f, bodyTop), stroke, StrokeCap.Round)
+            // the arrow in the lens
+            val cx = w * 0.5f
+            val cy = bodyTop + h * 0.31f
+            val r = w * 0.17f
+            drawArc(
+                color = c,
+                startAngle = -60f,
+                sweepAngle = 250f,
+                useCenter = false,
+                topLeft = Offset(cx - r, cy - r),
+                size = Size(r * 2f, r * 2f),
+                style = Stroke(stroke, cap = StrokeCap.Round),
+            )
+            val tip = Offset(cx + r * 0.5f, cy - r * 0.87f)
+            drawLine(c, tip, Offset(tip.x - r * 0.55f, tip.y - r * 0.05f), stroke, StrokeCap.Round)
+            drawLine(c, tip, Offset(tip.x - r * 0.05f, tip.y + r * 0.55f), stroke, StrokeCap.Round)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Look - the chip on the camera page that opens the looks row, and the row.
+// ---------------------------------------------------------------------------
+
+@Composable
+fun LookChip(name: String, open: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if (open) XT.ChipStrong else XT.Chip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Canvas(modifier = Modifier.size(14.dp)) {
+            val r = size.minDimension / 2f
+            drawCircle(XT.OnChip, r, style = Stroke(1.5f.dp.toPx()))
+            drawArc(XT.OnChip, -90f, 180f, useCenter = true, topLeft = Offset(0f, 0f), size = Size(r * 2f, r * 2f))
+        }
+        Text(
+            text = name,
+            color = if (name == "Natural") XT.OnChip else XT.Amber,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+fun LooksRow(look: Int, preview: ImageBitmap?, onPick: (Int) -> Unit, modifier: Modifier = Modifier) {
+    val scroll = rememberScrollState()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(XT.Corner))
+            .background(XT.Chip)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .horizontalScroll(scroll),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Looks.ALL.forEachIndexed { i, l ->
+            if (preview != null) {
+                LookTile(look = l, image = preview, chosen = i == look, onClick = { onPick(i) })
+            } else {
+                Text(
+                    text = l.name,
+                    color = if (i == look) XT.Amber else XT.OnChip,
+                    fontSize = 13.sp,
+                    fontWeight = if (i == look) FontWeight.SemiBold else FontWeight.Normal,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(14.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onPick(i) },
+                        )
+                        .padding(horizontal = 10.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 }
@@ -479,7 +579,7 @@ fun ReferenceButton(
                 drawLine(XT.OnChip, Offset(w * 0.62f, h * 0.68f), Offset(w * 0.85f, h * 0.42f), 1.6f.dp.toPx(), StrokeCap.Round)
             }
             Text(
-                text = "Shoot like…",
+                text = "Like…",
                 color = XT.OnChip,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Medium,
@@ -518,7 +618,7 @@ fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modif
                 .background(fg),
         )
         Text(
-            text = if (on) "Easy shot" else "Easy shot off",
+            text = "Easy shot",
             color = fg,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,

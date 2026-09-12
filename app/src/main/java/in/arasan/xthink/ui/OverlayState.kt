@@ -36,6 +36,12 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** The look chosen on the camera page; baked into every capture, pre-selected in the review. */
+    val look: Int = 0,
+    /** True while the looks row is open on the camera page. */
+    val showLooks: Boolean = false,
+    /** A frozen frame the looks row previews on; taken when the row opens. */
+    val lookPreview: ImageBitmap? = null,
     /** "Near enough" auto-shutter: shoot when close to the lock, not only at it. */
     val easyShot: Boolean = false,
     /** True when the on-device model is on the phone: the coach controls show. */
