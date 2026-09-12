@@ -110,24 +110,25 @@ STEPS
     ;;
 
   model)
-    # The coach model is 3.1 GB and not in the APK. It lives in ~/Lab
-    # (regenerable: the HF token on this Mac can re-download it) and is
-    # pushed to /data/local/tmp/llm, which the app can read.
-    model="$HOME/Lab/xthink/models/gemma-3n-E2B-it-int4.task"
-    if [ ! -f "$model" ]; then
-      echo "no model at $model - download it first (see docs/TECHNICAL.md)" >&2
-      exit 2
-    fi
+    # The coach models are 3-4 GB each and not in the APK. They live in
+    # ~/Lab (regenerable: the HF token on this Mac can re-download them)
+    # and are pushed to /data/local/tmp/llm, which the app can read. The
+    # app loads the biggest bundle it finds - E4B over E2B.
+    dir="$HOME/Lab/xthink/models"
+    ls "$dir"/*.task >/dev/null 2>&1 || { echo "no .task models in $dir (see docs/TECHNICAL.md)" >&2; exit 2; }
     for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
-      have=$(adb -s "$s" shell stat -c %s /data/local/tmp/llm/gemma-3n-E2B-it-int4.task 2>/dev/null | tr -d '\r')
-      if [ "$have" = "$(wc -c < "$model" | tr -d " ")" ]; then
-        echo "$s: model already there"
-        continue
-      fi
-      echo "$s: pushing 3.1 GB (about a minute over USB)..."
       adb -s "$s" shell "mkdir -p /data/local/tmp/llm && chmod 755 /data/local/tmp/llm"
-      adb -s "$s" push "$model" /data/local/tmp/llm/gemma-3n-E2B-it-int4.task
-      adb -s "$s" shell chmod 644 /data/local/tmp/llm/gemma-3n-E2B-it-int4.task
+      for model in "$dir"/*.task; do
+        name=$(basename "$model")
+        have=$(adb -s "$s" shell stat -c %s "/data/local/tmp/llm/$name" 2>/dev/null | tr -d '\r')
+        if [ "$have" = "$(wc -c < "$model" | tr -d ' ')" ]; then
+          echo "$s: $name already there"
+          continue
+        fi
+        echo "$s: pushing $name ($(du -h "$model" | cut -f1), about a minute per 3 GB over USB)..."
+        adb -s "$s" push "$model" "/data/local/tmp/llm/$name"
+        adb -s "$s" shell chmod 644 "/data/local/tmp/llm/$name"
+      done
     done
     ;;
 

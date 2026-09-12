@@ -78,6 +78,7 @@ import `in`.arasan.xthink.guidance.DirectionCues
 import `in`.arasan.xthink.guidance.CommandSafety
 import `in`.arasan.xthink.guidance.GeniusPlan
 import `in`.arasan.xthink.guidance.PlanStep
+import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
 import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.HapticCue
@@ -537,23 +538,14 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         )
     }
 
-    fun geniusPlan(heard: String) {
-        gHeard = heard
-        gPlan = emptyList()
-        gStep = -1
-        gAttempt = 1
-        gNote = null
-        if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
-        gPhase = "THINKING"
-        refreshGenius()
-        // The words route the request; the model fills in the one blank a route leaves.
-        gDraft = ""
-        val route = GeniusRouter.route(heard)
-        Log.i(TAG, "steve: route ${route::class.simpleName} for '${heard.take(60)}'")
+    /** Carry out the reading: the macros for the route, the model for the blank it leaves. */
+    fun geniusAct(route: Route, heard: String) {
         val main = ContextCompat.getMainExecutor(context)
         val asked = when (route) {
             is Route.Open, is Route.Website, is Route.Project -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
-            is Route.Terminal -> coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.shellPrompt(heard), main) { text, done ->
+            is Route.Terminal -> if (route.command != null) {
+                geniusPropose(GeniusRouter.steps(route, route.command), "PLANNED"); true
+            } else coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.shellPrompt(heard), main) { text, done ->
                 if (!done || gPhase != "THINKING") return@askText
                 val cmd = text.trim().trim('`').trim()
                 if (cmd.isBlank()) geniusFail("no command came back") else geniusPropose(GeniusRouter.steps(route, cmd), "PLANNED")
@@ -584,6 +576,29 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         }
         if (!asked) geniusFail("Steve is busy")
     }
+
+    fun geniusPlan(heard: String) {
+        gHeard = heard
+        gPlan = emptyList()
+        gStep = -1
+        gAttempt = 1
+        gNote = null
+        if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
+        gPhase = "THINKING"
+        refreshGenius()
+        gDraft = ""
+        val main = ContextCompat.getMainExecutor(context)
+        // Gemma reads the sentence first - one line, KIND | ARG. When that
+        // line cannot be read, the words route it instead.
+        val understood = coach.askText(LlmCoach.Kind.UNDERSTAND, LlmCoach.understandPrompt(heard), main) { text, done ->
+            if (!done || gPhase != "THINKING") return@askText
+            val (route, fromModel) = GeniusIntent.decide(text, heard)
+            Log.i(TAG, "steve: gemma says '${text.trim().take(60)}' -> ${route::class.simpleName}${if (!fromModel) " (router)" else ""}")
+            geniusAct(route, heard)
+        }
+        if (!understood) geniusFail("Steve is busy")
+    }
+
 
     fun geniusSpeak() {
         if (gPhase == "LISTENING") { speech.stop(); return }

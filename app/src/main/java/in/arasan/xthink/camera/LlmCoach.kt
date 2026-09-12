@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -48,8 +48,10 @@ class LlmCoach(private val context: Context) {
             context.getExternalFilesDir(null)?.let { File(it, "models") },
             File("/data/local/tmp/llm"),
         )
+        // The biggest bundle the phone holds wins: E4B over E2B when both are there.
         return candidates.asSequence()
             .flatMap { dir -> dir.listFiles { f -> f.name.endsWith(".task") }?.asSequence() ?: emptySequence() }
+            .sortedByDescending { it.length() }
             .firstOrNull()
     }
 
@@ -121,10 +123,14 @@ class LlmCoach(private val context: Context) {
                         if (firstTokenMs < 0) firstTokenMs = SystemClock.uptimeMillis() - started
                         sb.append(partial)
                         val text = tidy(sb.toString())
-                        callbackExecutor.execute { onText(text, done) }
+                        if (!done) callbackExecutor.execute { onText(text, false) }
                     }
                     future.get()
                 }
+                // Free before the final word is delivered, so the caller may ask again at once.
+                busy.set(false)
+                val finalText = tidy(sb.toString())
+                callbackExecutor.execute { onText(finalText, true) }
                 Log.i(
                     TAG,
                     "coach %s: first token %d ms, total %d ms, %d chars: %s".format(
@@ -133,6 +139,7 @@ class LlmCoach(private val context: Context) {
                 )
             }.onFailure {
                 Log.e(TAG, "coach $kind failed", it)
+                busy.set(false)
                 callbackExecutor.execute { onText(sb.toString().ifBlank { "" }, true) }
             }
             busy.set(false)
@@ -156,6 +163,8 @@ class LlmCoach(private val context: Context) {
         worker.execute {
             val started = SystemClock.uptimeMillis()
             val sb = StringBuilder()
+            var finalText: String? = null
+            val oneLine = kind == Kind.COMMAND || kind == Kind.UNDERSTAND
             runCatching {
                 val session = LlmInferenceSession.createFromOptions(
                     model,
@@ -173,8 +182,7 @@ class LlmCoach(private val context: Context) {
                         if (cut) return@generateResponseAsync
                         sb.append(partial)
                         val raw = sb.toString()
-                        // COMMAND wants one line; a plan is many, ending at DONE.
-                        val oneLine = kind == Kind.COMMAND
+                        // COMMAND/UNDERSTAND want one line; a plan is many, ending at DONE.
                         val nl = if (oneLine) raw.indexOf('\n', startIndex = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)) else -1
                         val text = if (oneLine) tidy(if (nl >= 0) raw.substring(0, nl) else raw) else raw.trim()
                         val planDone = !oneLine && kind != Kind.WRITE && Regex("(?m)^\\s*DONE\\s*$").containsMatchIn(raw)
@@ -183,18 +191,26 @@ class LlmCoach(private val context: Context) {
                             cut = true
                             runCatching { s.cancelGenerateResponseAsync() }
                         }
-                        callbackExecutor.execute { onText(text, finished) }
+                        if (finished) finalText = text else callbackExecutor.execute { onText(text, false) }
                     }.get()
                 }
-                Log.i(TAG, "coach %s: %d ms, %d chars: %s".format(kind, SystemClock.uptimeMillis() - started, sb.length, tidy(sb.toString().lineSequence().firstOrNull { it.isNotBlank() } ?: "").take(120)))
+                // Free before the final word is delivered, so the caller may ask again at once.
+                busy.set(false)
+                val out = finalText ?: raw(sb, oneLine)
+                callbackExecutor.execute { onText(out, true) }
+                Log.i(TAG, "coach %s: %d ms, %d chars: %s".format(kind, SystemClock.uptimeMillis() - started, sb.length, out.take(120).replace('\n', ' ')))
             }.onFailure {
                 Log.e(TAG, "coach $kind failed", it)
+                busy.set(false)
                 callbackExecutor.execute { onText(sb.toString(), true) }
             }
             busy.set(false)
         }
         return true
     }
+
+    private fun raw(sb: StringBuilder, oneLine: Boolean): String =
+        if (oneLine) tidy(sb.toString().lineSequence().firstOrNull { it.isNotBlank() } ?: "") else sb.toString().trim()
 
     /** The vision encoder wants a modest square-ish image; keep it cheap. */
     private fun fit(src: Bitmap): Bitmap {
@@ -282,6 +298,27 @@ class LlmCoach(private val context: Context) {
             ---
             If the request appears done or the Mac is doing it, reply exactly: DONE
             Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
+        """.trimIndent()
+
+        /** What kind of Mac job a sentence is, in one line the macros can act on. */
+        fun understandPrompt(spoken: String): String = """
+            Classify a spoken request for a Mac. Reply with ONE line in the form KIND | ARG and nothing else.
+            KIND is one of:
+            OPEN - open an app; ARG is the app's name
+            WEBSITE - open a website; ARG is the domain if given, else the site's name
+            TERMINAL - shell work; ARG is the exact one-line macOS shell command
+            WRITE - write a letter, notes, a story, a poem; ARG is what to write, as asked
+            PROJECT - create or build code, a website, an app; ARG is what to build
+            WHATSAPP - message someone on WhatsApp; ARG is the number ; the message
+            OTHER - anything else
+            Examples:
+            open the terminal and show the current directory -> TERMINAL | pwd
+            open safari browser -> OPEN | Safari
+            search for the apple website and open it -> WEBSITE | apple
+            write a love letter to Priya -> WRITE | a love letter to Priya
+            create a portfolio website for Priya -> PROJECT | a portfolio website for Priya
+            text 9442851409 on whatsapp saying hello -> WHATSAPP | 9442851409 ; hello
+            Request: $spoken
         """.trimIndent()
 
         /** The writing itself: a letter, notes, a story - plain text, ready to type. */

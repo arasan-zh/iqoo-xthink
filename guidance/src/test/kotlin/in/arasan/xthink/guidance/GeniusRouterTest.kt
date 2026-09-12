@@ -36,6 +36,15 @@ class GeniusRouterTest {
     }
 
     @Test
+    fun `youtube plays a search`() {
+        val r = GeniusRouter.route("play a song in YouTube") as Route.Website
+        assertEquals("https://www.youtube.com/results?search_query=song", r.url)
+        val s = GeniusRouter.route("open youtube and play Vaathi coming") as Route.Website
+        assertEquals("https://www.youtube.com/results?search_query=Vaathi+coming".lowercase(), s.url.lowercase())
+        assertEquals("https://www.youtube.com", (GeniusRouter.route("open youtube") as Route.Website).url)
+    }
+
+    @Test
     fun `terminal work is terminal even when it starts with open`() {
         assertTrue(GeniusRouter.route("open the terminal and show the current directory") is Route.Terminal)
         assertTrue(GeniusRouter.route("connect to the dev server") is Route.Terminal)

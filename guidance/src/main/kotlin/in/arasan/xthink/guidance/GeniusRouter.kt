@@ -14,8 +14,8 @@ sealed class Route {
     /** A website: a domain if one was named, else a search that lands on the first result. */
     data class Website(val query: String, val url: String) : Route()
 
-    /** Shell work; the model supplies the one-line command. */
-    data class Terminal(val request: String) : Route()
+    /** Shell work; the model supplies the one-line command - here already, or asked for later. */
+    data class Terminal(val request: String, val command: String? = null) : Route()
 
     /** Writing: a letter, notes, a story. The model writes it; TextEdit gets it. */
     data class Write(val request: String) : Route()
@@ -53,6 +53,12 @@ object GeniusRouter {
         "whatsapp" to "WhatsApp", "spotify" to "Spotify", "zoom" to "zoom.us",
     )
 
+    /** The app's proper name for a spoken one, e.g. "vs code" -> "Visual Studio Code". */
+    fun appName(spoken: String): String {
+        val key = spoken.trim().lowercase().removeSuffix(" app").removeSuffix(" browser").trim()
+        return APPS[key] ?: spoken.trim().split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }
+    }
+
     fun route(spoken: String): Route {
         val s = spoken.trim().lowercase().replace(Regex("\\s+"), " ")
         if (s.isEmpty()) return Route.Plan(spoken)
@@ -66,6 +72,15 @@ object GeniusRouter {
                     .find(spoken.replace(number, " "))?.groupValues?.get(1)?.trim()?.trim('"', '\'') ?: ""
                 return Route.WhatsApp(number, message)
             }
+        }
+
+        // YouTube: "play X on youtube" is a search there.
+        if ("youtube" in s || "you tube" in s) {
+            val what = Regex("""(?:play|search|search for|find|watch|open)\s+(.+?)\s*(?:on|in|at)\s+you ?tube""").find(s)?.groupValues?.get(1)
+                ?: Regex("""you ?tube\s+(?:and\s+)?(?:play|search for|search|find|watch)\s+(.+)$""").find(s)?.groupValues?.get(1)
+            val q = what?.trim()?.removePrefix("a ")?.removePrefix("the ")?.trim().orEmpty()
+            return if (q.isEmpty()) Route.Website("youtube", "https://www.youtube.com")
+            else Route.Website("youtube: $q", "https://www.youtube.com/results?search_query=" + q.replace(Regex("\\s+"), "+"))
         }
 
         // A plain open of a known app.
