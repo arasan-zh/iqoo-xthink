@@ -58,6 +58,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -74,6 +75,11 @@ import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.AutoCapturePolicy
 import `in`.arasan.xthink.guidance.CoachMode
 import `in`.arasan.xthink.guidance.DirectionCues
+import `in`.arasan.xthink.guidance.CommandSafety
+import `in`.arasan.xthink.guidance.GeniusPlan
+import `in`.arasan.xthink.guidance.PlanStep
+import `in`.arasan.xthink.guidance.GeniusRouter
+import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.HapticCue
 import `in`.arasan.xthink.guidance.LockHaptics
 import `in`.arasan.xthink.guidance.CompositionProfile
@@ -88,7 +94,7 @@ import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
 import `in`.arasan.xthink.ui.Looks
 import `in`.arasan.xthink.ui.ReviewState
-import `in`.arasan.xthink.ui.TypeState
+import `in`.arasan.xthink.ui.GeniusState
 import `in`.arasan.xthink.ui.GuidanceOverlay
 import `in`.arasan.xthink.ui.OverlayState
 import `in`.arasan.xthink.ui.StatusValue
@@ -125,6 +131,12 @@ private const val TRACK_MOVE = 0.04f
 
 /** Subject gone this long: back to continuous AF. */
 private const val TRACK_LOST_MS = 1_500L
+
+/** Genius stops proposing after this many plan-and-check rounds. */
+private const val GENIUS_MAX_ATTEMPTS = 3
+
+/** After a plan runs, the Mac gets this long to settle before the camera reads it. */
+private const val GENIUS_SETTLE_MS = 2_500L
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -139,7 +151,7 @@ private const val ANALYSIS_HEIGHT = 360
  * that the guidance overlay be a separate composable layer.
  */
 @Composable
-fun CameraScreen(debugEnhanceUri: String? = null) {
+fun CameraScreen(debugEnhanceUri: String? = null, debugGenius: String? = null) {
     val context = LocalContext.current
     var granted by remember { mutableStateOf(hasCameraPermission(context)) }
 
@@ -152,7 +164,7 @@ fun CameraScreen(debugEnhanceUri: String? = null) {
     }
 
     if (granted) {
-        CameraAndGuidance(debugEnhanceUri)
+        CameraAndGuidance(debugEnhanceUri, debugGenius)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -175,7 +187,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 
 @OptIn(ExperimentalCamera2Interop::class)
 @Composable
-private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
+private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: String? = null) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -388,17 +400,26 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
     val governor = remember { ThermalGovernor() }
     val thermalPlan = remember { arrayOf(ThermalPlan.forTier(ThermalTier.COOL)) }
 
-    // --- type on Mac ------------------------------------------------------
-    // TYPE: the camera reads text (ML Kit OCR, on-device, ~1 Hz) and the
-    // phone, registered as a Bluetooth keyboard, types it on the Mac.
+    // --- GENIUS -------------------------------------------------------------
+    // Say it; the phone proposes what to do on the Mac; YOU tap Run. The
+    // phone is a Bluetooth keyboard; Gemma turns the words into a plan of
+    // verbs; every plan is shown in full, checked by CommandSafety, and
+    // performed only after a tap. Afterwards the camera reads the Mac
+    // screen and Gemma may PROPOSE a next step - which again waits for a
+    // tap. Nothing runs unattended, and nothing retries by itself.
     var typeMode by remember { mutableStateOf(false) }
     val keyboard = remember { MacKeyboard(context) }
     val reader = remember { ScreenReader() }
-    var ocrText by remember { mutableStateOf("") }
-    var typing by remember { mutableStateOf(false) }
-    var typeResult by remember { mutableStateOf<String?>(null) }
+    val speech = remember { SpeechInput(context) }
     var keyboardState by remember { mutableStateOf(MacKeyboard.State.NO_BLUETOOTH) }
-    DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close() } }
+    var gPhase by remember { mutableStateOf("READY") }
+    var gHeard by remember { mutableStateOf("") }
+    var gPlan by remember { mutableStateOf<List<PlanStep>>(emptyList()) }
+    var gStep by remember { mutableIntStateOf(-1) }
+    var gAttempt by remember { mutableIntStateOf(0) }
+    var gNote by remember { mutableStateOf<String?>(null) }
+    var gDraft by remember { mutableStateOf("") }
+    DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close(); speech.close() } }
 
     fun keyboardLine(): String = when (keyboardState) {
         MacKeyboard.State.NO_BLUETOOTH -> "No Bluetooth on this phone"
@@ -407,18 +428,24 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
         MacKeyboard.State.REGISTERING -> "Becoming a keyboard\u2026"
         MacKeyboard.State.READY -> "Keyboard ready \u2014 on the Mac, connect to \u201cxThink\u201d"
         MacKeyboard.State.CONNECTING -> "Connecting\u2026"
-        MacKeyboard.State.CONNECTED -> "Typing on ${keyboard.hostName ?: "the Mac"}"
+        MacKeyboard.State.CONNECTED -> "Linked to ${keyboard.hostName ?: "the Mac"}"
     }
 
-    fun refreshType() {
+    fun refreshGenius() {
         overlayState = overlayState.copy(
             typeMode = typeMode,
-            type = if (typeMode) TypeState(
+            genius = if (typeMode) GeniusState(
                 keyboard = keyboardLine(),
                 connected = keyboardState == MacKeyboard.State.CONNECTED,
-                text = ocrText,
-                typing = typing,
-                lastResult = typeResult,
+                speechAvailable = speech.available,
+                phase = gPhase,
+                heard = gHeard,
+                plan = gPlan.map { it.line },
+                step = gStep,
+                attempt = gAttempt,
+                note = gNote,
+                refusals = CommandSafety.refusals(gPlan),
+                draft = gDraft,
             ) else null,
         )
     }
@@ -427,7 +454,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
         Log.i(TAG, "keyboard: permissions $grants")
         if (grants.values.all { it }) keyboard.start(ContextCompat.getMainExecutor(context)) { st ->
             keyboardState = st
-            refreshType()
+            refreshGenius()
         }
     }
     val discoverableLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
@@ -435,32 +462,176 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
         keyboard.connectBonded()
     }
 
-    fun typeText(enter: Boolean) {
-        val text = ocrText
-        if (text.isBlank() || typing) return
-        typing = true
-        typeResult = null
-        refreshType()
-        keyboard.type(text, enter) { typed, dropped ->
-            typing = false
-            typeResult = "Typed $typed keys" + if (dropped.isNotEmpty()) " \u00b7 no key for $dropped" else ""
-            haptics.play(HapticCue.TICK, 0.5f)
-            refreshType()
+    fun geniusFail(why: String) {
+        gPhase = "FAILED"
+        gNote = why
+        Log.w(TAG, "genius: failed - $why")
+        haptics.play(HapticCue.UNLOCK, 0.6f)
+        refreshGenius()
+    }
+
+    fun geniusDone(why: String?) {
+        gPhase = "DONE"
+        gStep = gPlan.size
+        gNote = why
+        Log.i(TAG, "genius: done${why?.let { " ($it)" } ?: ""}")
+        haptics.play(HapticCue.LOCK, 0.8f)
+        refreshGenius()
+    }
+
+    /** A plan is on the table; it runs only when the photographer taps Run. */
+    fun geniusPropose(steps: List<PlanStep>, phase: String) {
+        gPlan = steps
+        gStep = -1
+        gPhase = phase
+        val refusals = CommandSafety.refusals(steps)
+        gNote = if (refusals.any { it != null }) "This plan will not run." else null
+        Log.i(TAG, "genius: $phase ${steps.size} steps: ${steps.joinToString(" | ") { it.line }} refused=${refusals.count { it != null }}")
+        haptics.play(HapticCue.TICK, 0.5f)
+        refreshGenius()
+    }
+
+    /** After a run: read the Mac screen and let Gemma propose - never perform - a next step. */
+    fun geniusCheck() {
+        if (gAttempt >= GENIUS_MAX_ATTEMPTS) { geniusDone("did what was asked") ; return }
+        gPhase = "CHECKING"
+        refreshGenius()
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (gPhase != "CHECKING") return@postDelayed
+            val snap = previewSnapshot()
+            if (snap == null) { geniusDone("could not see the screen"); return@postDelayed }
+            val started = reader.read(snap, ContextCompat.getMainExecutor(context)) { screen ->
+                if (gPhase != "CHECKING") return@read
+                if (screen.isBlank()) { geniusDone("nothing readable on the screen"); return@read }
+                Log.i(TAG, "genius: screen reads ${screen.length} chars: ${screen.take(100).replace('\n', ' ')}")
+                val asked = coach.askText(LlmCoach.Kind.CHECK, LlmCoach.checkPrompt(gHeard, screen, gAttempt), ContextCompat.getMainExecutor(context)) { text, done ->
+                    if (!done || gPhase != "CHECKING") return@askText
+                    if (GeniusPlan.isDone(text)) { geniusDone(null); return@askText }
+                    val next = GeniusPlan.parse(text).filter { !it.line.uppercase().startsWith("DONE") }
+                    if (next.isEmpty()) geniusDone(null) else { gAttempt += 1; geniusPropose(next, "PROPOSED") }
+                }
+                if (!asked) geniusDone("coach busy; not verified")
+            }
+            if (!started) geniusDone("screen reader busy; not verified")
+        }, GENIUS_SETTLE_MS)
+    }
+
+    /** The tap. Performs the plan on the table, if CommandSafety lets it. */
+    fun geniusRun() {
+        val steps = gPlan
+        if (steps.isEmpty() || gPhase !in setOf("PLANNED", "PROPOSED")) return
+        if (!CommandSafety.isSafe(steps)) { gNote = "This plan will not run."; refreshGenius(); return }
+        if (keyboardState != MacKeyboard.State.CONNECTED) { geniusFail("the Mac is not linked - tap Pair Mac"); return }
+        gStep = 0
+        gPhase = "RUNNING"
+        refreshGenius()
+        Log.i(TAG, "genius: RUN confirmed - ${steps.size} steps")
+        val ops = steps.flatMap { it.ops }
+        val stepOfOp = IntArray(ops.size)
+        var k = 0
+        steps.forEachIndexed { i, st -> repeat(st.ops.size) { stepOfOp[k++] = i } }
+        keyboard.perform(
+            ops,
+            onProgress = { i -> if (i < stepOfOp.size && stepOfOp[i] != gStep) { gStep = stepOfOp[i]; refreshGenius() } },
+            onDone = { ok -> if (!ok) geniusFail("the keyboard link dropped or Stop was pressed") else geniusCheck() },
+        )
+    }
+
+    fun geniusPlan(heard: String) {
+        gHeard = heard
+        gPlan = emptyList()
+        gStep = -1
+        gAttempt = 1
+        gNote = null
+        if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
+        gPhase = "THINKING"
+        refreshGenius()
+        // The words route the request; the model fills in the one blank a route leaves.
+        gDraft = ""
+        val route = GeniusRouter.route(heard)
+        Log.i(TAG, "steve: route ${route::class.simpleName} for '${heard.take(60)}'")
+        val main = ContextCompat.getMainExecutor(context)
+        val asked = when (route) {
+            is Route.Open, is Route.Website, is Route.Project -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
+            is Route.Terminal -> coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.shellPrompt(heard), main) { text, done ->
+                if (!done || gPhase != "THINKING") return@askText
+                val cmd = text.trim().trim('`').trim()
+                if (cmd.isBlank()) geniusFail("no command came back") else geniusPropose(GeniusRouter.steps(route, cmd), "PLANNED")
+            }
+            is Route.Write -> {
+                gPhase = "WRITING"
+                refreshGenius()
+                coach.askText(LlmCoach.Kind.WRITE, LlmCoach.writePrompt(heard), main) { text, done ->
+                    if (gPhase != "WRITING") return@askText
+                    gDraft = text
+                    if (!done) { refreshGenius(); return@askText }
+                    val body = text.trim()
+                    if (body.isBlank()) geniusFail("nothing was written") else { geniusPropose(GeniusRouter.steps(route, body), "PLANNED"); gDraft = body; refreshGenius() }
+                }
+            }
+            is Route.WhatsApp -> if (route.message.isNotBlank()) {
+                geniusPropose(GeniusRouter.steps(route), "PLANNED"); true
+            } else coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.messagePrompt(heard), main) { text, done ->
+                if (!done || gPhase != "THINKING") return@askText
+                val msg = text.trim().trim('"')
+                if (msg.isBlank()) geniusFail("no message came back") else geniusPropose(GeniusRouter.steps(route, msg), "PLANNED")
+            }
+            is Route.Plan -> coach.askText(LlmCoach.Kind.PLAN, LlmCoach.planPrompt(heard), main) { text, done ->
+                if (!done || gPhase != "THINKING") return@askText
+                val steps = GeniusPlan.parse(text).filter { !it.line.uppercase().startsWith("DONE") }
+                if (steps.isEmpty()) geniusFail("no plan came back: ${text.take(80)}") else geniusPropose(steps, "PLANNED")
+            }
+        }
+        if (!asked) geniusFail("Steve is busy")
+    }
+
+    fun geniusSpeak() {
+        if (gPhase == "LISTENING") { speech.stop(); return }
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        ) {
+            audioLauncher.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        gPhase = "LISTENING"
+        gHeard = ""
+        gPlan = emptyList()
+        gStep = -1
+        gNote = null
+        refreshGenius()
+        speech.listen(
+            onPartial = { partial -> gHeard = partial; refreshGenius() },
+            onResult = { heard ->
+                if (heard.isBlank()) { gPhase = "READY"; gNote = "Didn't catch that"; refreshGenius() }
+                else geniusPlan(heard)
+            },
+            onDone = { if (gPhase == "LISTENING") { gPhase = "READY"; refreshGenius() } },
+        )
+    }
+
+    fun geniusStop() {
+        Log.i(TAG, "genius: stop pressed")
+        keyboard.cancelled = true
+        speech.stop()
+        gPhase = "READY"
+        gPlan = emptyList()
+        gStep = -1
+        gNote = "stopped"
+        refreshGenius()
+    }
+
+    LaunchedEffect(debugGenius) {
+        if (debugGenius != null && !typeMode) {
+            typeMode = true
+            refreshGenius()
+            if (keyboard.hasPermission()) keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshGenius() }
         }
     }
 
-    // The camera reads text about once a second while TYPE is up.
-    LaunchedEffect(typeMode) {
-        if (!typeMode) return@LaunchedEffect
-        while (true) {
-            delay(1_000L)
-            if (typing || reader.busy) continue
-            val snap = previewSnapshot() ?: continue
-            reader.read(snap, ContextCompat.getMainExecutor(context)) { text ->
-                if (text.isNotBlank() || ocrText.isBlank()) ocrText = text
-                refreshType()
-            }
-        }
+    // Dev hook: am start --es genius "<what to say>" plans a request without the microphone. Running it still takes the tap.
+    LaunchedEffect(debugGenius, coachState, typeMode) {
+        if (debugGenius == null || !typeMode || coachState != LlmCoach.State.READY) return@LaunchedEffect
+        if (gPhase == "READY" && gHeard.isEmpty()) geniusPlan(debugGenius)
     }
 
     // The analyser is created inside the camera effect; the mode switch and
@@ -546,9 +717,11 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
 
     fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
         if (typeMode && leaveVideo) {
+            Log.i(TAG, "genius: left by mode change")
+            keyboard.cancelled = true
             typeMode = false
-            overlayState = overlayState.copy(typeMode = false, type = null)
-            Log.i(TAG, "mode -> photo (from TYPE)")
+            overlayState = overlayState.copy(typeMode = false, genius = null)
+            Log.i(TAG, "mode -> photo (from GENIUS)")
         }
         if (videoMode && leaveVideo) {
             videoMode = false
@@ -637,7 +810,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 recording = overlayState.recording,
                 recordingMs = overlayState.recordingMs,
                 typeMode = overlayState.typeMode,
-                type = overlayState.type,
+                genius = overlayState.genius,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -858,15 +1031,14 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     typeMode = true
-                    ocrText = ""
-                    typeResult = null
+                    gPhase = "READY"; gHeard = ""; gPlan = emptyList(); gStep = -1; gNote = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false)
-                    refreshType()
-                    Log.i(TAG, "mode -> TYPE")
+                    refreshGenius()
+                    Log.i(TAG, "mode -> STEVE")
                     if (keyboard.hasPermission()) {
                         keyboard.start(ContextCompat.getMainExecutor(context)) { st ->
                             keyboardState = st
-                            refreshType()
+                            refreshGenius()
                         }
                     } else {
                         bluetoothLauncher.launch(keyboard.permissions)
@@ -878,17 +1050,16 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                     MacKeyboard.State.NEEDS_PERMISSION -> bluetoothLauncher.launch(keyboard.permissions)
                     else -> {
                         if (keyboardState != MacKeyboard.State.READY && keyboardState != MacKeyboard.State.CONNECTING) {
-                            keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshType() }
+                            keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshGenius() }
                         }
-                        // Discoverable for two minutes; a Mac that already
-                        // paired with us is asked to reconnect meanwhile.
                         discoverableLauncher.launch(keyboard.discoverableIntent())
                         keyboard.connectBonded()
                     }
                 }
             },
-            onTypeText = { typeText(enter = false) },
-            onTypeTextEnter = { typeText(enter = true) },
+            onListen = { geniusSpeak() },
+            onGeniusRun = { geniusRun() },
+            onGeniusStop = { geniusStop() },
             onVideoMode = {
                 if (!videoMode) {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
@@ -898,13 +1069,13 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                     }
                     videoMode = true
                     typeMode = false
-                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, type = null)
+                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, genius = null)
                     Log.i(TAG, "mode -> VIDEO")
                 }
             },
             onShutter = {
                 if (typeMode) {
-                    typeText(enter = true)
+                    geniusSpeak()
                 } else if (videoMode) {
                     if (activeRecording == null) startRecording() else stopRecording()
                 } else {
@@ -1033,7 +1204,7 @@ private fun buildOverlayState(
     recording: Boolean,
     recordingMs: Long,
     typeMode: Boolean,
-    type: TypeState?,
+    genius: GeniusState?,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -1083,7 +1254,7 @@ private fun buildOverlayState(
         recording = recording,
         recordingMs = recordingMs,
         typeMode = typeMode,
-        type = type,
+        genius = genius,
     )
 }
 

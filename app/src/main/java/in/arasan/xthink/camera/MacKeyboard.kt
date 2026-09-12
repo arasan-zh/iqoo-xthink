@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import `in`.arasan.xthink.guidance.HidKey
 import `in`.arasan.xthink.guidance.HidKeymap
+import `in`.arasan.xthink.guidance.MacOp
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -195,6 +196,55 @@ class MacKeyboard(private val context: Context) {
         }
     }
 
+    /**
+     * Do a plan: chords with their modifiers, text, waits - in order, on
+     * the typing thread. [onProgress] before each op (index), [onDone]
+     * with how many ops ran, or false if the host was gone. Stop early by
+     * setting [cancelled].
+     */
+    @Volatile
+    var cancelled: Boolean = false
+
+    fun perform(ops: List<MacOp>, onProgress: (Int) -> Unit, onDone: (Boolean) -> Unit) {
+        val h = hid
+        val d = host
+        if (h == null || d == null) {
+            callbackExecutor.execute { onDone(false) }
+            return
+        }
+        typist.execute {
+            cancelled = false
+            var ok = true
+            for ((i, op) in ops.withIndex()) {
+                if (cancelled) { ok = false; break }
+                callbackExecutor.execute { onProgress(i) }
+                when (op) {
+                    is MacOp.Chord -> {
+                        val down = byteArrayOf(op.modifiers.toByte(), 0, op.usage.toByte(), 0, 0, 0, 0, 0)
+                        ok = runCatching { h.sendReport(d, 0, down) }.getOrDefault(false) && ok
+                        Thread.sleep(CHORD_HOLD_MS)
+                        runCatching { h.sendReport(d, 0, HidKey.RELEASE) }
+                        Thread.sleep(KEY_UP_MS)
+                    }
+                    is MacOp.Type -> for (k in HidKeymap.keysFor(op.text)) {
+                        if (cancelled) break
+                        runCatching { h.sendReport(d, 0, k.report()) }
+                        Thread.sleep(KEY_DOWN_MS)
+                        runCatching { h.sendReport(d, 0, HidKey.RELEASE) }
+                        Thread.sleep(KEY_UP_MS)
+                    }
+                    is MacOp.Wait -> {
+                        var left = op.ms
+                        while (left > 0 && !cancelled) { val step = minOf(100L, left); Thread.sleep(step); left -= step }
+                    }
+                }
+            }
+            Log.i(TAG, "keyboard: performed ${ops.size} ops ok=$ok cancelled=$cancelled")
+            val result = ok && !cancelled
+            callbackExecutor.execute { onDone(result) }
+        }
+    }
+
     fun stop() {
         val h = hid ?: return
         runCatching { h.unregisterApp() }
@@ -215,5 +265,7 @@ class MacKeyboard(private val context: Context) {
         const val TAG = "xThink"
         const val KEY_DOWN_MS = 8L
         const val KEY_UP_MS = 8L
+        /** A chord is held a little longer so the Mac sees the modifiers. */
+        const val CHORD_HOLD_MS = 40L
     }
 }

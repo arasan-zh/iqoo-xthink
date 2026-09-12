@@ -36,9 +36,9 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
-    /** TYPE tab: the camera reads text and the phone types it on a paired Mac. */
+    /** GENIUS tab: say it, the phone does it on a paired Mac; the camera watches the screen. */
     val typeMode: Boolean = false,
-    val type: TypeState? = null,
+    val genius: GeniusState? = null,
     /** VIDEO tab: the shutter records, focus follows the subject. */
     val videoMode: Boolean = false,
     /** True while a clip is being recorded. */

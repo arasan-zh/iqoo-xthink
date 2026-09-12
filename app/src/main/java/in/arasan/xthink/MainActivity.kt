@@ -25,7 +25,10 @@ class MainActivity : ComponentActivity() {
                 Box {
                     // Dev hook: `am start ... --es enhance <content-uri>` runs the
                     // post-shot crop on an existing photo, for testing over adb.
-                    CameraScreen(debugEnhanceUri = intent.getStringExtra("enhance"))
+                    CameraScreen(
+                        debugEnhanceUri = intent.getStringExtra("enhance"),
+                        debugGenius = intent.getStringExtra("genius"),
+                    )
                     if (splash) Splash(onDone = { splash = false })
                 }
             }

@@ -209,7 +209,7 @@ fun ModeTabs(
             ModeTab("CREATIVE", photo && mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
         }
         ModeTab("VIDEO", videoMode, onClick = onVideo)
-        if (!portraitOnly) ModeTab("TYPE", typeMode, onClick = onType)
+        if (!portraitOnly) ModeTab("STEVE", typeMode, onClick = onType)
     }
 }
 

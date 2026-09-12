@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -140,6 +140,62 @@ class LlmCoach(private val context: Context) {
         return true
     }
 
+    /**
+     * Ask with words only - no image, no vision graph, so the answer comes
+     * faster. Same one-at-a-time rule as [ask].
+     */
+    fun askText(
+        kind: Kind,
+        prompt: String,
+        callbackExecutor: Executor,
+        onText: (text: String, done: Boolean) -> Unit,
+    ): Boolean {
+        val model = llm ?: return false
+        if (state != State.READY) return false
+        if (!busy.compareAndSet(false, true)) return false
+        worker.execute {
+            val started = SystemClock.uptimeMillis()
+            val sb = StringBuilder()
+            runCatching {
+                val session = LlmInferenceSession.createFromOptions(
+                    model,
+                    LlmInferenceSession.LlmInferenceSessionOptions.builder()
+                        .setTopK(TOP_K)
+                        .setTemperature(0.2f)
+                        .build(),
+                )
+                session.use { s ->
+                    // Gemma's turn template, explicitly: without it the raw
+                    // model continues the instructions instead of answering.
+                    s.addQueryChunk("<start_of_turn>user\n$prompt<end_of_turn>\n<start_of_turn>model\n")
+                    var cut = false
+                    s.generateResponseAsync { partial, done ->
+                        if (cut) return@generateResponseAsync
+                        sb.append(partial)
+                        val raw = sb.toString()
+                        // COMMAND wants one line; a plan is many, ending at DONE.
+                        val oneLine = kind == Kind.COMMAND
+                        val nl = if (oneLine) raw.indexOf('\n', startIndex = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)) else -1
+                        val text = if (oneLine) tidy(if (nl >= 0) raw.substring(0, nl) else raw) else raw.trim()
+                        val planDone = !oneLine && kind != Kind.WRITE && Regex("(?m)^\\s*DONE\\s*$").containsMatchIn(raw)
+                        val finished = done || (nl >= 0 && text.isNotBlank()) || planDone
+                        if (finished && !done) {
+                            cut = true
+                            runCatching { s.cancelGenerateResponseAsync() }
+                        }
+                        callbackExecutor.execute { onText(text, finished) }
+                    }.get()
+                }
+                Log.i(TAG, "coach %s: %d ms, %d chars: %s".format(kind, SystemClock.uptimeMillis() - started, sb.length, tidy(sb.toString().lineSequence().firstOrNull { it.isNotBlank() } ?: "").take(120)))
+            }.onFailure {
+                Log.e(TAG, "coach $kind failed", it)
+                callbackExecutor.execute { onText(sb.toString(), true) }
+            }
+            busy.set(false)
+        }
+        return true
+    }
+
     /** The vision encoder wants a modest square-ish image; keep it cheap. */
     private fun fit(src: Bitmap): Bitmap {
         val longest = maxOf(src.width, src.height)
@@ -179,6 +235,79 @@ class LlmCoach(private val context: Context) {
             the one that removes clutter and flatters the person, never cutting at a joint.
             Choose the look: NATURAL, WARM, COOL, VIVID, MONO or FILM - the one that suits the light and the mood.
             Answer with exactly two words: the crop, then the look.
+        """.trimIndent()
+
+        private const val VERBS = """
+            OPEN <app name>          - open an app (Terminal, Safari, Notes, Visual Studio Code...)
+            TERMINAL <command>       - open Terminal and run a shell command
+            CLAUDE <request>         - open Visual Studio Code, start Claude Code, and give it this request (use for anything that creates, writes, builds or fixes code, websites, documents)
+            TYPE <text>              - type text into the current window
+            KEY <chord>              - press keys: enter, tab, escape, cmd+space, cmd+n, ctrl+c ...
+            WAIT <milliseconds>      - pause
+            DONE                     - the request is complete
+        """
+
+        /** A spoken request into a plan of verbs. */
+        fun planPrompt(spoken: String): String = """
+            You operate a Mac through its keyboard on behalf of the user. Reply with a plan: one verb per line, nothing else - no numbering, no explanation, no code fences.
+            Verbs:$VERBS
+            Prefer the fewest lines. Anything with "terminal", "shell", "command", "run", "list", "directory", "folder", "server", "ssh", "git" is a TERMINAL line with the shell command. Anything that creates, writes, builds or fixes code, a website, an app or a document is one CLAUDE line carrying the whole request. Only a plain "open X" is OPEN X. End with DONE on its own line.
+
+            Examples:
+            User: open the terminal and list the files
+            TERMINAL ls -la
+            DONE
+
+            User: connect to the dev server
+            TERMINAL ssh dev@server.local
+            DONE
+
+            User: create a portfolio website for Priya
+            CLAUDE Create a portfolio website for Priya
+            DONE
+
+            User: open safari
+            OPEN Safari
+            DONE
+
+            User: $spoken
+        """.trimIndent()
+
+        /** Did it work? The camera's reading of the Mac screen decides. */
+        fun checkPrompt(spoken: String, screen: String, attempt: Int): String = """
+            You operate a Mac through its keyboard on behalf of the user. The user asked: "$spoken".
+            Attempt $attempt was just performed. The camera now reads this on the Mac screen (OCR, may be noisy):
+            ---
+            ${screen.take(900)}
+            ---
+            If the request appears done or the Mac is doing it, reply exactly: DONE
+            Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
+        """.trimIndent()
+
+        /** The writing itself: a letter, notes, a story - plain text, ready to type. */
+        fun writePrompt(spoken: String): String = """
+            $spoken
+            Write it now, in full, as plain text with normal paragraphs - no title line, no markdown, no notes about what you did.
+            Keep it under 220 words.
+        """.trimIndent()
+
+        /** A short WhatsApp message when the words gave none. */
+        fun messagePrompt(spoken: String): String = """
+            Write the WhatsApp message for this request, one or two friendly sentences, plain text only, no quotes: $spoken
+        """.trimIndent()
+
+        /** One narrow question: the shell command for a spoken request. */
+        fun shellPrompt(spoken: String): String = """
+            Reply with only the one-line macOS shell command that does this, nothing else: $spoken
+        """.trimIndent()
+
+        /** A spoken request, as the exact text to type on the Mac. */
+        fun commandPrompt(spoken: String): String = """
+            You turn a spoken request into exactly what should be typed on a Mac, in the window that has focus -
+            usually a terminal, sometimes an editor or a chat prompt. Reply with ONLY the text to type: a shell
+            command for a terminal request, or the sentence itself if the person is dictating. No quotes,
+            no explanation, no markdown, no trailing punctuation unless it is part of the command.
+            Request: $spoken
         """.trimIndent()
 
         val REFERENCE_PROMPT = """
