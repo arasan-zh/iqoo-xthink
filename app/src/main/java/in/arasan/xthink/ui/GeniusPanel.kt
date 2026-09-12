@@ -47,6 +47,8 @@ data class GeniusState(
     val refusals: List<String?> = emptyList(),
     /** What Steve is writing, as it arrives. */
     val draft: String = "",
+    /** Seconds until the plan runs by itself; 0 when not counting. Cancel stops it. */
+    val countdown: Int = 0,
 )
 
 /**
@@ -98,7 +100,7 @@ fun GeniusPanel(
                     "LISTENING" -> "LISTENING\u2026"
                     "THINKING" -> "STEVE IS THINKING\u2026"
                     "WRITING" -> "STEVE IS WRITING\u2026"
-                    "PLANNED" -> if (refused) "REFUSED \u2014 SEE WHY" else "PLAN \u2014 TAP RUN TO DO IT"
+                    "PLANNED" -> if (refused) "REFUSED \u2014 SEE WHY" else if (state.countdown > 0) "RUNS IN ${state.countdown}\u2026  CANCEL TO STOP" else "PLAN \u2014 TAP RUN TO DO IT"
                     "PROPOSED" -> if (refused) "REFUSED \u2014 SEE WHY" else "NEXT STEP PROPOSED \u2014 TAP RUN"
                     "RUNNING" -> "DOING IT ON THE MAC\u2026  ${state.step + 1}/${state.plan.size}"
                     "CHECKING" -> "LOOKING AT THE SCREEN\u2026  try ${state.attempt}"
@@ -167,7 +169,7 @@ fun GeniusPanel(
                 Answer(text = "Cancel", filled = false, onClick = onStop, modifier = Modifier.weight(1f))
                 if (!refused) {
                     Answer(
-                        text = "Run ${state.plan.size} step${if (state.plan.size == 1) "" else "s"}",
+                        text = if (state.countdown > 0) "Run now  \u00b7  ${state.countdown}" else "Run ${state.plan.size} step${if (state.plan.size == 1) "" else "s"}",
                         filled = true,
                         onClick = onRun,
                         modifier = Modifier.weight(1.4f),

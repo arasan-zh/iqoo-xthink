@@ -59,6 +59,16 @@ class GeniusIntentTest {
     }
 
     @Test
+    fun `the words beat a vaguer model reading`() {
+        val (r, fromModel) = GeniusIntent.decide("PROJECT | open whistle Studio code new in new new window", "open whistle Studio code new in new new window")
+        assertTrue(r is Route.Open && r.newWindow); assertTrue(!fromModel)
+        val (w, _) = GeniusIntent.decide("OTHER | WhatsApp", "in WhatsApp send me a message")
+        assertTrue(w is Route.WhatsApp)
+        val (m, _) = GeniusIntent.decide("OTHER | Hari Prasad", "send me a message to Hari Prasad")
+        assertTrue(m is Route.WhatsApp && m.contact == "Hari Prasad")
+    }
+
+    @Test
     fun `a decorated answer still parses`() {
         assertEquals(Route.Open("Terminal"), GeniusIntent.parse("Sure!\n**OPEN | terminal**\n"))
     }

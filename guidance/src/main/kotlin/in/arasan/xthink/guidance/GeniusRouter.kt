@@ -8,8 +8,17 @@ package `in`.arasan.xthink.guidance
  * model fills in the one blank a route leaves.
  */
 sealed class Route {
-    /** "open safari" - the app's name is in the words. */
-    data class Open(val app: String) : Route()
+    /** "open safari" - the app's name is in the words. [newWindow]: "... in a new window". */
+    data class Open(val app: String, val newWindow: Boolean = false) : Route()
+
+    /** A plain search - results, not the first hit. */
+    data class Search(val query: String) : Route()
+
+    /** "type hello there" - dictation into whatever has focus. */
+    data class Type(val text: String) : Route()
+
+    /** A key chord with a name: "close the window" -> cmd+w. */
+    data class Key(val chord: String, val label: String) : Route()
 
     /** A website: a domain if one was named, else a search that lands on the first result. */
     data class Website(val query: String, val url: String) : Route()
@@ -23,8 +32,10 @@ sealed class Route {
     /** A project: VS Code, a new window, Claude Code, a single-HTML-file brief. */
     data class Project(val request: String) : Route()
 
-    /** WhatsApp: a message to a number. */
-    data class WhatsApp(val number: String, val message: String) : Route()
+    /** WhatsApp: a message to a number or a contact's name. */
+    data class WhatsApp(val number: String, val message: String) : Route() {
+        val contact: String get() = number
+    }
 
     /** Nothing matched: the model plans in the full verb language. */
     data class Plan(val request: String) : Route()
@@ -45,6 +56,54 @@ object GeniusRouter {
         "build", "create", "generate", "implement", "develop", "fix the", "refactor",
     )
     private val WEB_WORDS = listOf("website of", "site of", ".com", ".in", ".org", ".net", ".io", ".dev", "search for", "google", "browse", "go to", "look up")
+
+    /** What speech makes of app names, mapped back. Longest match first. */
+    private val ALIASES: List<Pair<Regex, String>> = listOf(
+        Regex("""\b(?:visual|whistle|vishal|visual's) studio code\b|\bvs ?code\b|\bstudio code\b|\bvisual studio\b""") to "Visual Studio Code",
+        Regex("""\bwhat'?s ?app\b""") to "WhatsApp",
+        Regex("""\bgoogle chrome\b|\bchrome\b""") to "Google Chrome",
+        Regex("""\bsystem settings\b|\bsettings\b""") to "System Settings",
+        Regex("""\btext ?edit\b""") to "TextEdit",
+        Regex("""\bterminal\b""") to "Terminal",
+        Regex("""\bsafari\b""") to "Safari",
+        Regex("""\bnotes\b""") to "Notes",
+        Regex("""\bfinder\b""") to "Finder",
+        Regex("""\bmail\b""") to "Mail",
+        Regex("""\bcalendar\b""") to "Calendar",
+        Regex("""\bmusic\b""") to "Music",
+        Regex("""\bmessages\b""") to "Messages",
+        Regex("""\bxcode\b""") to "Xcode",
+        Regex("""\bslack\b""") to "Slack",
+        Regex("""\bpreview\b""") to "Preview",
+        Regex("""\bphotos\b""") to "Photos",
+        Regex("""\bspotify\b""") to "Spotify",
+        Regex("""\bzoom\b""") to "zoom.us",
+    )
+
+    /** Claude Code, as speech hears it. */
+    private val CLAUDE = Regex("""\b(?:claude|cloud|claw|clod|cloud card|clod card|claude code|cloud code|claw code)\b""")
+
+    /** Phrases that are one key chord on a Mac. */
+    private val KEYS: List<Triple<Regex, String, String>> = listOf(
+        Triple(Regex("""\bclose (?:the |this )?(?:window|tab)\b"""), "cmd+w", "Close the window"),
+        Triple(Regex("""\bquit\b|\bclose (?:the |this )?app\b"""), "cmd+q", "Quit the app"),
+        Triple(Regex("""\bnew tab\b"""), "cmd+t", "New tab"),
+        Triple(Regex("""\b(?:take a )?screenshot\b"""), "cmd+shift+3", "Screenshot"),
+        Triple(Regex("""\bundo\b"""), "cmd+z", "Undo"),
+        Triple(Regex("""\bredo\b"""), "cmd+shift+z", "Redo"),
+        Triple(Regex("""\bselect all\b"""), "cmd+a", "Select all"),
+        Triple(Regex("""\bcopy\b(?! me)"""), "cmd+c", "Copy"),
+        Triple(Regex("""\bpaste\b"""), "cmd+v", "Paste"),
+        Triple(Regex("""\bsave\b"""), "cmd+s", "Save"),
+        Triple(Regex("""\bswitch (?:the )?app\b|\bnext app\b"""), "cmd+tab", "Switch app"),
+        Triple(Regex("""\block (?:the )?(?:screen|mac|computer)\b"""), "ctrl+cmd+q", "Lock the screen"),
+        Triple(Regex("""\bgo back\b"""), "cmd+[", "Go back"),
+        Triple(Regex("""\b(?:press|hit) enter\b"""), "enter", "Enter"),
+        Triple(Regex("""\b(?:press|hit) escape\b|\bescape\b"""), "escape", "Escape"),
+        Triple(Regex("""\bfull ?screen\b"""), "ctrl+cmd+f", "Full screen"),
+        Triple(Regex("""\bspotlight\b"""), "cmd+space", "Spotlight"),
+        Triple(Regex("""\bmute\b|\bpause\b|\bplay pause\b"""), "space", "Play / pause"),
+    )
 
     /** Apps a plain "open ..." may name; the rest go to the model. */
     private val APPS = mapOf(
@@ -69,16 +128,40 @@ object GeniusRouter {
             s == "help"
         ) return Route.Help
 
-        // WhatsApp with a number in the words.
-        if ("whatsapp" in s || "whats app" in s) {
-            val number = Regex("""(\+?\d[\d ]{7,}\d)""").find(spoken)?.groupValues?.get(1)?.replace(" ", "")
-            if (number != null) {
-                // The message is whatever follows the LAST "saying"/"say"/"that says"/"message"/"text".
-                val message = Regex("""^.*\b(?:saying|say|that says|message|text)\s+(.+)$""", RegexOption.IGNORE_CASE)
-                    .find(spoken.replace(number, " "))?.groupValues?.get(1)?.trim()?.trim('"', '\'') ?: ""
-                return Route.WhatsApp(number, message)
-            }
+        // Claude Code named outright: a project, with whatever follows as the brief.
+        if (CLAUDE.containsMatchIn(s) && Regex("""\b(?:build|make|create|write|generate|code|website|app|project|portfolio|page|bill me|design)\b""").containsMatchIn(s)) {
+            val brief = Regex("""(?:and|to)\s+(?:build|make|create|write|generate|design|bill me)\s+(?:me\s+)?(.+)$""").find(s)?.groupValues?.get(1)
+                ?: s.replace(CLAUDE, " ").replace(Regex("""\b(?:open|launch|start|and|then|please)\b"""), " ").replace(Regex("""\s+"""), " ").trim()
+            return Route.Project(brief.ifBlank { spoken.trim() })
         }
+
+        // WhatsApp: a message to a number, or to a name. A plain "open
+        // whatsapp" is just an open and falls through to the app aliases.
+        val mentionsWhatsApp = Regex("""\bwhat'?s ?app\b""").containsMatchIn(s)
+        val messaging = Regex("""\b(?:send|text|message|msg|whatsapp)\b""").containsMatchIn(s) &&
+            Regex("""\b(?:message|text|msg|saying|say|to)\b""").containsMatchIn(s.replace(Regex("""\bwhat'?s ?app\b"""), " "))
+        if (messaging || (mentionsWhatsApp && !Regex("""^(?:please )?(?:open|launch|start)\s+what'?s ?app\s*(?:app)?$""").matches(s))) {
+            val number = Regex("""(\+?\d[\d ]{7,}\d)""").find(spoken)?.groupValues?.get(1)?.replace(" ", "")
+            val message = Regex("""^.*\b(?:saying|say|that says|says)\s+(.+)$""", RegexOption.IGNORE_CASE)
+                .find(spoken)?.groupValues?.get(1)?.trim()?.trim('"', '\'') ?: ""
+            if (number != null) return Route.WhatsApp(number, message)
+            // The name: after "to"/"for", else right after "text"/"message"; the
+            // message tail and the "on whatsapp" tail are cut first.
+            val head = s.replace(Regex("""\b(?:saying|say|that says|says)\b.*$"""), " ")
+                .replace(Regex("""\b(?:on|in|via|through|using)\s+what'?s ?app\b"""), " ")
+                .replace(Regex("""\bwhat'?s ?app\b"""), " ")
+            val name = Regex("""\b(?:to|for)\s+((?:[a-z]+\s?){1,3})$""").find(head.trim())?.groupValues?.get(1)
+                ?: Regex("""\b(?:text|message|msg)\s+((?:[a-z]+\s?){1,3})$""").find(head.trim())?.groupValues?.get(1)
+            val cleaned = name?.replace(Regex("""\b(?:me|my|a|an|the|him|her|them|please|now)\b"""), " ")?.replace(Regex("""\s+"""), " ")?.trim().orEmpty()
+            if (cleaned.isNotEmpty()) return Route.WhatsApp(cleaned.split(' ').joinToString(" ") { w -> w.replaceFirstChar { it.uppercase() } }, message)
+            return Route.WhatsApp("", message) // the caller asks who to
+        }
+
+        // A key chord in words.
+        for ((re, chord, label) in KEYS) if (re.containsMatchIn(s) && !s.startsWith("open") && !s.startsWith("play ")) return Route.Key(chord, label)
+
+        // "type hello there" - dictation.
+        Regex("""^(?:please )?type\s+(.+)$""").find(s)?.let { return Route.Type(spoken.trim().substring(it.range.first + it.value.length - it.groupValues[1].length)) }
 
         // YouTube: "play X on youtube" - or just "play X" - lands on the video itself.
         val tube = "youtube" in s || "you tube" in s
@@ -94,12 +177,21 @@ object GeniusRouter {
             else Route.Website("youtube: $q", youtubePlayUrl(q))
         }
 
-        // A plain open of a known app.
-        val open = Regex("""^(?:please )?(?:open|launch|start) (?:the |up )?(.+?)(?: app| application| browser)?(?: please)?$""").find(s)
-        if (open != null) {
-            val name = open.groupValues[1].trim()
-            val known = APPS[name]
-            if (known != null && " and " !in name) return Route.Open(known)
+        // An app by name - as speech hears it - possibly in a new window.
+        val newWindow = Regex("""\bnew window\b""").containsMatchIn(s)
+        if (Regex("""^(?:please )?(?:open|launch|start)\b""").containsMatchIn(s) || newWindow) {
+            for ((re, app) in ALIASES) if (re.containsMatchIn(s)) {
+                val rest = s.replace(re, " ").replace(Regex("""\b(?:open|launch|start|the|up|app|application|browser|in|a|new|window|please|and)\b"""), " ").trim()
+                // "open safari and search for X" is more than an open: fall through.
+                if (rest.isBlank() || newWindow) return Route.Open(app, newWindow)
+                break
+            }
+        }
+
+        // A plain search: results, not the first hit.
+        Regex("""^(?:please )?(?:search|google|look up|search for)\s+(?:for\s+)?(.+)$""").find(s)?.let { m ->
+            val q = m.groupValues[1].replace(Regex("""\b(?:on|in)\s+(?:google|safari|the web|the internet)\b"""), "").trim()
+            if (!Regex("""\b(?:website|site|home ?page)\b""").containsMatchIn(q)) return Route.Search(q)
         }
 
         // A website.
@@ -108,12 +200,13 @@ object GeniusRouter {
         if (WEB_WORDS.any { Regex("""(?<![a-z])${Regex.escape(it)}(?![a-z])""").containsMatchIn(s) } || Regex("""\b(open|go to|visit|show me) (?:the )?(.+?) (?:website|site|web page|home ?page)\b""").containsMatchIn(s)) {
             return Route.Website(webTopic(s), luckyUrl(webTopic(s)))
         }
-        val terminal = TERMINAL_WORDS.any { it in "$s " }
-        val write = WRITE_WORDS.any { it in "$s " }
-        val project = PROJECT_WORDS.any { it in "$s " }
+        fun hasWord(list: List<String>) = list.any { w -> Regex("""(?<![a-z])${Regex.escape(w.trim())}(?![a-z])""").containsMatchIn(s) }
+        val terminal = hasWord(TERMINAL_WORDS)
+        val write = hasWord(WRITE_WORDS)
+        val project = hasWord(PROJECT_WORDS)
         // Writing words win over making words: "write a one page story" is
         // prose, whatever "page" suggests. Code words alone make a project.
-        val code = listOf("code", "html", "website", "web site", "web page", "landing page", "app ", "portfolio", "project", "implement", "refactor", "fix the").any { it in "$s " }
+        val code = hasWord(listOf("code", "html", "website", "web site", "web page", "landing page", "app", "portfolio", "project", "implement", "refactor", "fix the"))
         return when {
             write && !terminal && !code -> Route.Write(spoken.trim())
             project && !write -> Route.Project(spoken.trim())
@@ -151,7 +244,7 @@ object GeniusRouter {
     /** The first YouTube hit for a title: the watch page, which plays. */
     fun youtubePlayUrl(title: String): String = "https://duckduckgo.com/?q=%5Csite%3Ayoutube.com+" + encode(title)
 
-    private fun encode(text: String): String = text.trim().replace(Regex("\\s+"), "+")
+    fun encode(text: String): String = text.trim().replace(Regex("\\s+"), "+")
         .replace("&", "%26").replace("#", "%23").replace("?", "%3F").replace("'", "%27").replace("\"", "%22")
 
     /** The single-file brief Claude Code is handed for a project. */
@@ -166,7 +259,19 @@ object GeniusRouter {
      * route needs none.
      */
     fun steps(route: Route, text: String? = null): List<PlanStep> = when (route) {
-        is Route.Open -> listOf(PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app)))
+        is Route.Open -> if (!route.newWindow) listOf(PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app))) else listOf(
+            PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app)),
+            PlanStep("NEW window", listOf(GeniusPlan.chord(if (route.app == "Visual Studio Code") "cmd+shift+n" else "cmd+n")!!, MacOp.Wait(1200))),
+        )
+        is Route.Search -> listOf(
+            PlanStep("OPEN Safari", GeniusPlan.open("Safari")),
+            PlanStep("SEARCH ${route.query}", listOf(
+                GeniusPlan.chord("cmd+l")!!, MacOp.Wait(500), MacOp.Type("https://duckduckgo.com/?q=" + encode(route.query)), MacOp.Wait(300),
+                GeniusPlan.chord("enter")!!, MacOp.Wait(2000),
+            )),
+        )
+        is Route.Type -> listOf(PlanStep("TYPE ${route.text}", listOf(MacOp.Type(route.text))))
+        is Route.Key -> listOf(PlanStep("${route.label} (${route.chord})", listOf(GeniusPlan.chord(route.chord)!!, MacOp.Wait(400))))
         is Route.Website -> listOf(
             PlanStep("OPEN Safari", GeniusPlan.open("Safari")),
             PlanStep("GO TO ${route.query}", listOf(
@@ -191,8 +296,8 @@ object GeniusRouter {
         )
         is Route.WhatsApp -> listOf(
             PlanStep("OPEN WhatsApp", GeniusPlan.open("WhatsApp")),
-            PlanStep("NEW chat to ${route.number}", listOf(
-                GeniusPlan.chord("cmd+n")!!, MacOp.Wait(1500), MacOp.Type(route.number), MacOp.Wait(2000),
+            PlanStep("NEW chat to ${route.contact}", listOf(
+                GeniusPlan.chord("cmd+n")!!, MacOp.Wait(1500), MacOp.Type(route.contact), MacOp.Wait(2500),
                 GeniusPlan.chord("enter")!!, MacOp.Wait(2000),
             )),
             PlanStep("SEND ${(text ?: route.message).take(60)}", listOf(

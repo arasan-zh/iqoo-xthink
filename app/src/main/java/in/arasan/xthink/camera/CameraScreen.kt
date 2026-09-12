@@ -144,6 +144,9 @@ private const val TRACK_LOST_MS = 1_500L
 /** Genius stops proposing after this many plan-and-check rounds. */
 private const val GENIUS_MAX_ATTEMPTS = 3
 
+/** A clean plan runs by itself after this many seconds unless cancelled. */
+private const val GENIUS_AUTORUN_S = 5
+
 /** In ASK, an answer is dropped once the phone has turned this far from where it was asked. */
 private const val ASK_MOVE_DEG = 25f
 
@@ -442,6 +445,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     var gAttempt by remember { mutableIntStateOf(0) }
     var gNote by remember { mutableStateOf<String?>(null) }
     var gDraft by remember { mutableStateOf("") }
+    var gCountdown by remember { mutableIntStateOf(0) }
+    var gArm by remember { mutableIntStateOf(0) }
     DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close(); speech.close() } }
 
     fun keyboardLine(): String = when (keyboardState) {
@@ -469,6 +474,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 note = gNote,
                 refusals = CommandSafety.refusals(gPlan),
                 draft = gDraft,
+                countdown = gCountdown,
             ) else null,
         )
     }
@@ -511,6 +517,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         gNote = if (refusals.any { it != null }) "This plan will not run." else null
         Log.i(TAG, "genius: $phase ${steps.size} steps: ${steps.joinToString(" | ") { it.line }} refused=${refusals.count { it != null }}")
         haptics.play(HapticCue.TICK, 0.5f)
+        // A clean plan runs by itself after a short count - Cancel stops it.
+        gCountdown = if (phase == "PLANNED" && refusals.all { it == null }) GENIUS_AUTORUN_S else 0
+        gArm += 1
         refreshGenius()
     }
 
@@ -542,6 +551,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     /** The tap. Performs the plan on the table, if CommandSafety lets it. */
     fun geniusRun() {
         val steps = gPlan
+        gCountdown = 0
         if (steps.isEmpty() || gPhase !in setOf("PLANNED", "PROPOSED")) return
         if (!CommandSafety.isSafe(steps)) { gNote = "This plan will not run."; refreshGenius(); return }
         if (keyboardState != MacKeyboard.State.CONNECTED) { geniusFail("the Mac is not linked - tap Pair Mac"); return }
@@ -556,7 +566,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         keyboard.perform(
             ops,
             onProgress = { i -> if (i < stepOfOp.size && stepOfOp[i] != gStep) { gStep = stepOfOp[i]; refreshGenius() } },
-            onDone = { ok -> if (!ok) geniusFail("the keyboard link dropped or Stop was pressed") else geniusCheck() },
+            onDone = { ok -> if (!ok) geniusFail("the keyboard link dropped or Stop was pressed") else geniusDone(null) },
         )
     }
 
@@ -572,7 +582,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 refreshGenius()
                 true
             }
-            is Route.Open, is Route.Website, is Route.Project -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
+            is Route.Open, is Route.Website, is Route.Project, is Route.Search, is Route.Type, is Route.Key -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
             is Route.Terminal -> if (route.command != null) {
                 geniusPropose(GeniusRouter.steps(route, route.command), "PLANNED"); true
             } else coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.shellPrompt(heard), main) { text, done ->
@@ -591,7 +601,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     if (body.isBlank()) geniusFail("nothing was written") else { geniusPropose(GeniusRouter.steps(route, body), "PLANNED"); gDraft = body; refreshGenius() }
                 }
             }
-            is Route.WhatsApp -> if (route.message.isNotBlank()) {
+            is Route.WhatsApp -> if (route.contact.isBlank()) {
+                geniusFail("say who to message - a name or a number"); true
+            } else if (route.message.isNotBlank()) {
                 geniusPropose(GeniusRouter.steps(route), "PLANNED"); true
             } else coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.messagePrompt(heard), main) { text, done ->
                 if (!done || gPhase != "THINKING") return@askText
@@ -601,7 +613,10 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             is Route.Plan -> coach.askText(LlmCoach.Kind.PLAN, LlmCoach.planPrompt(heard), main) { text, done ->
                 if (!done || gPhase != "THINKING") return@askText
                 val steps = GeniusPlan.parse(text).filter { !it.line.uppercase().startsWith("DONE") }
-                if (steps.isEmpty()) geniusFail("no plan came back: ${text.take(80)}") else geniusPropose(steps, "PLANNED")
+                // A plan that only types or waits is the model echoing the
+                // request into whatever has focus. That is not a plan.
+                val real = steps.any { st -> st.line.uppercase().let { it.startsWith("OPEN ") || it.startsWith("TERMINAL ") || it.startsWith("CLAUDE ") } }
+                if (steps.isEmpty() || !real) geniusFail("I don't know how to do that on the Mac yet") else geniusPropose(steps, "PLANNED")
             }
         }
         if (!asked) geniusFail("Steve is busy")
@@ -654,6 +669,17 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         )
     }
 
+    LaunchedEffect(gArm) {
+        if (gCountdown <= 0) return@LaunchedEffect
+        while (gCountdown > 0 && gPhase == "PLANNED") {
+            delay(1_000L)
+            if (gPhase != "PLANNED") break
+            gCountdown -= 1
+            refreshGenius()
+            if (gCountdown == 0) { Log.i(TAG, "genius: countdown reached zero - running"); geniusRun() }
+        }
+    }
+
     fun geniusStop() {
         Log.i(TAG, "genius: stop pressed")
         keyboard.cancelled = true
@@ -669,6 +695,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
         if (debugGenius != null && !typeMode) {
             typeMode = true
             refreshGenius()
+            ensureCoach()
             if (keyboard.hasPermission()) keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshGenius() }
         }
     }

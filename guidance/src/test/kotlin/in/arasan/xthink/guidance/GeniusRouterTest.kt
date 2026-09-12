@@ -21,7 +21,6 @@ class GeniusRouterTest {
         assertEquals("https://apple.com", r.url)
         val g = GeniusRouter.route("open the iqoo website") as Route.Website
         assertTrue(g.url.startsWith("https://duckduckgo.com/?q=%5Ciqoo"))
-        assertTrue(GeniusRouter.route("search for the hackathon schedule") is Route.Website)
         val steps = GeniusRouter.steps(r)
         assertEquals(listOf("OPEN Safari", "GO TO apple.com"), steps.map { it.line })
     }
@@ -89,6 +88,43 @@ class GeniusRouterTest {
         assertEquals(Route.Help, GeniusRouter.route("what can you do"))
         assertTrue(GeniusRouter.steps(Route.Help).size == GeniusRouter.HELP.size)
         assertTrue(GeniusRouter.steps(Route.Help).all { it.ops.isEmpty() })
+    }
+
+    @Test
+    fun `speech-mangled names still open the right app, in a new window when asked`() {
+        assertEquals(Route.Open("Visual Studio Code", newWindow = true), GeniusRouter.route("open whistle Studio code new in new new window"))
+        assertEquals(Route.Open("Visual Studio Code"), GeniusRouter.route("open vs code"))
+        assertEquals(Route.Open("WhatsApp"), GeniusRouter.route("open what's app"))
+        val steps = GeniusRouter.steps(Route.Open("Visual Studio Code", newWindow = true))
+        assertEquals(listOf("OPEN Visual Studio Code", "NEW window"), steps.map { it.line })
+    }
+
+    @Test
+    fun `claude code as speech hears it is a project with the brief`() {
+        val r = GeniusRouter.route("open Cloud card and bill me a super premium portfolio website") as Route.Project
+        assertTrue(r.request.contains("portfolio website"))
+        assertTrue(GeniusRouter.route("open claude code and build a landing page for xThink") is Route.Project)
+    }
+
+    @Test
+    fun `messages go to a contact by name, and never to a code editor`() {
+        val r = GeniusRouter.route("send me a message to Hari Prasad") as Route.WhatsApp
+        assertEquals("Hari Prasad", r.contact)
+        val w = GeniusRouter.route("in WhatsApp send me a message")
+        assertTrue(w is Route.WhatsApp && w.contact.isBlank())
+        val s = GeniusRouter.route("text Priya on whatsapp saying see you at nine") as Route.WhatsApp
+        assertEquals("Priya", s.contact); assertEquals("see you at nine", s.message)
+        assertEquals("NEW chat to Hari Prasad", GeniusRouter.steps(r, "hi")[1].line)
+    }
+
+    @Test
+    fun `keys, typing and plain searches`() {
+        assertEquals(Route.Key("cmd+w", "Close the window"), GeniusRouter.route("close the window"))
+        assertEquals(Route.Key("cmd+shift+3", "Screenshot"), GeniusRouter.route("take a screenshot"))
+        assertEquals(Route.Type("hello there"), GeniusRouter.route("type hello there"))
+        val q = GeniusRouter.route("search for the hackathon schedule") as Route.Search
+        assertEquals("the hackathon schedule", q.query)
+        assertTrue(GeniusRouter.route("open the iqoo website") is Route.Website)
     }
 
     @Test

@@ -30,9 +30,11 @@ object GeniusIntent {
             is Route.Website -> mentioned(route.query)
             is Route.Terminal -> GeniusRouter.route(spoken) is Route.Terminal || mentioned(route.request)
             is Route.Write -> mentioned(route.request)
-            // A story or a letter is prose even when the model calls it a project.
-            is Route.Project -> mentioned(route.request) && GeniusRouter.route(spoken) !is Route.Write
-            is Route.WhatsApp -> spoken.replace(" ", "").contains(route.number)
+            // A project only when the words say so too: speech mangles app names
+            // and the model then calls "open whistle studio code" a project.
+            is Route.Project -> GeniusRouter.route(spoken) is Route.Project
+            is Route.WhatsApp -> route.number.isNotBlank() && (spoken.replace(" ", "").contains(route.number) || mentioned(route.number))
+            is Route.Search, is Route.Type, is Route.Key -> true
             is Route.Plan -> true
             is Route.Help -> true
         }
@@ -41,7 +43,10 @@ object GeniusIntent {
     /** The model's route when it is plausible for the words, else the router's. */
     fun decide(answer: String, spoken: String): Pair<Route, Boolean> {
         val fromModel = parse(answer)
-        if (fromModel == null || !plausible(fromModel, spoken)) return GeniusRouter.route(spoken) to false
+        val fromWords = GeniusRouter.route(spoken)
+        if (fromModel == null || !plausible(fromModel, spoken)) return fromWords to false
+        // A concrete reading of the words beats the model's vaguer one.
+        if (fromWords !is Route.Plan && fromModel::class != fromWords::class && fromWords !is Route.Website) return fromWords to false
         // The words are the ground truth for a message: when they carry a
         // longer one to the same number, the model's shortening loses.
         if (fromModel is Route.WhatsApp) {
