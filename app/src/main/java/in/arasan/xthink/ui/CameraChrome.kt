@@ -22,6 +22,15 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlin.math.exp
+import kotlin.math.ln
+import kotlin.math.roundToInt
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -51,38 +60,86 @@ import kotlin.math.abs
 
 private val ZOOM_STOPS = listOf(1f, 2f, 3f, 10f)
 
+/**
+ * The zoom bar. Tap a stop, or drag anywhere along it: position maps to
+ * zoom on a log scale between 1x and the lens's maximum, so 2x sits where
+ * the "2" is. The readout above shows the ratio and the 35mm-equivalent
+ * focal length - the number a photographer actually thinks in.
+ */
 @Composable
-fun ZoomSlider(
+fun ZoomBar(
     zoomRatio: Float,
     maxZoomRatio: Float,
+    baseFocalMm: Float,
     onZoomSelected: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
-        modifier = modifier
-            .clip(RoundedCornerShape(XT.Corner))
-            .background(XT.Chip)
-            .padding(horizontal = 6.dp, vertical = 5.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        ZOOM_STOPS.forEachIndexed { index, stop ->
-            val reachable = stop <= maxZoomRatio + 0.01f
-            val active = abs(zoomRatio - stop) < 0.25f
-            ZoomStop(stop, active, reachable) { if (reachable) onZoomSelected(stop) }
-            if (index != ZOOM_STOPS.lastIndex) {
-                Text(
-                    text = "···",
-                    color = XT.OnChipMuted,
-                    fontSize = 11.sp,
-                    modifier = Modifier.padding(horizontal = 2.dp),
+    val maxLog = ln(maxZoomRatio.coerceAtLeast(1.01f))
+    var dragging by remember { mutableStateOf(false) }
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = modifier) {
+        val mm = (baseFocalMm * zoomRatio).roundToInt()
+        Text(
+            text = "%.1fx  \u00b7  %d mm".format(zoomRatio, mm),
+            color = if (dragging) XT.Gold else XT.OnChip,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = 0.5.sp,
+            modifier = Modifier
+                .padding(bottom = 6.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(XT.Chip)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+        )
+        Box(
+            modifier = Modifier
+                .width(300.dp)
+                .clip(RoundedCornerShape(XT.Corner))
+                .background(XT.Chip)
+                .pointerInput(maxZoomRatio) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { dragging = true },
+                        onDragEnd = { dragging = false },
+                        onDragCancel = { dragging = false },
+                    ) { change, _ ->
+                        change.consume()
+                        val t = ((change.position.x - BAR_PAD_PX) / (size.width - 2 * BAR_PAD_PX)).coerceIn(0f, 1f)
+                        onZoomSelected(exp(t * maxLog).coerceIn(1f, maxZoomRatio))
+                    }
+                }
+                .padding(horizontal = 10.dp, vertical = 5.dp),
+        ) {
+            // Stops sit at their log position along the bar.
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth().height(34.dp)) {
+                val w = maxWidth
+                ZOOM_STOPS.forEach { stop ->
+                    val reachable = stop <= maxZoomRatio + 0.01f
+                    val t = (ln(stop) / maxLog).coerceIn(0f, 1f)
+                    val active = abs(zoomRatio - stop) < 0.15f
+                    ZoomStop(
+                        stop = stop,
+                        active = active,
+                        reachable = reachable,
+                        modifier = Modifier.offset(x = (w - 34.dp) * t),
+                    ) { if (reachable) onZoomSelected(stop) }
+                }
+                // The thumb: where the zoom is right now, between stops.
+                val tt = (ln(zoomRatio.coerceAtLeast(1f)) / maxLog).coerceIn(0f, 1f)
+                Box(
+                    modifier = Modifier
+                        .offset(x = (w - 6.dp) * tt, y = 30.dp)
+                        .size(width = 6.dp, height = 3.dp)
+                        .clip(RoundedCornerShape(2.dp))
+                        .background(XT.Gold),
                 )
             }
         }
     }
 }
 
+private const val BAR_PAD_PX = 26f
+
 @Composable
-private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: () -> Unit) {
+private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, modifier: Modifier = Modifier, onClick: () -> Unit) {
     val tint by animateColorAsState(
         targetValue = when {
             !reachable -> XT.OnChipMuted.copy(alpha = 0.3f)
@@ -94,7 +151,7 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: 
     )
     val label = if (stop == 1f) "1x" else stop.toInt().toString()
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(34.dp)
             .clip(CircleShape)
             .background(if (active) XT.Gold else Color.Transparent)
@@ -121,16 +178,24 @@ private fun ZoomStop(stop: Float, active: Boolean, reachable: Boolean, onClick: 
 // ---------------------------------------------------------------------------
 
 @Composable
-fun ModeTabs(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Modifier = Modifier) {
+fun ModeTabs(
+    mode: CoachMode,
+    onModeSelected: (CoachMode) -> Unit,
+    modifier: Modifier = Modifier,
+    portraitOnly: Boolean = false,
+) {
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         ModeTab("PORTRAIT", mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
-        ModeTab("SCENE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
-        ModeTab("OBJECT", mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
-        ModeTab("CREATIVE", mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
+        // The selfie lens is for people: the other modes stay on the rear camera.
+        if (!portraitOnly) {
+            ModeTab("SCENE", mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+            ModeTab("OBJECT", mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
+            ModeTab("CREATIVE", mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
+        }
     }
 }
 
@@ -293,99 +358,6 @@ private fun Shutter(locked: Boolean, onClick: () -> Unit) {
         drawCircle(ring, c - 2.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
         drawCircle(inner.copy(alpha = 0.9f), c - 10.dp.toPx(), Offset(c, c), style = Stroke(3.dp.toPx()))
         if (locked) drawCircle(XT.Green.copy(alpha = 0.12f), c - 11.dp.toPx(), Offset(c, c))
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Mode rail - Portrait | Scene (CoachMode.WIDE). Live, the same state as the tabs. Nothing on
-// this screen is decorative any more: every icon does something.
-// ---------------------------------------------------------------------------
-
-@Composable
-fun ModeRail(mode: CoachMode, onModeSelected: (CoachMode) -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier
-            .clip(RoundedCornerShape(XT.Corner))
-            .background(XT.Chip)
-            .padding(vertical = 12.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        RailItem("Portrait", glyph = 0, active = mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
-        RailItem("Scene", glyph = 1, active = mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
-        RailItem("Object", glyph = 2, active = mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
-        RailItem("Creative", glyph = 3, active = mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
-    }
-}
-
-@Composable
-private fun RailItem(label: String, glyph: Int, active: Boolean, onClick: () -> Unit) {
-    val tint by animateColorAsState(
-        targetValue = if (active) XT.Green else XT.Inert,
-        animationSpec = tween(180),
-        label = "rail",
-    )
-    Column(
-        modifier = Modifier.clickable(
-            interactionSource = remember { MutableInteractionSource() },
-            indication = null,
-            onClick = onClick,
-        ),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Canvas(modifier = Modifier.size(19.dp)) { drawRailGlyph(glyph, tint) }
-        Text(
-            text = label,
-            color = tint,
-            fontSize = 9.sp,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.padding(top = 3.dp),
-        )
-    }
-}
-
-private fun DrawScope.drawRailGlyph(index: Int, color: Color) {
-    val c = size.minDimension / 2f
-    val r = c * 0.8f
-    val stroke = 1.6f.dp.toPx()
-    when (index) {
-        0 -> { // portrait - a person
-            drawCircle(color, r * 0.34f, Offset(c, c - r * 0.42f), style = Stroke(stroke))
-            drawArc(color, 200f, 140f, false, Offset(c - r * 0.72f, c + r * 0.1f), Size(r * 1.44f, r * 1.3f), style = Stroke(stroke))
-        }
-        1 -> { // wide - two people side by side
-            drawCircle(color, r * 0.28f, Offset(c - r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
-            drawCircle(color, r * 0.28f, Offset(c + r * 0.42f, c - r * 0.35f), style = Stroke(stroke))
-            drawArc(color, 200f, 140f, false, Offset(c - r * 1.0f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
-            drawArc(color, 200f, 140f, false, Offset(c - r * 0.15f, c + r * 0.15f), Size(r * 1.15f, r * 1.1f), style = Stroke(stroke))
-        }
-        3 -> { // creative - an aperture: a ring with six blades
-            drawCircle(color, r * 0.9f, Offset(c, c), style = Stroke(stroke))
-            for (i in 0 until 6) {
-                val a = Math.toRadians(i * 60.0)
-                val b = Math.toRadians(i * 60.0 + 100.0)
-                drawLine(
-                    color,
-                    Offset(c + kotlin.math.cos(a).toFloat() * r * 0.9f, c + kotlin.math.sin(a).toFloat() * r * 0.9f),
-                    Offset(c + kotlin.math.cos(b).toFloat() * r * 0.35f, c + kotlin.math.sin(b).toFloat() * r * 0.35f),
-                    stroke, StrokeCap.Round,
-                )
-            }
-        }
-        else -> { // object - a cube in outline
-            val s = r * 0.62f
-            val dx = r * 0.32f
-            val dy = r * 0.28f
-            // front face
-            drawRoundRect(color, Offset(c - s / 2f - dx / 2f, c - s / 2f + dy / 2f), Size(s, s), androidx.compose.ui.geometry.CornerRadius(1.5f.dp.toPx()), style = Stroke(stroke))
-            // top edge
-            drawLine(color, Offset(c - s / 2f - dx / 2f, c - s / 2f + dy / 2f), Offset(c - s / 2f + dx / 2f, c - s / 2f - dy / 2f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c + s / 2f - dx / 2f, c - s / 2f + dy / 2f), Offset(c + s / 2f + dx / 2f, c - s / 2f - dy / 2f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c - s / 2f + dx / 2f, c - s / 2f - dy / 2f), Offset(c + s / 2f + dx / 2f, c - s / 2f - dy / 2f), stroke, StrokeCap.Round)
-            // right edge
-            drawLine(color, Offset(c + s / 2f + dx / 2f, c - s / 2f - dy / 2f), Offset(c + s / 2f + dx / 2f, c + s / 2f - dy / 2f), stroke, StrokeCap.Round)
-            drawLine(color, Offset(c + s / 2f - dx / 2f, c + s / 2f + dy / 2f), Offset(c + s / 2f + dx / 2f, c + s / 2f - dy / 2f), stroke, StrokeCap.Round)
-        }
     }
 }
 
@@ -594,7 +566,16 @@ fun ReferenceButton(
 // ---------------------------------------------------------------------------
 
 @Composable
-fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) =
+    OnOffChip(label = "Easy shot", on = on, onToggle = onToggle, modifier = modifier)
+
+/** The words of guidance, on or off. Off, the reticle and the arrows still guide. */
+@Composable
+fun GuideToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) =
+    OnOffChip(label = "Guide", on = on, onToggle = onToggle, modifier = modifier)
+
+@Composable
+private fun OnOffChip(label: String, on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     val bg by animateColorAsState(if (on) XT.Green.copy(alpha = 0.22f) else XT.Chip, tween(180), label = "easyBg")
     val fg by animateColorAsState(if (on) XT.Green else XT.OnChip, tween(180), label = "easyFg")
     Row(
@@ -618,7 +599,7 @@ fun EasyShotToggle(on: Boolean, onToggle: () -> Unit, modifier: Modifier = Modif
                 .background(fg),
         )
         Text(
-            text = "Easy shot",
+            text = label,
             color = fg,
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,

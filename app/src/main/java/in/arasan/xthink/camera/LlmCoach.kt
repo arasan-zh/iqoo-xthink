@@ -172,12 +172,13 @@ class LlmCoach(private val context: Context) {
             Be specific to what you see. No greeting, no preamble, no punctuation flourishes.
         """.trimIndent()
 
-        /** The crop decision. The answer is parsed by PhotographerCrop.parseCut. */
+        /** The crop and the look, in two words. Parsed by PhotographerCrop.parseCut and Looks. */
         val CROP_PROMPT = """
-            You are a portrait photographer deciding how to crop this photo of a person.
-            Choose exactly one: FEET (full body), THIGH (three-quarter length), HIP (half length), CHEST (head and shoulders).
-            Prefer the crop that removes clutter and flatters the person; never cut at a joint.
-            Answer with only the one word.
+            You are a portrait photographer finishing this photo of a person.
+            Choose the crop: FEET (full body), THIGH (three-quarter), HIP (half length) or CHEST (head and shoulders) -
+            the one that removes clutter and flatters the person, never cutting at a joint.
+            Choose the look: NATURAL, WARM, COOL, VIVID, MONO or FILM - the one that suits the light and the mood.
+            Answer with exactly two words: the crop, then the look.
         """.trimIndent()
 
         val REFERENCE_PROMPT = """

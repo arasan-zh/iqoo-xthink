@@ -120,7 +120,7 @@ STEPS
     fi
     for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
       have=$(adb -s "$s" shell stat -c %s /data/local/tmp/llm/gemma-3n-E2B-it-int4.task 2>/dev/null | tr -d '\r')
-      if [ "$have" = "$(stat -f %z "$model")" ]; then
+      if [ "$have" = "$(wc -c < "$model" | tr -d " ")" ]; then
         echo "$s: model already there"
         continue
       fi

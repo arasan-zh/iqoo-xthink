@@ -26,6 +26,7 @@ import `in`.arasan.xthink.guidance.Cut
 import `in`.arasan.xthink.guidance.HeadroomExtension
 import `in`.arasan.xthink.guidance.PhotographerCrop
 import `in`.arasan.xthink.guidance.SubjectBox
+import `in`.arasan.xthink.ui.Looks
 import java.util.concurrent.Executor
 import java.util.concurrent.Executors
 
@@ -76,7 +77,13 @@ class PhotoEnhancer(private val context: Context) {
      * The look at a photo: the small decode for the review, a crop if one is
      * worth it, and whether the photo is soft (missed focus or motion).
      */
-    class Result(val small: Bitmap?, val proposal: Proposal?, val soft: Boolean = false)
+    class Result(
+        val small: Bitmap?,
+        val proposal: Proposal?,
+        val soft: Boolean = false,
+        /** Index into Looks.ALL the coach suggested, or null. */
+        val suggestedLook: Int? = null,
+    )
 
     /**
      * Someone who names the cut - the on-device model. Called with the small
@@ -113,7 +120,7 @@ class PhotoEnhancer(private val context: Context) {
                     val body = task.result?.takeIf { task.isSuccessful }?.let { toBodyPose(it, small.height) }
                     // The cut: the coach's word if there is a coach, else the rules'.
                     if (advisor == null) {
-                        finish(uri, small, face, body, null, soft, started, callbackExecutor, onResult)
+                        finish(uri, small, face, body, null, null, soft, started, callbackExecutor, onResult)
                     } else {
                         var answered = false
                         advisor.advise(small) { words ->
@@ -121,8 +128,11 @@ class PhotoEnhancer(private val context: Context) {
                                 if (answered) return@execute
                                 answered = true
                                 val cut = PhotographerCrop.parseCut(words)
-                                Log.i(TAG, "enhance: coach says '${words?.trim()?.take(40)}' -> cut=$cut")
-                                finish(uri, small, face, body, cut, soft, started, callbackExecutor, onResult)
+                                val look = words?.let { w ->
+                                    Looks.ALL.indexOfFirst { w.contains(it.name, ignoreCase = true) }.takeIf { it >= 0 }
+                                }
+                                Log.i(TAG, "enhance: coach says '${words?.trim()?.take(40)}' -> cut=$cut look=${look?.let { Looks.ALL[it].name }}")
+                                finish(uri, small, face, body, cut, look, soft, started, callbackExecutor, onResult)
                             }
                         }
                     }
@@ -141,6 +151,7 @@ class PhotoEnhancer(private val context: Context) {
         face: com.google.mlkit.vision.face.Face,
         body: BodyPose?,
         preferredCut: Cut?,
+        suggestedLook: Int?,
         soft: Boolean,
         started: Long,
         callbackExecutor: Executor,
@@ -181,7 +192,7 @@ class PhotoEnhancer(private val context: Context) {
                     val elapsed = System.currentTimeMillis() - started
                     if (crop == null) {
                         Log.i(TAG, "enhance: already framed face=%.2f body=%s (%d ms)".format(box.h, body != null, elapsed))
-                        callbackExecutor.execute { onResult(Result(small, null, soft)) }
+                        callbackExecutor.execute { onResult(Result(small, null, soft, suggestedLook)) }
                         return
                     }
                     val reasons = if (extra > 0f) listOf("Added space above the head") + crop.rationale else crop.rationale
@@ -195,7 +206,7 @@ class PhotoEnhancer(private val context: Context) {
                     )
                     val name = uri.lastPathSegment ?: "xthink"
                     callbackExecutor.execute {
-                        onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra), soft))
+                        onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra), soft, suggestedLook))
                     }
         }
     }

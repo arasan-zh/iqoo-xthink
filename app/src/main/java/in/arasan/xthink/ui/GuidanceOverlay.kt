@@ -77,6 +77,7 @@ fun GuidanceOverlay(
     onToggleEasyShot: () -> Unit,
     onToggleLooks: () -> Unit,
     onPickLook: (Int) -> Unit,
+    onToggleGuide: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -84,8 +85,8 @@ fun GuidanceOverlay(
     val flash = remember { Animatable(0f) }
     LaunchedEffect(state.captureNonce) {
         if (state.captureNonce > 0) {
-            flash.snapTo(0.6f)
-            flash.animateTo(0f, tween(280))
+            flash.snapTo(0.9f)
+            flash.animateTo(0f, tween(110))
         }
     }
 
@@ -184,6 +185,7 @@ fun GuidanceOverlay(
                             .horizontalScroll(rememberScrollState()),
                     ) {
                         if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
+                        if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
                     }
                     QrButton(onClick = { showQr = true })
@@ -201,11 +203,9 @@ fun GuidanceOverlay(
                         safeCenterY = top + it.size.height / 2f
                     },
             ) {
-                ModeRail(
-                    mode = state.mode,
-                    onModeSelected = onModeSelected,
-                    modifier = Modifier.align(Alignment.CenterStart),
-                )
+                if (state.assisted) {
+                    StatusRail(state = state, modifier = Modifier.align(Alignment.CenterStart))
+                }
             }
 
             // --- bottom stack: guidance card, status strip, mode tab, zoom,
@@ -217,25 +217,26 @@ fun GuidanceOverlay(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
-                if (state.assisted) {
+                // One card's worth of space: the looks when they are open,
+                // else the words of guidance when they are switched on.
+                if (state.showLooks) {
+                    LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
+                } else if (state.assisted && state.showGuide) {
                     GuidanceCard(state = state)
-                    StatusStrip(state = state)
                 }
 
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
-                    if (state.showLooks) {
-                        LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
-                    }
-                    ZoomSlider(
+                    ZoomBar(
                         zoomRatio = state.zoomRatio,
                         maxZoomRatio = state.maxZoomRatio,
+                        baseFocalMm = state.baseFocalMm,
                         onZoomSelected = onZoomSelected,
                         modifier = Modifier.align(Alignment.CenterHorizontally),
                     )
-                    ModeTabs(mode = state.mode, onModeSelected = onModeSelected)
+                    ModeTabs(mode = state.mode, onModeSelected = onModeSelected, portraitOnly = state.mirrored)
                     BottomBar(
                         locked = state.isLocked,
                         thumbnail = state.thumbnail,

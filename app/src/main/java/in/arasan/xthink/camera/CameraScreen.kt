@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.media.MediaActionSound
 import android.net.Uri
 import android.provider.MediaStore
 import android.hardware.camera2.CameraCaptureSession
@@ -101,6 +102,10 @@ private const val SHARP_DECAY = 0.985f
 
 /** A frame this far below the reference is soft: no automatic shutter. */
 private const val SHARP_FRACTION = 0.55f
+
+/** 35mm-equivalent focal lengths at 1x, measured in docs/HARDWARE.md. */
+private const val REAR_FOCAL_MM = 23.5f
+private const val FRONT_FOCAL_MM = 21.2f
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -190,6 +195,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
             .build()
     }
     val autoCapture = remember { AutoCapturePolicy() }
+    val shutterSound = remember { MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) } }
+    DisposableEffect(shutterSound) { onDispose { shutterSound.release() } }
 
     // After the shutter: the photographer's crop, offered, never imposed.
     val enhancer = remember { PhotoEnhancer(context) }
@@ -221,7 +228,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 after = proposal.after.asImageBitmap(),
                 rationale = proposal.proposal.rationale,
                 enhanced = true,
-                look = overlayState.look,
+                look = if (overlayState.look != 0) overlayState.look else (result.suggestedLook ?: 0),
                 soft = result.soft,
             ),
         )
@@ -292,6 +299,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
     fun capture(auto: Boolean) {
         if (captureInFlight) return
         captureInFlight = true
+        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
         val name = "xthink_" + SimpleDateFormat("yyyyMMdd_HHmmss_SSS", Locale.US).format(Date())
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, "$name.jpg")
@@ -440,6 +448,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 look = overlayState.look,
                 showLooks = overlayState.showLooks,
                 lookPreview = overlayState.lookPreview,
+                showGuide = overlayState.showGuide,
+                baseFocalMm = overlayState.baseFocalMm,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -603,7 +613,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                     engine = fresh
                     lockHaptics.reset()
                     autoCapture.reset()
-                    overlayState = overlayState.copy(mirrored = isFront)
+                    overlayState = overlayState.copy(mirrored = isFront, baseFocalMm = if (isFront) FRONT_FOCAL_MM else REAR_FOCAL_MM)
                     Log.i(
                         TAG,
                         "bound ${if (isFront) "front" else "rear"} camera: mirrored=$isFront " +
@@ -703,11 +713,13 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 Log.i(TAG, "easy shot ${if (on) "on" else "off"}")
             },
             onFlip = {
-                lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
-                    CameraSelector.LENS_FACING_FRONT
-                } else {
-                    CameraSelector.LENS_FACING_BACK
-                }
+                val toFront = lensFacing == CameraSelector.LENS_FACING_BACK
+                lensFacing = if (toFront) CameraSelector.LENS_FACING_FRONT else CameraSelector.LENS_FACING_BACK
+                // The selfie lens is for people.
+                if (toFront) selectMode(CoachMode.PORTRAIT)
+            },
+            onToggleGuide = {
+                overlayState = overlayState.copy(showGuide = !overlayState.showGuide)
             },
             modifier = Modifier.fillMaxSize(),
         )
@@ -747,6 +759,8 @@ private fun buildOverlayState(
     look: Int,
     showLooks: Boolean,
     lookPreview: ImageBitmap?,
+    showGuide: Boolean,
+    baseFocalMm: Float,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -790,6 +804,8 @@ private fun buildOverlayState(
         look = look,
         showLooks = showLooks,
         lookPreview = lookPreview,
+        showGuide = showGuide,
+        baseFocalMm = baseFocalMm,
     )
 }
 

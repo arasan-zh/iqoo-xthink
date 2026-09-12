@@ -60,6 +60,27 @@ fun StatusStrip(state: OverlayState, modifier: Modifier = Modifier) {
     }
 }
 
+/**
+ * The status, standing where the mode rail used to: Lighting, Stability,
+ * Composition, one above the other. Focus is not shown - the phone's AF
+ * is continuous and a tap sets it; a cell for it said "Good" all day.
+ */
+@Composable
+fun StatusRail(state: OverlayState, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(XT.Corner))
+            .background(XT.Chip)
+            .padding(horizontal = 6.dp, vertical = 10.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        StatusCell(StatusKind.LIGHTING, state.lighting, Modifier.width(78.dp))
+        StatusCell(StatusKind.STABILITY, state.stability, Modifier.width(78.dp))
+        StatusCell(StatusKind.COMPOSITION, state.composition, Modifier.width(78.dp))
+    }
+}
+
 @Composable
 private fun Divider() {
     Box(
