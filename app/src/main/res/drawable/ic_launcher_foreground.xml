@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  xThink launcher foreground: a stylised Q in the app's accent green.
+  xThink launcher foreground: a stylised Q in the app's gold - the colour the
+  overlay uses for the active mode and the zoom stop - on a white ground.
 
   Adaptive icons are 108dp with a 66dp safe zone in the middle, so the ring
   sits well inside it. A thick ring is the O; the tail leaves the ring at
@@ -17,7 +18,7 @@
     <!-- The ring. Drawn as an arc that stops short of the tail so the two
          strokes do not pile up at the crossing. -->
     <path
-        android:strokeColor="#4ADE80"
+        android:strokeColor="#F5A524"
         android:strokeWidth="9"
         android:strokeLineCap="round"
         android:fillColor="#00000000"
@@ -25,7 +26,7 @@
 
     <!-- The tail: bottom-right, 45 degrees, same stroke as the ring. -->
     <path
-        android:strokeColor="#4ADE80"
+        android:strokeColor="#F5A524"
         android:strokeWidth="9"
         android:strokeLineCap="round"
         android:fillColor="#00000000"

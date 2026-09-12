@@ -1,0 +1,238 @@
+# xThink — technical summary
+
+Real-time camera positioning coach for the iQOO 15. It tells the photographer
+how to *move* before the shot — one instruction at a time — then feels the
+frame come together through the haptic motor, and takes the picture itself
+when the composition locks.
+
+Written 2026-09-12, at the end of build-ladder stage v0.6-scout. Everything
+here is on `main`; stages v0.1–v0.5 are tagged.
+
+---
+
+## 1. Architecture
+
+Two Gradle modules, one hard rule between them.
+
+| Module | What it is | Dependencies |
+|---|---|---|
+| `:guidance` | **Pure Kotlin.** Every decision the coach makes: composition math, the priority ladder, smoothing, hysteresis, the haptic rhythm, the capture policy, the thermal tiers. Zero Android imports. | `kotlin-stdlib` — nothing else, verified on the runtime classpath |
+| `:app` | Camera, sensors, ML Kit, the overlay, the motor, MediaStore. A thin adapter that feeds `:guidance` numbers and draws what comes back. | CameraX 1.5, ML Kit face + object (bundled), Compose |
+
+**Why the split is strict.** Everything that is easy to get wrong — the trig
+that turns a rotation matrix into roll and pitch, the coordinate mapping from
+a rotated detector frame to the visible crop, every deadzone and hold — lives
+where it can be unit tested without a phone. `:app` is left with system calls.
+216 tests, all in `:guidance`, run with `./gradlew test`.
+
+**The overlay is a separate layer.** `CameraScreen` builds one `OverlayState`
+per frame; `GuidanceOverlay` draws it. Neither knows about the other, so the
+look can be rebuilt without touching camera code, which is what happened
+between v0.2 (a debug readout) and v0.3 (the stock-camera overlay).
+
+### Data flow, one frame
+
+```
+TYPE_GAME_ROTATION_VECTOR (100 Hz, QTI)
+    └─ getRotationMatrixFromVector → AttitudeMath.fromRotationMatrix → Attitude(roll, pitch)
+                                                                            │ held, not acted on
+CameraX ImageAnalysis (480×360 YUV, KEEP_ONLY_LATEST, throttled ≥33 ms)     │
+    └─ ML Kit face (FAST, landmarks) or object (stream, single) — mode picks │
+         └─ FrameMapping: rotated detector space → visible crop → SubjectBox, EyeLine
+              └─ ShotTypeSelector (500 ms hold) → CompositionProfile
+                   └─ GuidanceEngine.update(attitude, subject, eyes, dt) → Instruction
+                        ├─ LockHaptics → HapticDriver (motor)
+                        ├─ AutoCapturePolicy → ImageCapture → DCIM/xThink
+                        └─ AlignmentState → Reticle (horizon, ladder, target brackets)
+Camera2 interop (per capture result): CONTROL_AF_STATE, ISO, exposure, CONTROL_ZOOM_RATIO
+PowerManager (1 Hz): getThermalHeadroom → ThermalGovernor → analysis rate, haptics, auto-capture
+```
+
+**The analyser drives the engine, not the sensor.** The box EMA smooths at
+α = 0.25 per update; ticking the engine at the sensor's 111 Hz while handing
+it the same face box repeatedly would drive the filter onto the raw value and
+throw away the anti-jitter. One engine tick per new measurement.
+
+**Preview and analysis share a ViewPort**, so "6% of frame" means six percent
+of what the photographer can see, not of a 4:3 buffer partly off-screen.
+
+---
+
+## 2. The engine
+
+### Priority ladder
+
+```
+roll → pitch → distance → x/y framing → tap-focus → LOCKED
+```
+
+Exactly one instruction per frame, never two arrows. Highest unsatisfied rung
+wins.
+
+### Smoothing and anti-jitter (from CLAUDE.md, transcribed to `GuidanceConstants`)
+
+| Constant | Value |
+|---|---|
+| EMA α, angles / boxes | 0.15 / 0.25 |
+| Deadzones: roll / pitch / size / x-y | 2.5° / 6° / 12% relative / 6% of frame |
+| Hysteresis exit | 1.6× the entry threshold |
+| Instruction lockout | 600 ms minimum on screen |
+| Lock dwell | 400 ms with every rung inside its deadzone |
+
+Every continuous signal is gated with hysteresis. Every *discrete* decision —
+shot type, subject presence, translate-vs-rotate, thermal tier — has a hold,
+because the three bugs found on the phone that mattered most were all a
+discrete decision without one.
+
+### Rules that cut across the ladder
+
+- **Translation beats rotation.** Pitch out *and* framing out the same way →
+  `MOVE_UP`/`MOVE_DOWN`, since moving the phone fixes both and keeps
+  perspective. `TILT` only for a genuine rotation error.
+- **…until the photographer can't.** If a vertical move goes unheeded for
+  3 s with no improvement, the engine concludes the camera cannot go there
+  (an arm has a reach) and switches to tilting for the session, relaxing the
+  pitch tolerance 6° → 15° so the tilt is not undone. An overhead angle is a
+  valid portrait.
+- **Distance is the photographer's choice.** Profiles carry an accepted size
+  band; inside it distance is not an error at all. Advice only past the
+  extremes, measured from the band edge.
+- **Zoom is a fallback, never the first answer.** `STEP_BACK` while zoomed →
+  `ZOOM_OUT` (undoing a crop is free). `STEP_CLOSER` stalled 3 s → `ZOOM_IN`,
+  capped at 3× — a stalled instruction means a wall.
+- **Gaze lead room.** Head yaw (ML Kit has no eye-gaze) shifts the target to
+  the left or right third past a 0.15 deadzone. Skipped for OBJECT.
+- **Subject loss has a 300 ms grace.** The last smoothed box is held, so a
+  detector blink neither flashes `SEEKING` nor breaks a lock. Measured: blinks
+  under 200 ms, real losses 430–499 ms.
+- **The lockout applies to every verb, `LOCKED` included** — except crossing
+  into or out of `SEEKING`, which is the situation changing, not two
+  instructions competing.
+
+### Composition profiles (`assets/composition_profiles.json`, parsed in `:guidance`)
+
+| Profile | Face height band | Eyes | Headroom | Width max | Pitch |
+|---|---|---|---|---|---|
+| `FULL_BODY` | 0.06 – 0.16 | 0.28 | 0.10 | — | ±6° |
+| `HALF_BODY` | 0.16 – 0.38 | 0.33 | 0.08 | — | ±6° |
+| `GROUP` | 0.08 – 0.70 | 0.35 | 0.08 | 0.85 | ±6° |
+| `OBJECT` | 0.25 – 0.75 | 0.50 (centre) | 0.08 | 0.85 | **free** |
+| `LANDSCAPE` | no subject | — | — | — | ±6° |
+| `HEADSHOT` | 0.45 point | 0.33 | 0.06 | — | ±6° |
+
+`HEADSHOT` is deliberately off the portrait ladder: a face filling the frame
+is not a portrait. `OBJECT`'s pitch is free because a thing on a desk is shot
+by aiming down — level is impossible without lying on the table.
+
+### Modes
+
+| Mode | Detector | Subject | Profile |
+|---|---|---|---|
+| Portrait | face | the largest face, however many are in frame | `FULL_BODY` / `HALF_BODY` by size |
+| Wide | face | every face as one union box; a room when there are none | `GROUP` / `LANDSCAPE` |
+| Object | object | the most prominent object | `OBJECT` / `LANDSCAPE` |
+
+One detector runs per frame; the mode picks. A mode tap takes effect at
+once — a tap is not detector noise.
+
+---
+
+## 3. Feel, capture, heat
+
+**Haptic lock game** (`LockHaptics` → `HapticDriver`). `totalError` drives the
+motor like a Geiger counter: silent above 0.6, pulses from 900 ms apart down
+to 140 ms as the error falls, one rise-into-click thunk on lock, silence while
+it holds, one faint pulse on losing it. Uses composition primitives with
+amplitude scaling (all eight confirmed on the phone).
+
+**Auto-capture** (`AutoCapturePolicy`). Once per lock acquisition, only when
+steady, 3 s cooldown, subject required — a landscape locks on a level phone
+alone and once auto-shot an empty room. JPEG to `DCIM/xThink` via MediaStore;
+flash, click, thumbnail in the gallery button. Manual shutter, pinch and
+slider zoom (1×–10×, the range this phone exposes).
+
+**Thermal governor** (`ThermalGovernor`). `getThermalHeadroom` polled at 1 Hz
+(the platform rate-limits it). Tiers at 0.60 / 0.80 / 0.95 with a 2 s hold and
+0.05 hysteresis on the way down. COOL → WARM → HOT → CRITICAL: detector 30 →
+15 → 7 → 4 Hz; haptics off from HOT; auto-capture off at CRITICAL; preview
+untouched. Measured on the phone: headroom 0.43 → 0.60 over four minutes of
+continuous use, `COOL -> WARM` stepped on cue.
+
+---
+
+## 4. The device, measured
+
+`docs/HARDWARE.md` has the full reachability analysis; `docs/evidence/` has
+the probe output. Facts that shaped the code:
+
+- **One rear camera reachable.** The phone has three; `getCameraIdList()`
+  returns two (back, front), no `LOGICAL_MULTI_CAMERA`, zoom range 1.0–10.0×
+  digital. The ultrawide and periscope are vivo's alone. A lens-switch
+  feature was cancelled, not deferred.
+- **Front camera is fixed-focus** (`AF modes: [OFF]`). The engine has a
+  `hasAutofocus` flag so `TAP_FOCUS` is never asked of it.
+- **`TYPE_GAME_ROTATION_VECTOR` at 200 Hz** from QTI — twice the rate of the
+  vivo `TYPE_ROTATION_VECTOR` that CLAUDE.md forbids. Sampled at 100 Hz.
+- **ISO ceiling 800**; the sensor reaches for exposure time instead, so the
+  Lighting chip reads ISO as a fraction of the sensor's own range.
+- **Zoom does not reset on bind** — the HAL leaves `CONTROL_ZOOM_RATIO` where
+  it was. The app requests 1.0 explicitly.
+- **All eight haptic primitives, amplitude control, real thermal headroom,
+  144 Hz display.**
+- **Min face size 0.06** of image width, lowered from 0.10 so a full-body
+  subject (~22 px in the 360-wide analysis image) is detectable at all. This
+  is why the subject-loss grace exists.
+
+---
+
+## 5. Build, test, ship
+
+- `./gradlew test` — 216 tests, all `:guidance`, seconds.
+- `./gradlew installDebug` — arm64-v8a only (the bundled models are ~9 MB per
+  ABI; every phone since 2017 is arm64). APK ≈ 62 MB with both models bundled,
+  chosen so detection works on first launch offline at a venue.
+- `minSdk 31` — the demo device is on Android 16; raising it removed every
+  version guard around haptics, thermal and zoom.
+- `scripts/dev.sh log` — the 1 Hz heartbeat (`roll pitch faces profile det
+  err lock therm -> instruction`) plus every verb transition. Most bugs in
+  this project were found by reading it.
+- `scripts/dev.sh caps` — the capability probe, into `docs/evidence/`.
+- CI on `main` publishes each build as a GitHub Release (`build-N`) signed
+  with the checked-in debug key, so builds update-install over each other.
+
+### Build ladder
+
+| Tag | Stage | Landed |
+|---|---|---|
+| `v0.1-plumb` | engine | pure-Kotlin engine, 72 tests |
+| `v0.2-anchor` | camera + sensors | CameraX, IMU, ML Kit faces, full ladder on device |
+| `v0.3-frame` | overlay | stock-camera overlay, portrait bands, HUD |
+| `v0.4-lock` | haptics + capture | lock game, auto-capture, working icons, Wide mode |
+| `v0.5-cool` | thermal | governor, Q icon |
+| *(local)* | v0.6-scout | Object mode, pitch-free still lifes |
+| — | v0.7-oracle | on-device LLM coach, tap-only — not started |
+
+---
+
+## 6. Things found only by running it
+
+Every one of these was invisible in tests and obvious in the log or a
+screenshot. They are the reason the log exists.
+
+1. The reticle was drawn against full-screen coordinates and collided with
+   the guidance card. Fixed by measuring the open viewfinder area.
+2. The face count flapped `0-2-1-2-0-1-4-3-0` in ten seconds and reset the
+   lock dwell every time. Fixed with a 500 ms hold on shot type.
+3. "Step closer a lot" stayed on screen after the subject had walked off,
+   held by the lockout. Fixed with `SEEKING`, which preempts the lockout.
+4. 27% of all instruction changes were detector blinks into `SEEKING`, one of
+   which destroyed a lock. Fixed with the 300 ms grace.
+5. The app asked the photographer to raise the phone above their head,
+   forever. Fixed by detecting the stall and switching to tilt.
+6. Portrait mode drove faces to fill the screen (`HEADSHOT` at 0.45). Fixed
+   by making a portrait a range of scales.
+7. Object mode never locked: `Tilt up` ×22 on a desk. Fixed by freeing pitch.
+8. The subject frame ballooned past the screen on a close face. Capped.
+9. A width rule's first draft silently cancelled every "step closer" (a zero
+   beats a negative). Ten existing tests caught it before it shipped.
+10. Auto-capture shot an empty room on a landscape lock. Subject now required.
