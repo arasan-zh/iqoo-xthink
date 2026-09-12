@@ -18,6 +18,7 @@ import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.ui.input.pointer.pointerInput
 import `in`.arasan.xthink.guidance.CoachMode
+import `in`.arasan.xthink.guidance.ShotType
 import androidx.compose.material3.Text
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
@@ -78,6 +79,8 @@ fun GuidanceOverlay(
     onToggleLooks: () -> Unit,
     onPickLook: (Int) -> Unit,
     onToggleGuide: () -> Unit,
+    onToggleShots: () -> Unit,
+    onPickShot: (ShotType?) -> Unit,
     onVideoMode: () -> Unit,
     onTypeMode: () -> Unit,
     onPairMac: () -> Unit,
@@ -191,6 +194,9 @@ fun GuidanceOverlay(
                             .horizontalScroll(rememberScrollState()),
                     ) {
                         if (state.recording) RecordingChip(ms = state.recordingMs)
+                        if (state.mode == CoachMode.PORTRAIT && !state.videoMode && !state.typeMode) {
+                            ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)
+                        }
                         if (state.assisted && !state.videoMode) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
                         if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
@@ -229,6 +235,8 @@ fun GuidanceOverlay(
                 val genius = state.genius
                 if (state.typeMode && genius != null) {
                     GeniusPanel(state = genius, onPair = onPairMac, onSpeak = onListen, onRun = onGeniusRun, onStop = onGeniusStop)
+                } else if (state.showShots) {
+                    ShotsRow(style = state.shotStyle, onPick = onPickShot)
                 } else if (state.showLooks) {
                     LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
                 } else if (state.assisted && state.showGuide) {

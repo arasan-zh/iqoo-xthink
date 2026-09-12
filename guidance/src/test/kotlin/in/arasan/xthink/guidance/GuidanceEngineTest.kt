@@ -675,8 +675,9 @@ class GuidanceEngineTest {
 
         engine.reset()
         engine.setProfile(profile(ShotType.GROUP))
-        // ...and right for a GROUP.
-        assertEquals(Verb.TAP_FOCUS, engine.update(LEVEL, box(h = 0.18f), eyes(y = 0.35f), 100L).verb)
+        // ...and right for a GROUP (which also needs no focus tap: continuous AF).
+        val verb = engine.update(LEVEL, box(h = 0.18f), eyes(y = 0.35f), 100L).verb
+        assertTrue("got $verb", verb != Verb.STEP_CLOSER && verb != Verb.TAP_FOCUS)
     }
 
     @Test

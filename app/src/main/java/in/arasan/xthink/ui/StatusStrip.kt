@@ -69,15 +69,29 @@ fun StatusStrip(state: OverlayState, modifier: Modifier = Modifier) {
 fun StatusRail(state: OverlayState, modifier: Modifier = Modifier) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(XT.Corner))
+            .clip(RoundedCornerShape(16.dp))
             .background(XT.Chip)
-            .padding(horizontal = 6.dp, vertical = 10.dp),
+            .padding(horizontal = 7.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        StatusCell(StatusKind.LIGHTING, state.lighting, Modifier.width(78.dp))
-        StatusCell(StatusKind.STABILITY, state.stability, Modifier.width(78.dp))
-        StatusCell(StatusKind.COMPOSITION, state.composition, Modifier.width(78.dp))
+        StatusIcon(StatusKind.LIGHTING, state.lighting)
+        StatusIcon(StatusKind.STABILITY, state.stability)
+        StatusIcon(StatusKind.COMPOSITION, state.composition)
+    }
+}
+
+/** One glyph, tinted by its state, with the tick/ring badge at its corner. No words. */
+@Composable
+private fun StatusIcon(kind: StatusKind, value: StatusValue) {
+    val tint by animateColorAsState(
+        targetValue = XT.state(value.ok),
+        animationSpec = tween(240),
+        label = "statusIconTint",
+    )
+    Box(modifier = Modifier.size(22.dp)) {
+        Canvas(modifier = Modifier.size(18.dp).align(Alignment.Center)) { drawStatusGlyph(kind, tint) }
+        Canvas(modifier = Modifier.size(8.dp).align(Alignment.BottomEnd)) { drawBadge(tint, value.ok) }
     }
 }
 

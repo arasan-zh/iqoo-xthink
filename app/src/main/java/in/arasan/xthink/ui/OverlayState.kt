@@ -3,6 +3,7 @@ package `in`.arasan.xthink.ui
 import androidx.compose.ui.graphics.ImageBitmap
 import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.CoachMode
+import `in`.arasan.xthink.guidance.ShotType
 import `in`.arasan.xthink.guidance.Instruction
 import `in`.arasan.xthink.guidance.SubjectBox
 import `in`.arasan.xthink.guidance.ThermalTier
@@ -49,6 +50,10 @@ data class OverlayState(
     val showGuide: Boolean = false,
     /** Focal length of the lens at 1x, 35mm-equivalent, for the zoom readout. */
     val baseFocalMm: Float = 23.5f,
+    /** A shot style the photographer picked (PORTRAIT only), or null for the automatic ladder. */
+    val shotStyle: ShotType? = null,
+    /** True while the Shots row is open. */
+    val showShots: Boolean = false,
     /** The look chosen on the camera page; baked into every capture, pre-selected in the review. */
     val look: Int = 0,
     /** True while the looks row is open on the camera page. */

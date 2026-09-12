@@ -39,6 +39,10 @@ import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.draw.alpha
 import androidx.compose.runtime.LaunchedEffect
+import `in`.arasan.xthink.R
+import `in`.arasan.xthink.guidance.ShotType
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -675,5 +679,116 @@ private fun OnOffChip(label: String, on: Boolean, onToggle: () -> Unit, modifier
             fontSize = 12.sp,
             fontWeight = FontWeight.Medium,
         )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Shots - the photographer's reference styles. Pick one and the coach guides
+// to that framing: its size band, its pitch, its roll, its placement.
+// ---------------------------------------------------------------------------
+
+/** A style tile: the reference frame and its name. */
+data class ShotStyleTile(val type: ShotType, val name: String, val drawable: Int)
+
+val SHOT_STYLES: List<ShotStyleTile> = listOf(
+    ShotStyleTile(ShotType.CLOSE_UP, "Close up", R.drawable.shot_close_up),
+    ShotStyleTile(ShotType.EXTREME_CLOSE_UP, "Extreme close up", R.drawable.shot_extreme_close_up),
+    ShotStyleTile(ShotType.MEDIUM_SHOT, "Medium", R.drawable.shot_medium_shot),
+    ShotStyleTile(ShotType.WIDE_SHOT, "Wide", R.drawable.shot_wide_shot),
+    ShotStyleTile(ShotType.LOW_ANGLE, "Low angle", R.drawable.shot_low_angle),
+    ShotStyleTile(ShotType.HIGH_ANGLE, "High angle", R.drawable.shot_high_angle),
+    ShotStyleTile(ShotType.DUTCH_ANGLE, "Dutch angle", R.drawable.shot_dutch_angle),
+    ShotStyleTile(ShotType.BIRDS_EYE, "Bird's eye", R.drawable.shot_birds_eye),
+    ShotStyleTile(ShotType.OVER_SHOULDER, "Over the shoulder", R.drawable.shot_over_shoulder),
+    ShotStyleTile(ShotType.POV, "POV", R.drawable.shot_pov),
+)
+
+@Composable
+fun ShotChip(style: ShotType?, open: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val name = SHOT_STYLES.firstOrNull { it.type == style }?.name ?: "Auto"
+    Row(
+        modifier = modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(if (open) XT.ChipStrong else XT.Chip)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick,
+            )
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Canvas(modifier = Modifier.size(14.dp)) {
+            val w = size.width; val h = size.height; val st = 1.5f.dp.toPx()
+            drawRect(XT.OnChip, Offset(0f, h * 0.15f), Size(w, h * 0.7f), style = Stroke(st))
+            drawLine(XT.OnChip, Offset(w * 0.33f, h * 0.15f), Offset(w * 0.33f, h * 0.85f), st)
+            drawLine(XT.OnChip, Offset(w * 0.66f, h * 0.15f), Offset(w * 0.66f, h * 0.85f), st)
+        }
+        Text(
+            text = if (style == null) "Shot" else name,
+            color = if (style == null) XT.OnChip else XT.Amber,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+        )
+    }
+}
+
+@Composable
+fun ShotsRow(style: ShotType?, onPick: (ShotType?) -> Unit, modifier: Modifier = Modifier) {
+    val scroll = rememberScrollState()
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(XT.Corner))
+            .background(XT.Chip)
+            .padding(horizontal = 12.dp, vertical = 10.dp)
+            .horizontalScroll(scroll),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        // Auto: the ladder decides (full body / half body by distance).
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+            Box(
+                modifier = Modifier
+                    .size(width = 60.dp, height = 80.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(XT.ChipStrong)
+                    .border(if (style == null) 2.dp else 0.dp, if (style == null) XT.Amber else Color.Transparent, RoundedCornerShape(12.dp))
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                        onClick = { onPick(null) },
+                    ),
+                contentAlignment = Alignment.Center,
+            ) { Text(text = "AUTO", color = XT.OnChip, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp) }
+            Text(text = "Auto", color = if (style == null) XT.Amber else XT.OnChipMuted, fontSize = 10.sp)
+        }
+        SHOT_STYLES.forEach { tile ->
+            val chosen = tile.type == style
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Image(
+                    painter = painterResource(tile.drawable),
+                    contentDescription = tile.name,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(width = 60.dp, height = 80.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(if (chosen) 2.dp else 0.dp, if (chosen) XT.Amber else Color.Transparent, RoundedCornerShape(12.dp))
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = { onPick(tile.type) },
+                        ),
+                )
+                Text(
+                    text = tile.name,
+                    color = if (chosen) XT.Amber else XT.OnChipMuted,
+                    fontSize = 10.sp,
+                    fontWeight = if (chosen) FontWeight.SemiBold else FontWeight.Normal,
+                    maxLines = 1,
+                )
+            }
+        }
     }
 }

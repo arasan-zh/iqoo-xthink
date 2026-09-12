@@ -94,8 +94,9 @@ class GuidanceEngine(
     // current hysteresis state the moment the strategy switches.
     private val pitchRelaxedGate = HysteresisGate(PITCH_RELAXED_DEADZONE_DEG)
     private val sizeGate = HysteresisGate(DEADZONE_SIZE_RATIO)
-    private val xGate = HysteresisGate(DEADZONE_XY)
-    private val yGate = HysteresisGate(DEADZONE_XY)
+    // x/y gates are rebuilt per profile: a group need not be centred to the percent.
+    private var xGate = HysteresisGate(DEADZONE_XY * profile.centerTolerance)
+    private var yGate = HysteresisGate(DEADZONE_XY * profile.centerTolerance)
     private val stabilityGate = HysteresisGate(STABILITY_RATE_DEG_PER_S)
 
     // --- state --------------------------------------------------------------
@@ -204,7 +205,7 @@ class GuidanceEngine(
         updateFocus(box)
 
         // --- errors ---------------------------------------------------------
-        val rollErr = roll
+        val rollErr = roll - profile.targetRollDeg
         val pitchErr = pitch - profile.targetPitchDeg
         val rollIn = rollGate.update(abs(rollErr))
         val pitchStrictIn = pitchGate.update(abs(pitchErr))
@@ -540,6 +541,14 @@ class GuidanceEngine(
     }
 
     private fun updateFocus(box: SubjectBox?) {
+        if (!profile.focusRequired) {
+            // A busy scene under continuous AF: asking for a tap would only
+            // get in the way of the lock.
+            focusConfirmed = false
+            focusAnchored = false
+            focusOk = true
+            return
+        }
         if (!hasAutofocus) {
             // Fixed-focus camera. There is nothing to tap, so focus can never
             // be the reason we withhold a lock.
@@ -654,7 +663,9 @@ class GuidanceEngine(
         if (newProfile == profile) return
         profile = newProfile
         // Old deadzone states describe a different composition; start clean.
-        sizeGate.reset(); xGate.reset(); yGate.reset()
+        sizeGate.reset()
+        xGate = HysteresisGate(DEADZONE_XY * newProfile.centerTolerance)
+        yGate = HysteresisGate(DEADZONE_XY * newProfile.centerTolerance)
         dwellMs = 0L
         focusConfirmed = false
         focusAnchored = false

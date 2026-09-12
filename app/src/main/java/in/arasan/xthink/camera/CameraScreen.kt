@@ -115,10 +115,10 @@ private const val FOCUS_HOLD_S = 5L
 
 
 /** The sharpness reference forgets slowly, so a new scene re-baselines within seconds. */
-private const val SHARP_DECAY = 0.985f
+private const val SHARP_DECAY = 0.97f
 
 /** A frame this far below the reference is soft: no automatic shutter. */
-private const val SHARP_FRACTION = 0.55f
+private const val SHARP_FRACTION = 0.35f
 
 /** 35mm-equivalent focal lengths at 1x, measured in docs/HARDWARE.md. */
 private const val REAR_FOCAL_MM = 23.5f
@@ -135,6 +135,9 @@ private const val TRACK_LOST_MS = 1_500L
 
 /** Genius stops proposing after this many plan-and-check rounds. */
 private const val GENIUS_MAX_ATTEMPTS = 3
+
+/** The coach model loads on its own only this long after start, and only on a cool phone. */
+private const val COACH_DEFERRED_LOAD_MS = 60_000L
 
 /** After a plan runs, the Mac gets this long to settle before the camera reads it. */
 private const val GENIUS_SETTLE_MS = 2_500L
@@ -360,12 +363,18 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
 
     // The on-device coach. Absent, quietly, when the model is not on the phone.
     val coach = remember { LlmCoach(context) }
-    var coachState by remember { mutableStateOf(LlmCoach.State.LOADING) } // warmUp settles it
+    var coachState by remember { mutableStateOf(LlmCoach.State.MISSING) } // until ensureCoach() loads it
     val sharpRef = remember { floatArrayOf(0f) }
-    DisposableEffect(coach) {
-        coach.warmUp(ContextCompat.getMainExecutor(context)) { coachState = it }
-        onDispose { coach.close() }
+    // The model loads only when something needs it: STEVE, or - a while
+    // after start and only with the phone cool - the crop decision. Loading
+    // it at launch heated the phone and slowed guidance and the shutter.
+    DisposableEffect(coach) { onDispose { coach.close() } }
+    fun ensureCoach() {
+        if (coachState == LlmCoach.State.MISSING && coach.modelFile() != null) {
+            coach.warmUp(ContextCompat.getMainExecutor(context)) { coachState = it }
+        }
     }
+
 
     /** The coach's word on the cut, when there is a coach and it is free. */
     fun cutAdvisor(): PhotoEnhancer.CutAdvisor? {
@@ -694,7 +703,12 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                         captureNonce = overlayState.captureNonce + 1,
                     )
                     if (uri != null) {
-                        enhancer.analyse(uri, ContextCompat.getMainExecutor(context), cutAdvisor()) { openReview(uri, it) }
+                        if (overlayState.mode == CoachMode.PORTRAIT) {
+                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), cutAdvisor()) { openReview(uri, it) }
+                        } else {
+                            // Scenes, objects, creative: no crop to a person - the shot stands, with the look.
+                            openReview(uri, PhotoEnhancer.Result(null, null))
+                        }
                     }
                 }
 
@@ -724,6 +738,12 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             overlayState = overlayState.copy(thermal = plan.tier, thermalHeadroom = headroom)
         }
         onDispose { monitor.stop() }
+    }
+
+    // A deferred load of the coach, only on a cool phone.
+    LaunchedEffect(Unit) {
+        delay(COACH_DEFERRED_LOAD_MS)
+        if (thermalPlan[0].tier == ThermalTier.COOL) ensureCoach()
     }
 
     // --- sensor ----------------------------------------------------------
@@ -829,6 +849,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 lookPreview = overlayState.lookPreview,
                 showGuide = overlayState.showGuide,
                 baseFocalMm = overlayState.baseFocalMm,
+                shotStyle = overlayState.shotStyle,
+                showShots = overlayState.showShots,
                 videoMode = overlayState.videoMode,
                 recording = overlayState.recording,
                 recordingMs = overlayState.recordingMs,
@@ -1057,6 +1079,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     gPhase = "READY"; gHeard = ""; gPlan = emptyList(); gStep = -1; gNote = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false)
                     refreshGenius()
+                    ensureCoach()
                     Log.i(TAG, "mode -> STEVE")
                     if (keyboard.hasPermission()) {
                         keyboard.start(ContextCompat.getMainExecutor(context)) { st ->
@@ -1153,6 +1176,16 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                 )
                 Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
             },
+            onToggleShots = {
+                overlayState = overlayState.copy(showShots = !overlayState.showShots, showLooks = false)
+            },
+            onPickShot = { style ->
+                shotTypes.setStyle(style)
+                engine.setProfile(profiles.getValue(shotTypes.current))
+                overlayState = overlayState.copy(shotStyle = style)
+                haptics.play(HapticCue.TICK, 0.4f)
+                Log.i(TAG, "shot style -> ${style ?: "auto"}")
+            },
             onToggleLooks = {
                 val open = !overlayState.showLooks
                 val preview = if (open) previewSnapshot()?.let { snap ->
@@ -1160,7 +1193,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     Bitmap.createScaledBitmap(snap, (snap.width * scale).toInt().coerceAtLeast(1), (snap.height * scale).toInt().coerceAtLeast(1), true)
                         .asImageBitmap()
                 } else null
-                overlayState = overlayState.copy(showLooks = open, lookPreview = preview ?: overlayState.lookPreview)
+                overlayState = overlayState.copy(showLooks = open, showShots = false, lookPreview = preview ?: overlayState.lookPreview)
             },
             onPickLook = { i ->
                 overlayState = overlayState.copy(look = i)
@@ -1223,6 +1256,8 @@ private fun buildOverlayState(
     lookPreview: ImageBitmap?,
     showGuide: Boolean,
     baseFocalMm: Float,
+    shotStyle: ShotType?,
+    showShots: Boolean,
     videoMode: Boolean,
     recording: Boolean,
     recordingMs: Long,
@@ -1273,6 +1308,8 @@ private fun buildOverlayState(
         lookPreview = lookPreview,
         showGuide = showGuide,
         baseFocalMm = baseFocalMm,
+        shotStyle = shotStyle,
+        showShots = showShots,
         videoMode = videoMode,
         recording = recording,
         recordingMs = recordingMs,

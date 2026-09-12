@@ -38,7 +38,16 @@ data class SubjectBox(val cx: Float, val cy: Float, val w: Float, val h: Float) 
  */
 data class EyeLine(val y: Float, val gazeDx: Float)
 
-enum class ShotType { HEADSHOT, HALF_BODY, FULL_BODY, GROUP, OBJECT, LANDSCAPE }
+enum class ShotType {
+    HEADSHOT, HALF_BODY, FULL_BODY, GROUP, OBJECT, LANDSCAPE,
+    // Shot styles a photographer picks on purpose (the Shots picker). Each is
+    // a composition target: a size band, a pitch, a roll, a placement.
+    CLOSE_UP, EXTREME_CLOSE_UP, MEDIUM_SHOT, WIDE_SHOT, LOW_ANGLE, HIGH_ANGLE,
+    DUTCH_ANGLE, BIRDS_EYE, OVER_SHOULDER, POV;
+
+    /** A style the photographer chose, as opposed to one the ladder inferred. */
+    val isStyle: Boolean get() = ordinal >= CLOSE_UP.ordinal
+}
 
 /**
  * What the photographer chose on the mode rail.

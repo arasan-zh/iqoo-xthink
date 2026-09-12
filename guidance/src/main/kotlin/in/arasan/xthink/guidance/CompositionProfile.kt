@@ -43,6 +43,12 @@ data class CompositionProfile(
     val sizeMax: Float = targetSizeRatio,
     val maxWidth: Float = 1f,
     val pitchToleranceDeg: Float = GuidanceConstants.DEADZONE_PITCH_DEG,
+    /** Roll the shot wants: 0 for level, ~15 for a dutch angle. */
+    val targetRollDeg: Float = 0f,
+    /** Multiplies the x/y deadzone: a group in a venue need not be centred to the percent. */
+    val centerTolerance: Float = 1f,
+    /** False when a tap-to-focus rung would only get in the way (a busy scene under continuous AF). */
+    val focusRequired: Boolean = true,
 ) {
     init {
         require(sizeMin <= sizeMax) { "$shotType: sizeMin $sizeMin > sizeMax $sizeMax" }
@@ -61,8 +67,14 @@ data class CompositionProfile(
             val root = MiniJson.parseObject(json)
             val out = LinkedHashMap<ShotType, CompositionProfile>()
             for (type in ShotType.entries) {
-                val row = root[type.name]
-                    ?: throw JsonException("composition_profiles.json is missing the '${type.name}' profile")
+                val row = root[type.name] ?: if (type.isStyle) {
+                    // A style the document does not describe borrows the
+                    // half-body portrait; the six core profiles are required.
+                    val base = out[ShotType.HALF_BODY]
+                        ?: throw JsonException("composition_profiles.json is missing the 'HALF_BODY' profile")
+                    out[type] = base.copy(shotType = type)
+                    continue
+                } else throw JsonException("composition_profiles.json is missing the '${type.name}' profile")
                 @Suppress("UNCHECKED_CAST")
                 val fields = row as? Map<String, Any?>
                     ?: throw JsonException("Profile '${type.name}' must be a JSON object")
@@ -78,6 +90,9 @@ data class CompositionProfile(
                     sizeMax = fields.floatOr(type, "sizeMax", target),
                     maxWidth = fields.floatOr(type, "maxWidth", 1f),
                     pitchToleranceDeg = fields.floatOr(type, "pitchToleranceDeg", GuidanceConstants.DEADZONE_PITCH_DEG),
+                    targetRollDeg = fields.floatOr(type, "targetRollDeg", 0f),
+                    centerTolerance = fields.floatOr(type, "centerTolerance", 1f),
+                    focusRequired = fields.floatOr(type, "focusRequired", 1f) >= 0.5f,
                 )
             }
             return out

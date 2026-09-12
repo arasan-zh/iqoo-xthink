@@ -47,6 +47,20 @@ class ShotTypeSelector(
     private var lastHeight: Float? = null
 
     /**
+     * A shot style the photographer picked (the Shots picker). While set,
+     * and there is a face, it replaces the portrait ladder; null lets the
+     * ladder choose. Only PORTRAIT mode honours it.
+     */
+    var style: ShotType? = null
+        private set
+
+    fun setStyle(newStyle: ShotType?) {
+        if (newStyle == style) return
+        style = newStyle
+        reset(shotTypeFor(lastCount, lastHeight, mode))
+    }
+
+    /**
      * Switch modes. No hysteresis: a tap on a mode is not detector noise, and
      * making the photographer wait half a second for it would feel broken.
      */
@@ -128,6 +142,7 @@ class ShotTypeSelector(
         // person in a wide venue is a group of one - still GROUP, so the
         // photographer gets the wider composition they asked for.
         if (forMode == CoachMode.WIDE) return ShotType.GROUP
+        style?.let { if (forMode == CoachMode.PORTRAIT) return it }
         val h = faceHeight ?: return ShotType.HALF_BODY
         for (type in PORTRAIT_LADDER) {
             val band = profiles[type] ?: continue
