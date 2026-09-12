@@ -19,6 +19,10 @@ class SpeechInput(private val context: Context) {
 
     val available: Boolean get() = SpeechRecognizer.isRecognitionAvailable(context)
 
+    /** BCP-47 tag the recogniser listens in. */
+    @Volatile
+    var language: String = "en-US"
+
     private var recognizer: SpeechRecognizer? = null
 
     @Volatile
@@ -62,7 +66,7 @@ class SpeechInput(private val context: Context) {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }

@@ -170,6 +170,7 @@ private const val ANALYSIS_HEIGHT = 360
  */
 @Composable
 fun CameraScreen(
+    coach: LlmCoach? = null,
     debugEnhanceUri: String? = null,
     debugGenius: String? = null,
     debugAsk: String? = null,
@@ -188,7 +189,7 @@ fun CameraScreen(
     }
 
     if (granted) {
-        CameraAndGuidance(debugEnhanceUri, debugGenius, debugAsk, startIn, onHome)
+        CameraAndGuidance(coach, debugEnhanceUri, debugGenius, debugAsk, startIn, onHome)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -212,6 +213,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 @OptIn(ExperimentalCamera2Interop::class)
 @Composable
 private fun CameraAndGuidance(
+    sharedCoach: LlmCoach? = null,
     debugEnhanceUri: String? = null,
     debugGenius: String? = null,
     debugAsk: String? = null,
@@ -388,13 +390,13 @@ private fun CameraAndGuidance(
     }
 
     // The on-device coach. Absent, quietly, when the model is not on the phone.
-    val coach = remember { LlmCoach(context) }
-    var coachState by remember { mutableStateOf(LlmCoach.State.MISSING) } // until ensureCoach() loads it
+    val coach = sharedCoach ?: remember { LlmCoach(context) }
+    var coachState by remember { mutableStateOf(coach.state) } // a shared model may already be loaded
     val sharpRef = remember { floatArrayOf(0f) }
     // The model loads only when something needs it: STEVE, or - a while
     // after start and only with the phone cool - the crop decision. Loading
     // it at launch heated the phone and slowed guidance and the shutter.
-    DisposableEffect(coach) { onDispose { coach.close() } }
+    DisposableEffect(coach) { onDispose { if (sharedCoach == null) coach.close() } }
     fun ensureCoach() {
         if (coachState == LlmCoach.State.MISSING && coach.modelFile() != null) {
             coach.warmUp(ContextCompat.getMainExecutor(context)) { coachState = it }

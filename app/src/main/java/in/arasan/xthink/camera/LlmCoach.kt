@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY }
+    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -184,7 +184,7 @@ class LlmCoach(private val context: Context) {
                         val raw = sb.toString()
                         // COMMAND/UNDERSTAND want one line; a plan is many, ending at DONE.
                         val nl = if (oneLine) raw.indexOf('\n', startIndex = raw.indexOfFirst { !it.isWhitespace() }.coerceAtLeast(0)) else -1
-                        val text = if (oneLine) tidy(if (nl >= 0) raw.substring(0, nl) else raw) else raw.trim()
+                        val text = if (oneLine) tidy(if (nl >= 0) raw.substring(0, nl) else raw) else stripTokens(raw).trim()
                         val planDone = !oneLine && (kind == Kind.PLAN || kind == Kind.CHECK) && Regex("(?m)^\\s*DONE\\s*$").containsMatchIn(raw)
                         val finished = done || (nl >= 0 && text.isNotBlank()) || planDone
                         if (finished && !done) {
@@ -210,7 +210,7 @@ class LlmCoach(private val context: Context) {
     }
 
     private fun raw(sb: StringBuilder, oneLine: Boolean): String =
-        if (oneLine) tidy(sb.toString().lineSequence().firstOrNull { it.isNotBlank() } ?: "") else sb.toString().trim()
+        if (oneLine) tidy(sb.toString().lineSequence().firstOrNull { it.isNotBlank() } ?: "") else stripTokens(sb.toString()).trim()
 
     /** The vision encoder wants a modest square-ish image; keep it cheap. */
     private fun fit(src: Bitmap): Bitmap {
@@ -222,8 +222,12 @@ class LlmCoach(private val context: Context) {
 
     /** Models like to start with a preamble or a markdown bullet; the card does not. */
     private fun tidy(raw: String): String =
-        raw.trimStart().removePrefix("*").removePrefix("-").trimStart()
+        stripTokens(raw).trimStart().removePrefix("*").removePrefix("-").trimStart()
             .replace("**", "").replace(Regex("\\n{2,}"), "\n").trim()
+
+    /** The chat template's control tokens sometimes leak into the text; they are never part of an answer. */
+    private fun stripTokens(raw: String): String =
+        raw.replace(Regex("""</?(?:end|start)_of_turn>?[a-z_]*|<eos>|<bos>|<end_of_turn|<start_of_turn"""), "")
 
     fun close() {
         runCatching { llm?.close() }
@@ -298,6 +302,12 @@ class LlmCoach(private val context: Context) {
             ---
             If the request appears done or the Mac is doing it, reply exactly: DONE
             Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
+        """.trimIndent()
+
+        /** A spoken turn, answered in the same language, briefly. */
+        fun voicePrompt(heard: String, language: String): String = """
+            You are a friendly assistant on a phone. Reply in $language, in one to three short sentences, plainly. No preamble, no markdown.
+            The person said: $heard
         """.trimIndent()
 
         /** A question about what the camera sees. */
