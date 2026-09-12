@@ -133,6 +133,19 @@ fun GuidanceOverlay(
         0.42f
     }
 
+    val steve = state.genius
+    if (state.typeMode && steve != null) {
+        SteveSurface(
+            state = steve,
+            onPair = onPairMac,
+            onSpeak = onListen,
+            onRun = onGeniusRun,
+            onStop = onGeniusStop,
+            onHome = onHome,
+        )
+        return
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
