@@ -178,6 +178,7 @@ fun BottomBar(
     thumbnail: ImageBitmap?,
     onShutter: () -> Unit,
     onGallery: () -> Unit,
+    onQr: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -225,10 +226,34 @@ fun BottomBar(
 
         Shutter(locked = locked, onClick = onShutter)
 
-        // Rear camera only, so there is no flip. A spacer the same size keeps
-        // the shutter centred - a real control belongs here when the front
-        // camera does (the engine already handles mirrored + fixed focus).
-        Spacer(Modifier.size(46.dp))
+        // Install link. Rear camera only, so the slot a flip button would
+        // take holds the QR instead - anyone at the demo scans it and gets
+        // the latest build.
+        Box(
+            modifier = Modifier
+                .size(46.dp)
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = 0.14f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onQr,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Canvas(modifier = Modifier.size(20.dp)) {
+                val u = size.minDimension / 7f
+                val c = XT.Inert
+                fun finder(x: Float, y: Float) {
+                    drawRect(c, Offset(x * u, y * u), Size(3 * u, 3 * u), style = Stroke(u * 0.8f))
+                    drawRect(c, Offset((x + 1) * u, (y + 1) * u), Size(u, u))
+                }
+                finder(0f, 0f); finder(4f, 0f); finder(0f, 4f)
+                drawRect(c, Offset(4 * u, 4 * u), Size(u, u))
+                drawRect(c, Offset(6 * u, 5 * u), Size(u, u))
+                drawRect(c, Offset(5 * u, 6 * u), Size(u, u))
+            }
+        }
     }
 }
 

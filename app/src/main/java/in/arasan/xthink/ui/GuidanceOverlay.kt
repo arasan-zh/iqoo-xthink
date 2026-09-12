@@ -25,6 +25,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -76,6 +77,7 @@ fun GuidanceOverlay(
     // them. This is where that area's vertical centre is measured and handed
     // to Reticle, in fractions of screen height so it survives rotation and
     // any future change to chip sizes without touching this file's layout math.
+    var showQr by remember { mutableStateOf(false) }
     var overlayTop by remember { mutableFloatStateOf(0f) }
     var overlayHeight by remember { mutableFloatStateOf(1f) }
     var safeCenterY by remember { mutableFloatStateOf(0f) }
@@ -172,6 +174,7 @@ fun GuidanceOverlay(
                         thumbnail = state.thumbnail,
                         onShutter = onShutter,
                         onGallery = onGallery,
+                        onQr = { showQr = true },
                     )
                 }
             }
@@ -179,6 +182,10 @@ fun GuidanceOverlay(
 
         if (flash.value > 0.005f) {
             Box(modifier = Modifier.fillMaxSize().background(Color.White.copy(alpha = flash.value)))
+        }
+
+        if (showQr) {
+            QrSheet(url = Links.INSTALL_APK, onDismiss = { showQr = false })
         }
     }
 }

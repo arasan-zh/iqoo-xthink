@@ -83,6 +83,8 @@ dependencies {
     implementation(libs.mlkit.face.detection)
     // Bundled for the same reason as the face model: it must work on first launch, offline.
     implementation(libs.mlkit.objects)
+    // QR code for the install link. Pure Java, generates a bit matrix; Compose draws it.
+    implementation(libs.zxing.core)
     debugImplementation(libs.androidx.ui.tooling)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.espresso.core)
