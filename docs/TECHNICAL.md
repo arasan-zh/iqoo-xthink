@@ -297,9 +297,12 @@ piece device-verified on the iQOO 15 before it was committed.
 ### The on-device model
 - **Gemma 3n** via MediaPipe GenAI 0.10.35 on the Adreno GPU (OpenCL).
   E2B int4 (3.1 GB): load 5–15 s once, first token 1–3.5 s, a one-line
-  answer in ~1.3 s. E4B int4 (4.4 GB) is preferred when present (the app
-  loads the largest `.task` it finds in `/data/local/tmp/llm` or its
-  external files dir). The bundles carry a **vision encoder only** - no
+  answer in ~1.3 s. E4B int4 (4.4 GB) was measured on the same five
+  requests: identical readings, 1.6–2.4 s per reading, 14 s for a letter
+  (E2B: 10 s), 12 s load, 1.8 GB resident, the phone WARM - so E2B ships
+  and E4B is parked in `~/Lab/xthink/models/not-shipped`. The app loads
+  the largest `.task` it finds in `/data/local/tmp/llm` or its external
+  files dir, so pushing E4B is all it takes to switch. The bundles carry a **vision encoder only** - no
   audio - so the model cannot hear; speech is Google's on-device
   recogniser. `MAX_TOKENS` is the whole context: an image alone is 256.
 - The model **never speaks in the camera**. Its jobs: name the crop and

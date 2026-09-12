@@ -53,6 +53,12 @@ class GeniusIntentTest {
     }
 
     @Test
+    fun `the words keep the whole message when the model shortens it`() {
+        val (r, fromModel) = GeniusIntent.decide("WHATSAPP | 9442851409 ; hello", "text 9442851409 on whatsapp saying hello from xThink")
+        assertTrue(r is Route.WhatsApp && r.message == "hello from xThink"); assertTrue(!fromModel)
+    }
+
+    @Test
     fun `a decorated answer still parses`() {
         assertEquals(Route.Open("Terminal"), GeniusIntent.parse("Sure!\n**OPEN | terminal**\n"))
     }

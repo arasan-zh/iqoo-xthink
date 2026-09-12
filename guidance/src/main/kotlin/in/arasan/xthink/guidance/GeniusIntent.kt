@@ -41,7 +41,16 @@ object GeniusIntent {
     /** The model's route when it is plausible for the words, else the router's. */
     fun decide(answer: String, spoken: String): Pair<Route, Boolean> {
         val fromModel = parse(answer)
-        return if (fromModel != null && plausible(fromModel, spoken)) fromModel to true else GeniusRouter.route(spoken) to false
+        if (fromModel == null || !plausible(fromModel, spoken)) return GeniusRouter.route(spoken) to false
+        // The words are the ground truth for a message: when they carry a
+        // longer one to the same number, the model's shortening loses.
+        if (fromModel is Route.WhatsApp) {
+            val fromWords = GeniusRouter.route(spoken)
+            if (fromWords is Route.WhatsApp && fromWords.number == fromModel.number && fromWords.message.length > fromModel.message.length) {
+                return fromWords to false
+            }
+        }
+        return fromModel to true
     }
 
     /** A parsed line, or null when the model wrote something else. */
