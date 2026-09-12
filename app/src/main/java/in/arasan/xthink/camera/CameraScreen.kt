@@ -77,7 +77,8 @@ import `in`.arasan.xthink.guidance.ThermalPlan
 import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
 import `in`.arasan.xthink.ui.CoachText
-import `in`.arasan.xthink.ui.EnhanceProposal
+import `in`.arasan.xthink.ui.Looks
+import `in`.arasan.xthink.ui.ReviewState
 import `in`.arasan.xthink.ui.GuidanceOverlay
 import `in`.arasan.xthink.ui.OverlayState
 import `in`.arasan.xthink.ui.StatusValue
@@ -98,8 +99,6 @@ private const val COACH_LIVE_PERIOD_MS = 20_000L
 /** The coach's words stay this long after the last one arrives. */
 private const val COACH_LINGER_MS = 7_000L
 
-/** The enhanced-copy strip stays this long once saved; Undo is available meanwhile. */
-private const val ENHANCE_LINGER_MS = 8_000L
 
 /** A tap may bring a look forward, but not more often than this. */
 private const val COACH_TAP_MIN_GAP_MS = 4_000L
@@ -196,26 +195,35 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
     // After the shutter: the photographer's crop, offered, never imposed.
     val enhancer = remember { PhotoEnhancer(context) }
     var pendingEnhance by remember { mutableStateOf<PhotoEnhancer.Proposal?>(null) }
-    var enhancedUri by remember { mutableStateOf<Uri?>(null) }
+    var reviewSource by remember { mutableStateOf<Uri?>(null) }
 
-    /** Save the crop now - both files kept - and show the strip with Undo. */
-    fun offerEnhance(proposal: PhotoEnhancer.Proposal?) {
-        pendingEnhance = proposal
-        enhancedUri = null
-        overlayState = overlayState.copy(
-            enhance = proposal?.let {
-                EnhanceProposal(it.before.asImageBitmap(), it.after.asImageBitmap(), it.proposal.rationale)
-            },
-            enhanceSaving = proposal != null,
-        )
-        if (proposal == null) return
-        enhancer.save(proposal, ContextCompat.getMainExecutor(context)) { saved ->
-            if (pendingEnhance !== proposal) return@save
-            enhancedUri = saved
-            overlayState = overlayState.copy(enhanceSaving = false)
+    /** Open the review for a photo just taken (or handed in by the dev hook). */
+    fun openReview(source: Uri, result: PhotoEnhancer.Result) {
+        val before = result.small ?: run {
+            Log.w(TAG, "review: no decode, skipping")
+            return
         }
+        pendingEnhance = result.proposal
+        reviewSource = source
+        overlayState = overlayState.copy(
+            review = ReviewState(
+                before = before.asImageBitmap(),
+                after = result.proposal?.after?.asImageBitmap(),
+                rationale = result.proposal?.proposal?.rationale ?: emptyList(),
+                enhanced = result.proposal != null,
+                look = 0,
+            ),
+        )
     }
+
+    fun closeReview() {
+        pendingEnhance = null
+        reviewSource = null
+        overlayState = overlayState.copy(review = null)
+    }
+
     DisposableEffect(enhancer) { onDispose { enhancer.close() } }
+
     val previewView = remember {
         PreviewView(context).apply {
             implementationMode = PreviewView.ImplementationMode.PERFORMANCE
@@ -293,7 +301,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
 
     LaunchedEffect(debugEnhanceUri) {
         if (debugEnhanceUri == null) return@LaunchedEffect
-        enhancer.analyse(Uri.parse(debugEnhanceUri), ContextCompat.getMainExecutor(context)) { offerEnhance(it) }
+        val u = Uri.parse(debugEnhanceUri)
+        enhancer.analyse(u, ContextCompat.getMainExecutor(context)) { openReview(u, it) }
     }
     var captureInFlight by remember { mutableStateOf(false) }
 
@@ -345,7 +354,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
                     )
                     previewSnapshot()?.let { snap -> say(LlmCoach.Kind.AFTER_SHOT, snap, LlmCoach.AFTER_SHOT_PROMPT) }
                     if (uri != null) {
-                        enhancer.analyse(uri, ContextCompat.getMainExecutor(context)) { offerEnhance(it) }
+                        enhancer.analyse(uri, ContextCompat.getMainExecutor(context)) { openReview(uri, it) }
                     }
                 }
 
@@ -401,18 +410,6 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
         if (!c.done) return@LaunchedEffect
         delay(COACH_LINGER_MS)
         if (overlayState.coach === c) overlayState = overlayState.copy(coach = null)
-    }
-
-    // The enhanced copy strip leaves on its own too, once saved.
-    LaunchedEffect(overlayState.enhance, overlayState.enhanceSaving) {
-        val e = overlayState.enhance ?: return@LaunchedEffect
-        if (overlayState.enhanceSaving) return@LaunchedEffect
-        delay(ENHANCE_LINGER_MS)
-        if (overlayState.enhance === e) {
-            pendingEnhance = null
-            enhancedUri = null
-            overlayState = overlayState.copy(enhance = null)
-        }
     }
 
     // --- sensor ----------------------------------------------------------
@@ -497,8 +494,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
                 mirrored = overlayState.mirrored,
                 focusPoint = overlayState.focusPoint,
                 focusNonce = overlayState.focusNonce,
-                enhance = overlayState.enhance,
-                enhanceSaving = overlayState.enhanceSaving,
+                review = overlayState.review,
                 coach = overlayState.coach,
                 coachAvailable = overlayState.coachAvailable,
                 reference = overlayState.reference,
@@ -518,7 +514,12 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
             val wantsShot = autoCapture.update(
                 next.verb, engine.stabilityOk, result.subject != null, result.dtMs, engine.totalError,
             )
-            if (wantsShot && thermalPlan[0].autoCaptureOn) capture(auto = true)
+            // Easy shot on: the coach may press the shutter (at the lock,
+            // or near enough). Off: guidance only, the shutter is the
+            // photographer's. Never while a review is up.
+            if (wantsShot && thermalPlan[0].autoCaptureOn && overlayState.easyShot && overlayState.review == null) {
+                capture(auto = true)
+            }
 
             // A direction signature under the thumb when the instruction
             // changes - left, right, up, down feel different - so the
@@ -689,21 +690,33 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
             },
             onGallery = { openGallery() },
             onModeSelected = { selectMode(it) },
-            onEnhanceUndo = {
-                val u = enhancedUri
-                if (u != null) {
-                    runCatching { context.contentResolver.delete(u, null, null) }
-                        .onSuccess { Log.i(TAG, "enhance: undone, removed $u") }
-                        .onFailure { Log.w(TAG, "enhance: undo failed", it) }
-                }
-                enhancedUri = null
-                pendingEnhance = null
-                overlayState = overlayState.copy(enhance = null, enhanceSaving = false)
+            onReviewChooseEnhanced = { on ->
+                overlayState.review?.let { r -> overlayState = overlayState.copy(review = r.copy(enhanced = on)) }
             },
-            onEnhanceDismiss = {
-                pendingEnhance = null
-                enhancedUri = null
-                overlayState = overlayState.copy(enhance = null, enhanceSaving = false)
+            onReviewChooseLook = { i ->
+                overlayState.review?.let { r -> overlayState = overlayState.copy(review = r.copy(look = i)) }
+            },
+            onReviewSave = {
+                val r = overlayState.review
+                val src = reviewSource
+                if (r != null && src != null && !r.saving) {
+                    overlayState = overlayState.copy(review = r.copy(saving = true))
+                    val look = Looks.ALL[r.look].matrix
+                    enhancer.saveFinal(src, pendingEnhance, r.enhanced, look, ContextCompat.getMainExecutor(context)) { saved ->
+                        if (saved != null) {
+                            lastCaptureUri = saved
+                            val chosen = if (r.enhanced) r.after else null
+                            overlayState = overlayState.copy(thumbnail = chosen ?: overlayState.thumbnail)
+                        }
+                        haptics.click()
+                        Log.i(TAG, "review: kept ${if (r.enhanced) "enhanced" else "original"} look=${Looks.ALL[r.look].name} saved=$saved")
+                        closeReview()
+                    }
+                }
+            },
+            onReviewDiscard = {
+                Log.i(TAG, "review: discarded, original kept as shot")
+                closeReview()
             },
             onTap = { x, y ->
                 // Focus and meter where the finger landed, and tell the coach
@@ -786,8 +799,7 @@ private fun buildOverlayState(
     mirrored: Boolean,
     focusPoint: Pair<Float, Float>?,
     focusNonce: Int,
-    enhance: EnhanceProposal?,
-    enhanceSaving: Boolean,
+    review: ReviewState?,
     coach: CoachText?,
     coachAvailable: Boolean,
     reference: ImageBitmap?,
@@ -830,8 +842,7 @@ private fun buildOverlayState(
         mirrored = mirrored,
         focusPoint = focusPoint,
         focusNonce = focusNonce,
-        enhance = enhance,
-        enhanceSaving = enhanceSaving,
+        review = review,
         coach = coach,
         coachAvailable = coachAvailable,
         reference = reference,

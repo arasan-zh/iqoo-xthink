@@ -44,10 +44,8 @@ data class OverlayState(
     val reference: ImageBitmap? = null,
     /** What the on-device coach is saying, or null when it has nothing to say. */
     val coach: CoachText? = null,
-    /** A photographer's crop waiting for a yes or no, or null. */
-    val enhance: EnhanceProposal? = null,
-    /** True while the enhanced file is being written. */
-    val enhanceSaving: Boolean = false,
+    /** The review after a shutter, or null. While it is up, nothing else is. */
+    val review: ReviewState? = null,
     /** Where the photographer last tapped, 0..1 of the preview; a ring is drawn there. */
     val focusPoint: Pair<Float, Float>? = null,
     /** Increments on every tap so the ring animates again at the same spot. */

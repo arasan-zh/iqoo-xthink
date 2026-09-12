@@ -4,6 +4,8 @@ import android.content.ContentValues
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
 import android.graphics.Matrix
 import android.graphics.ImageDecoder
 import android.net.Uri
@@ -69,12 +71,15 @@ class PhotoEnhancer(private val context: Context) {
      * with a proposal, or null when the photo is already framed or has no
      * person in it.
      */
-    fun analyse(uri: Uri, callbackExecutor: Executor, onResult: (Proposal?) -> Unit) {
+    /** The look at a photo: the small decode for the review, and a crop if one is worth it. */
+    class Result(val small: Bitmap?, val proposal: Proposal?)
+
+    fun analyse(uri: Uri, callbackExecutor: Executor, onResult: (Result) -> Unit) {
         worker.execute {
             val started = System.currentTimeMillis()
             val small = runCatching { decode(uri, ANALYSIS_LONG_EDGE) }.getOrElse {
                 Log.w(TAG, "enhance: decode failed", it)
-                callbackExecutor.execute { onResult(null) }
+                callbackExecutor.execute { onResult(Result(null, null)) }
                 return@execute
             }
             val image = InputImage.fromBitmap(small, 0)
@@ -82,7 +87,7 @@ class PhotoEnhancer(private val context: Context) {
                 val face = found.maxByOrNull { it.boundingBox.width().toLong() * it.boundingBox.height() }
                 if (face == null) {
                     Log.i(TAG, "enhance: no face, nothing to crop (%d ms)".format(System.currentTimeMillis() - started))
-                    callbackExecutor.execute { onResult(null) }
+                    callbackExecutor.execute { onResult(Result(small, null)) }
                     return@addOnSuccessListener
                 }
                 pose.process(image).addOnCompleteListener(worker) { task ->
@@ -121,7 +126,7 @@ class PhotoEnhancer(private val context: Context) {
                     val elapsed = System.currentTimeMillis() - started
                     if (crop == null) {
                         Log.i(TAG, "enhance: already framed face=%.2f body=%s (%d ms)".format(box.h, body != null, elapsed))
-                        callbackExecutor.execute { onResult(null) }
+                        callbackExecutor.execute { onResult(Result(small, null)) }
                         return@addOnCompleteListener
                     }
                     val reasons = if (extra > 0f) listOf("Added space above the head") + crop.rationale else crop.rationale
@@ -135,28 +140,50 @@ class PhotoEnhancer(private val context: Context) {
                     )
                     val name = uri.lastPathSegment ?: "xthink"
                     callbackExecutor.execute {
-                        onResult(Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra))
+                        onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra)))
                     }
                 }
             }.addOnFailureListener(worker) {
                 Log.w(TAG, "enhance: face detection failed", it)
-                callbackExecutor.execute { onResult(null) }
+                callbackExecutor.execute { onResult(Result(small, null)) }
             }
         }
     }
 
     /**
-     * Cut the crop from the full-resolution photo and save it next to the
-     * original as `<name>_xthink.jpg`. Both files stay: the before and the
-     * after. Returns the new Uri, on [callbackExecutor].
+     * Write what the photographer chose: the crop (if [useCrop]) and the
+     * look (if [look] is a colour matrix), from the full-resolution photo,
+     * saved next to the original as a new file. The original is never
+     * touched. Nothing is written - and null is returned - when the choice
+     * is the photo exactly as shot.
      */
-    fun save(p: Proposal, callbackExecutor: Executor, onSaved: (Uri?) -> Unit) {
+    fun saveFinal(
+        source: Uri,
+        crop: Proposal?,
+        useCrop: Boolean,
+        look: FloatArray?,
+        callbackExecutor: Executor,
+        onSaved: (Uri?) -> Unit,
+    ) {
+        val cropping = useCrop && crop != null
+        if (!cropping && look == null) {
+            callbackExecutor.execute { onSaved(null) }
+            return
+        }
         worker.execute {
             val result = runCatching {
-                var full = decode(p.sourceUri, 0)
-                if (p.extraTop > 0f) full = extendTop(full, p.extraTop)
-                val px = PhotographerCrop.toPixels(p.proposal.crop, full.width, full.height)
-                val cropped = Bitmap.createBitmap(full, px[0], px[1], px[2], px[3])
+                var full = decode(source, 0)
+                if (cropping) {
+                    if (crop!!.extraTop > 0f) full = extendTop(full, crop.extraTop)
+                    val px = PhotographerCrop.toPixels(crop.proposal.crop, full.width, full.height)
+                    full = Bitmap.createBitmap(full, px[0], px[1], px[2], px[3])
+                }
+                if (look != null) {
+                    val out = Bitmap.createBitmap(full.width, full.height, Bitmap.Config.ARGB_8888)
+                    val paint = Paint().apply { colorFilter = ColorMatrixColorFilter(look) }
+                    Canvas(out).drawBitmap(full, 0f, 0f, paint)
+                    full = out
+                }
                 val display = "xthink_" + System.currentTimeMillis() + "_enhanced.jpg"
                 val values = ContentValues().apply {
                     put(MediaStore.Images.Media.DISPLAY_NAME, display)
@@ -166,8 +193,8 @@ class PhotoEnhancer(private val context: Context) {
                 val resolver = context.contentResolver
                 val out = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                     ?: error("MediaStore refused the insert")
-                resolver.openOutputStream(out)!!.use { cropped.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
-                Log.i(TAG, "enhance: saved ${cropped.width}x${cropped.height} -> $out")
+                resolver.openOutputStream(out)!!.use { full.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
+                Log.i(TAG, "enhance: saved ${full.width}x${full.height} crop=$cropping look=${look != null} -> $out")
                 out
             }.onFailure { Log.e(TAG, "enhance: save failed", it) }.getOrNull()
             callbackExecutor.execute { onSaved(result) }

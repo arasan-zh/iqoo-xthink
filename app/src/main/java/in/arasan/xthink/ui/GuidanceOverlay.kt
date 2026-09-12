@@ -68,8 +68,10 @@ fun GuidanceOverlay(
     onModeSelected: (CoachMode) -> Unit,
     onFlip: () -> Unit,
     onTap: (x: Float, y: Float) -> Unit,
-    onEnhanceUndo: () -> Unit,
-    onEnhanceDismiss: () -> Unit,
+    onReviewChooseEnhanced: (Boolean) -> Unit,
+    onReviewChooseLook: (Int) -> Unit,
+    onReviewSave: () -> Unit,
+    onReviewDiscard: () -> Unit,
     onPickReference: () -> Unit,
     onClearReference: () -> Unit,
     onToggleEasyShot: () -> Unit,
@@ -208,17 +210,6 @@ fun GuidanceOverlay(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
-                // The enhanced copy, already saved: a strip that never
-                // covers the picture, with Undo. Guidance carries on below.
-                val proposal = state.enhance
-                if (proposal != null) {
-                    EnhanceStrip(
-                        proposal = proposal,
-                        saved = !state.enhanceSaving,
-                        onUndo = onEnhanceUndo,
-                        onDismiss = onEnhanceDismiss,
-                    )
-                }
                 if (state.assisted) {
                     GuidanceCard(state = state)
                     StatusStrip(state = state)
@@ -254,6 +245,19 @@ fun GuidanceOverlay(
 
         if (showQr) {
             QrSheet(url = Links.INSTALL_APK, onDismiss = { showQr = false })
+        }
+
+        // The review sits above everything: the next shot waits for it.
+        val review = state.review
+        if (review != null) {
+            ReviewSheet(
+                review = review,
+                coach = state.coach,
+                onChooseEnhanced = onReviewChooseEnhanced,
+                onChooseLook = onReviewChooseLook,
+                onSave = onReviewSave,
+                onDiscard = onReviewDiscard,
+            )
         }
     }
 }
