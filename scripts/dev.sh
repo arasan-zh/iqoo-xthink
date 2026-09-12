@@ -19,6 +19,8 @@ xThink dev helper
   scripts/dev.sh ship <tag> <msg>     commit everything, tag, push, watch CI
   scripts/dev.sh dev                  print adb connection steps
   scripts/dev.sh pair <ip:port> <code>  pair and connect over wireless debugging
+  scripts/dev.sh model                push the Gemma 3n coach model to EVERY connected phone
+  scripts/dev.sh all                  install the app on every connected phone, grant camera, launch
 USAGE
 }
 
@@ -105,6 +107,40 @@ STEPS
     # not the pairing port, so ask for it rather than guessing.
     read -r -p "adb connect address (ip:port from Wireless debugging): " connect_addr
     adb connect "$connect_addr"
+    ;;
+
+  model)
+    # The coach model is 3.1 GB and not in the APK. It lives in ~/Lab
+    # (regenerable: the HF token on this Mac can re-download it) and is
+    # pushed to /data/local/tmp/llm, which the app can read.
+    model="$HOME/Lab/xthink/models/gemma-3n-E2B-it-int4.task"
+    if [ ! -f "$model" ]; then
+      echo "no model at $model - download it first (see docs/TECHNICAL.md)" >&2
+      exit 2
+    fi
+    for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
+      have=$(adb -s "$s" shell stat -c %s /data/local/tmp/llm/gemma-3n-E2B-it-int4.task 2>/dev/null | tr -d '\r')
+      if [ "$have" = "$(stat -f %z "$model")" ]; then
+        echo "$s: model already there"
+        continue
+      fi
+      echo "$s: pushing 3.1 GB (about a minute over USB)..."
+      adb -s "$s" shell "mkdir -p /data/local/tmp/llm && chmod 755 /data/local/tmp/llm"
+      adb -s "$s" push "$model" /data/local/tmp/llm/gemma-3n-E2B-it-int4.task
+      adb -s "$s" shell chmod 644 /data/local/tmp/llm/gemma-3n-E2B-it-int4.task
+    done
+    ;;
+
+  all)
+    # Gradle installs on every connected device by itself; the rest is the
+    # first-run chores a judge's phone would otherwise ask for.
+    ./gradlew installDebug
+    for s in $(adb devices | awk 'NR>1 && $2=="device" {print $1}'); do
+      adb -s "$s" shell pm grant in.arasan.xthink android.permission.CAMERA 2>/dev/null || true
+      adb -s "$s" shell "input keyevent KEYCODE_WAKEUP; wm dismiss-keyguard" >/dev/null 2>&1 || true
+      adb -s "$s" shell am start -n in.arasan.xthink/.MainActivity >/dev/null
+      echo "$s: installed and launched"
+    done
     ;;
 
   ""|-h|--help|help)
