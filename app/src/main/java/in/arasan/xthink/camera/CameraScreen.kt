@@ -92,8 +92,14 @@ private const val TAG = "xThink"
 /** How long a tapped focus point stays before the camera returns to continuous AF. */
 private const val FOCUS_HOLD_S = 5L
 
-/** The live coach looks at the frame at most this often. */
-private const val COACH_LIVE_PERIOD_MS = 15_000L
+/** While chasing a reference, the coach looks at the frame at most this often. */
+private const val COACH_LIVE_PERIOD_MS = 20_000L
+
+/** The coach's words stay this long after the last one arrives. */
+private const val COACH_LINGER_MS = 7_000L
+
+/** The enhanced-copy strip stays this long once saved; Undo is available meanwhile. */
+private const val ENHANCE_LINGER_MS = 8_000L
 
 /** A tap may bring a look forward, but not more often than this. */
 private const val COACH_TAP_MIN_GAP_MS = 4_000L
@@ -190,6 +196,25 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
     // After the shutter: the photographer's crop, offered, never imposed.
     val enhancer = remember { PhotoEnhancer(context) }
     var pendingEnhance by remember { mutableStateOf<PhotoEnhancer.Proposal?>(null) }
+    var enhancedUri by remember { mutableStateOf<Uri?>(null) }
+
+    /** Save the crop now - both files kept - and show the strip with Undo. */
+    fun offerEnhance(proposal: PhotoEnhancer.Proposal?) {
+        pendingEnhance = proposal
+        enhancedUri = null
+        overlayState = overlayState.copy(
+            enhance = proposal?.let {
+                EnhanceProposal(it.before.asImageBitmap(), it.after.asImageBitmap(), it.proposal.rationale)
+            },
+            enhanceSaving = proposal != null,
+        )
+        if (proposal == null) return
+        enhancer.save(proposal, ContextCompat.getMainExecutor(context)) { saved ->
+            if (pendingEnhance !== proposal) return@save
+            enhancedUri = saved
+            overlayState = overlayState.copy(enhanceSaving = false)
+        }
+    }
     DisposableEffect(enhancer) { onDispose { enhancer.close() } }
     val previewView = remember {
         PreviewView(context).apply {
@@ -268,14 +293,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
 
     LaunchedEffect(debugEnhanceUri) {
         if (debugEnhanceUri == null) return@LaunchedEffect
-        enhancer.analyse(Uri.parse(debugEnhanceUri), ContextCompat.getMainExecutor(context)) { proposal ->
-            pendingEnhance = proposal
-            overlayState = overlayState.copy(
-                enhance = proposal?.let {
-                    EnhanceProposal(it.before.asImageBitmap(), it.after.asImageBitmap(), it.proposal.rationale)
-                },
-            )
-        }
+        enhancer.analyse(Uri.parse(debugEnhanceUri), ContextCompat.getMainExecutor(context)) { offerEnhance(it) }
     }
     var captureInFlight by remember { mutableStateOf(false) }
 
@@ -327,19 +345,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
                     )
                     previewSnapshot()?.let { snap -> say(LlmCoach.Kind.AFTER_SHOT, snap, LlmCoach.AFTER_SHOT_PROMPT) }
                     if (uri != null) {
-                        enhancer.analyse(uri, ContextCompat.getMainExecutor(context)) { proposal ->
-                            pendingEnhance = proposal
-                            overlayState = overlayState.copy(
-                                enhance = proposal?.let {
-                                    EnhanceProposal(
-                                        before = it.before.asImageBitmap(),
-                                        after = it.after.asImageBitmap(),
-                                        rationale = it.proposal.rationale,
-                                    )
-                                },
-                                enhanceSaving = false,
-                            )
-                        }
+                        enhancer.analyse(uri, ContextCompat.getMainExecutor(context)) { offerEnhance(it) }
                     }
                 }
 
@@ -371,10 +377,10 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
         onDispose { monitor.stop() }
     }
 
-    // Live coaching on a slow cadence: only when the coach is idle, the
-    // photographer is being assisted, there is something in the frame (or
-    // a reference to chase), nothing is being reviewed, and the phone is
-    // not hot. Never a loop over frames - one look every LIVE_PERIOD.
+    // The coach does not chatter. Unprompted it speaks only while chasing a
+    // reference photo, one look every COACH_LIVE_PERIOD_MS, and only when
+    // idle, assisted, something in frame and the phone not hot. Otherwise
+    // it waits for a tap or a shutter. Never a loop over frames.
     LaunchedEffect(coachState) {
         if (coachState != LlmCoach.State.READY) return@LaunchedEffect
         while (true) {
@@ -382,11 +388,30 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
             val now = SystemClock.uptimeMillis()
             val st = overlayState
             val idle = now - lastCoachAskMs[0] >= COACH_LIVE_PERIOD_MS
-            val worth = st.subject != null || referenceGuide != null
             val calm = thermalPlan[0].tier < ThermalTier.HOT
-            if (!idle || coach.isBusy || !st.assisted || !worth || st.enhance != null || !calm) continue
+            if (!idle || coach.isBusy || !st.assisted || referenceGuide == null || st.subject == null || !calm) continue
             val snap = previewSnapshot() ?: continue
             say(LlmCoach.Kind.LIVE, snap, LlmCoach.livePromptWith(referenceGuide))
+        }
+    }
+
+    // Said and done: the panel leaves on its own after a moment.
+    LaunchedEffect(overlayState.coach?.done, overlayState.coach?.label) {
+        val c = overlayState.coach ?: return@LaunchedEffect
+        if (!c.done) return@LaunchedEffect
+        delay(COACH_LINGER_MS)
+        if (overlayState.coach === c) overlayState = overlayState.copy(coach = null)
+    }
+
+    // The enhanced copy strip leaves on its own too, once saved.
+    LaunchedEffect(overlayState.enhance, overlayState.enhanceSaving) {
+        val e = overlayState.enhance ?: return@LaunchedEffect
+        if (overlayState.enhanceSaving) return@LaunchedEffect
+        delay(ENHANCE_LINGER_MS)
+        if (overlayState.enhance === e) {
+            pendingEnhance = null
+            enhancedUri = null
+            overlayState = overlayState.copy(enhance = null)
         }
     }
 
@@ -664,28 +689,20 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugCoachUri: St
             },
             onGallery = { openGallery() },
             onModeSelected = { selectMode(it) },
-            onEnhanceSave = {
-                val p = pendingEnhance
-                if (p != null && !overlayState.enhanceSaving) {
-                    overlayState = overlayState.copy(enhanceSaving = true)
-                    enhancer.save(p, ContextCompat.getMainExecutor(context)) { saved ->
-                        if (saved != null) {
-                            lastCaptureUri = saved
-                            haptics.click()
-                            overlayState = overlayState.copy(
-                                thumbnail = p.after.asImageBitmap(),
-                                enhance = null,
-                                enhanceSaving = false,
-                            )
-                        } else {
-                            overlayState = overlayState.copy(enhanceSaving = false)
-                        }
-                        pendingEnhance = null
-                    }
+            onEnhanceUndo = {
+                val u = enhancedUri
+                if (u != null) {
+                    runCatching { context.contentResolver.delete(u, null, null) }
+                        .onSuccess { Log.i(TAG, "enhance: undone, removed $u") }
+                        .onFailure { Log.w(TAG, "enhance: undo failed", it) }
                 }
+                enhancedUri = null
+                pendingEnhance = null
+                overlayState = overlayState.copy(enhance = null, enhanceSaving = false)
             },
             onEnhanceDismiss = {
                 pendingEnhance = null
+                enhancedUri = null
                 overlayState = overlayState.copy(enhance = null, enhanceSaving = false)
             },
             onTap = { x, y ->

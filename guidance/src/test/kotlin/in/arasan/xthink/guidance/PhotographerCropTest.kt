@@ -20,7 +20,7 @@ class PhotographerCropTest {
         val expected = 0.58f + PhotographerCrop.THIGH_CUT * (0.86f - 0.58f)
         assertEquals(expected, p.crop.bottom, 0.02f)
         assertTrue("must stay clear of the knee, got ${p.crop.bottom}", p.crop.bottom < 0.86f - 0.05f)
-        assertTrue(p.rationale.any { it.contains("mid-thigh") })
+        assertTrue(p.rationale.any { it.contains("Mid-thigh") })
     }
 
     @Test
@@ -29,7 +29,7 @@ class PhotographerCropTest {
         val pose = BodyPose(shoulderY = 0.24f, hipY = 0.45f, kneeY = 0.65f, ankleY = 0.86f)
         val p = req(PhotographerCrop.propose(face, eyesY = 0.14f, pose = pose, sourceAspect = aspect, targetAspect = aspect))
         assertTrue("feet must be inside the crop", p.crop.bottom > 0.86f)
-        assertTrue(p.rationale.any { it.contains("feet") })
+        assertTrue(p.rationale.any { it.contains("Feet") })
     }
 
     @Test
@@ -100,7 +100,7 @@ class PhotographerCropTest {
         assertEquals(0.62f + PhotographerCrop.THIGH_CUT * 0.18f, c.bottom, 0.02f)
         val pxAspect = (c.width * 1862f) / (c.height * 4096f)
         assertEquals(PhotographerCrop.PORTRAIT_ASPECT, pxAspect, 0.02f)
-        assertTrue(p.rationale.any { it.contains("mid-thigh") })
+        assertTrue(p.rationale.any { it.contains("Mid-thigh") })
 
         // Push the knees lower so mid-thigh no longer fits 4:5: the ladder
         // takes a taller shape rather than cutting higher.

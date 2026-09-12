@@ -160,35 +160,33 @@ class LlmCoach(private val context: Context) {
 
     companion object {
         const val TAG = "xThink"
-        const val MAX_TOKENS = 768
+        /** Whole context: the image is 256 tokens, the prompt ~100, the reply under 60. */
+        const val MAX_TOKENS = 1024
         const val TOP_K = 40
         const val TEMPERATURE = 0.7f
         const val IMAGE_LONG_EDGE = 512
 
         val LIVE_PROMPT = """
-            You are a friendly photography coach looking through the phone camera with the photographer.
-            In one or two short sentences (at most 25 words), say the single most useful thing to do right now
-            to make this shot better: light, angle, background, distance, or the moment. Be specific to what you see.
-            No greeting, no preamble.
+            You are a photography coach looking through the phone camera. Say the ONE most useful change
+            for this shot - light, angle, background, distance or moment - in at most 12 words.
+            Be specific to what you see. No greeting, no preamble, no punctuation flourishes.
         """.trimIndent()
 
         val AFTER_SHOT_PROMPT = """
-            You are a warm, encouraging photographer looking at a photo your friend just took.
-            In two short sentences (at most 40 words): first, say what is genuinely good about it, specifically.
-            Then one small, concrete suggestion for the next shot. No greeting, no preamble, no bullet points.
+            You are a warm photographer looking at a photo your friend just took. In ONE sentence of at most
+            18 words: name the one thing that is genuinely good about it, then a tiny tip. No greeting, no preamble.
         """.trimIndent()
 
         val REFERENCE_PROMPT = """
             Describe how this photo is composed so a photographer could recreate it with a different subject:
-            where the subject sits in the frame, how close, the camera angle, the light, the background.
-            Three short lines, at most twelve words each, no preamble.
+            subject placement, distance, camera angle, light. Three lines of at most eight words each, no preamble.
         """.trimIndent()
 
         fun livePromptWith(reference: String?): String =
             if (reference.isNullOrBlank()) LIVE_PROMPT else """
                 The photographer wants a shot composed like this reference:
                 $reference
-                Compare the current camera view with it and give ONE instruction (at most 20 words) to get closer.
+                Compare the camera view with it and give ONE instruction of at most 12 words to get closer.
                 No greeting, no preamble.
             """.trimIndent()
     }

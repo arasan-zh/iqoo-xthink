@@ -128,11 +128,11 @@ object PhotographerCrop {
         val knee = pose?.kneeY
         val hip = pose?.hipY
         val cuts = mutableListOf<Pair<Float, String>>()
-        if (ankle != null && ankle < 0.98f) cuts += (ankle + FLOOR_FACES * face.h) to "Kept the feet, with a little floor"
-        if (knee != null && hip != null) cuts += (hip + THIGH_CUT * (knee - hip)) to "Cropped mid-thigh, never at the knee"
-        if (hip != null) cuts += (hip + 0.4f * (hip - faceBottom).coerceAtLeast(0f)) to "Cropped just below the hip"
+        if (ankle != null && ankle < 0.98f) cuts += (ankle + FLOOR_FACES * face.h) to "Feet kept, with a little floor"
+        if (knee != null && hip != null) cuts += (hip + THIGH_CUT * (knee - hip)) to "Mid-thigh crop, not at the knee"
+        if (hip != null) cuts += (hip + 0.4f * (hip - faceBottom).coerceAtLeast(0f)) to "Cropped below the hip"
         val chestFrom = pose?.shoulderY ?: faceBottom
-        cuts += (chestFrom + CHEST_FACES * face.h) to "Head and shoulders, chest deep"
+        cuts += (chestFrom + CHEST_FACES * face.h) to "Head and shoulders"
 
         // In per-axis fractions a crop of height h has width h * (target /
         // source), so each shape caps how tall the crop can be. Longest cut
@@ -165,7 +165,7 @@ object PhotographerCrop {
         } else {
             val topForEyes = bottom - (bottom - eyes) / (1f - EYE_LINE)
             top = topForEyes.coerceIn(maxOf(looseTop, bottom - maxHeight), tightTop)
-            reasons += "Room above the head, eyes toward the upper third"
+            reasons += "Eyes toward the upper third"
         }
         val height = bottom - top
 

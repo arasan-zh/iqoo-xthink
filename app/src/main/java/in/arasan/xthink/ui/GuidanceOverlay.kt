@@ -68,7 +68,7 @@ fun GuidanceOverlay(
     onModeSelected: (CoachMode) -> Unit,
     onFlip: () -> Unit,
     onTap: (x: Float, y: Float) -> Unit,
-    onEnhanceSave: () -> Unit,
+    onEnhanceUndo: () -> Unit,
     onEnhanceDismiss: () -> Unit,
     onPickReference: () -> Unit,
     onClearReference: () -> Unit,
@@ -208,17 +208,18 @@ fun GuidanceOverlay(
                     .navigationBarsPadding()
                     .padding(bottom = 8.dp),
             ) {
-                // The crop proposal takes the guidance card's place while it
-                // waits: one thing to read at a time.
+                // The enhanced copy, already saved: a strip that never
+                // covers the picture, with Undo. Guidance carries on below.
                 val proposal = state.enhance
                 if (proposal != null) {
-                    EnhanceCard(
+                    EnhanceStrip(
                         proposal = proposal,
-                        saving = state.enhanceSaving,
-                        onSave = onEnhanceSave,
+                        saved = !state.enhanceSaving,
+                        onUndo = onEnhanceUndo,
                         onDismiss = onEnhanceDismiss,
                     )
-                } else if (state.assisted) {
+                }
+                if (state.assisted) {
                     GuidanceCard(state = state)
                     StatusStrip(state = state)
                 }
