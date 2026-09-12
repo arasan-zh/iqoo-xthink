@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, CROP, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, CLEAN, WATCH }
+    enum class Kind { LIVE, FINISH, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, WATCH }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -249,18 +249,35 @@ class LlmCoach(private val context: Context) {
         """.trimIndent()
 
         /**
-         * The retouch. The detector's candidates are listed in words; the
-         * model, looking at the photo, says which are distractions. Read by
-         * Retouch.parse, so the shape of the answer is fixed: one line,
-         * `REMOVE 1,3 | why` or `NONE | why`. The numbers become holes for
-         * LaMa - so the rules say what a hole may and may not be.
+         * The finish. One look at the photo, one plan: the crop, the
+         * headroom, the sides to paint room into, the numbered things to
+         * paint out, the look. Read by Finishing.parse, so the shape is
+         * fixed - six lines, one key each. The model decides from the
+         * picture and the detectors' facts; Finishing checks each line
+         * against the geometry, and LaMa is handed only what survives.
          */
-        fun cleanPrompt(candidates: String): String = """
-            You are a photo retoucher finishing this photo of a person. Things in it that could be painted out, numbered:
-            $candidates
-            Paint out only distractions: litter, a stray bag or bottle, a cable, a bin, a sign, a photobomber at the edge, clutter that pulls the eye from the person.
-            Never paint out the person, anything they wear or hold, or anything that gives the place its character.
-            Answer with exactly one line: REMOVE <numbers, comma separated> | <what they are, three words> - or NONE | <why, three words>.
+        fun finishPrompt(facts: String, candidates: String): String = FINISH_TEMPLATE
+            .replace("{facts}", facts)
+            .replace("{candidates}", candidates.ifBlank { "(nothing found)" })
+
+        private val FINISH_TEMPLATE = """
+            You are a portrait photographer finishing this photo of a person. Look at the picture and decide how to finish it.
+            Measured by the detectors: {facts}
+            Things in the picture that could be painted out, numbered:
+            {candidates}
+            How to decide:
+            - CROP: where the person is cut - FEET (full body), THIGH (three-quarter), HIP (half length) or CHEST (head and shoulders) - the cut that removes clutter and flatters them, never at a joint. KEEP if the framing is already right.
+            - HEADROOM: ADD if the head touches the top edge and the space above it is plain (sky, wall, blur) so room can be painted in. TOO MUCH if there is empty space above the head. Otherwise OK.
+            - EXTEND: the side the person is pressed against, when the background at that edge is plain enough to paint - LEFT or RIGHT when the face is against that edge, BOTTOM only with the feet fully in the frame. Never the side that already has room. Otherwise NONE.
+            - REMOVE: the numbers of distractions only - litter, a stray bag or bottle, a cable, a bin, a sign, a photobomber at the edge. Never the person, what they wear or hold, or what gives the place its character. Otherwise NONE.
+            - LOOK: NATURAL, WARM, COOL, VIVID, MONO or FILM - the one that suits the light and the mood.
+            Answer with exactly these six lines and nothing else:
+            CROP <FEET or THIGH or HIP or CHEST or KEEP>
+            HEADROOM <ADD or OK or TOO MUCH>
+            EXTEND <NONE or sides, comma separated>
+            REMOVE <NONE or numbers, comma separated>
+            LOOK <name>
+            WHY <three to eight words>
         """.trimIndent()
 
         /** Steve's eyes: the camera's reading of the Mac screen, narrated in one line. */
@@ -271,15 +288,6 @@ class LlmCoach(private val context: Context) {
             ${screen.take(900)}
             ---
             ${if (!typed.isNullOrBlank()) "The phone just typed on the Mac: \"${typed.take(120)}\"\n" else ""}Say in one short line what the Mac is showing or doing now${if (!typed.isNullOrBlank()) ", and whether the typed text landed" else ""}. No preamble.
-        """.trimIndent()
-
-        /** The crop and the look, in two words. Parsed by PhotographerCrop.parseCut and Looks. */
-        val CROP_PROMPT = """
-            You are a portrait photographer finishing this photo of a person.
-            Choose the crop: FEET (full body), THIGH (three-quarter), HIP (half length) or CHEST (head and shoulders) -
-            the one that removes clutter and flatters the person, never cutting at a joint.
-            Choose the look: NATURAL, WARM, COOL, VIVID, MONO or FILM - the one that suits the light and the mood.
-            Answer with exactly two words: the crop, then the look.
         """.trimIndent()
 
         private const val VERBS = """

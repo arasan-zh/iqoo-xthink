@@ -84,6 +84,7 @@ import `in`.arasan.xthink.guidance.GeniusPlan
 import `in`.arasan.xthink.guidance.PlanStep
 import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
+import `in`.arasan.xthink.guidance.Finishing
 import `in`.arasan.xthink.guidance.MacWatch
 import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.Exercise
@@ -355,14 +356,14 @@ private fun CameraAndGuidance(
     var reviewClean by remember { mutableStateOf<PhotoEnhancer.Clean?>(null) }
     var reviewSource by remember { mutableStateOf<Uri?>(null) }
 
-    // The retouch waits for the review to open and the coach to be free.
+    // The retouch waits for the review to open.
     var cleanPending by remember { mutableStateOf<PhotoEnhancer.Result?>(null) }
 
     /** Open the review for a photo just taken (or handed in by the dev hook). */
     fun openReview(source: Uri, result: PhotoEnhancer.Result) {
         val before = result.small
         val proposal = result.proposal
-        if (before == null || proposal == null) {
+        if (before == null || (proposal == null && result.job.isEmpty)) {
             // No recognised person, nothing to choose: the shot stands as
             // taken, with the camera-page look baked in if one is set.
             val look = Looks.ALL[overlayState.look]
@@ -378,12 +379,14 @@ private fun CameraAndGuidance(
         pendingEnhance = proposal
         reviewSource = source
         reviewClean = null
+        // A plan with no crop - the frame kept, something painted out -
+        // still gets the review: AS SHOT alone, and the retouch when it lands.
         overlayState = overlayState.copy(
             review = ReviewState(
                 before = before.asImageBitmap(),
-                after = proposal.after.asImageBitmap(),
-                rationale = proposal.proposal.rationale,
-                enhanced = true,
+                after = proposal?.after?.asImageBitmap(),
+                rationale = proposal?.proposal?.rationale ?: emptyList(),
+                enhanced = proposal != null,
                 look = if (overlayState.look != 0) overlayState.look else (result.suggestedLook ?: 0),
                 soft = result.soft,
                 cleaning = true,
@@ -424,22 +427,11 @@ private fun CameraAndGuidance(
     }
 
 
-    /** The coach's word on the cut, when there is a coach and it is free. */
-    fun cutAdvisor(): PhotoEnhancer.CutAdvisor? {
+    /** The coach's plan for the finish, when there is a coach and it is free. */
+    fun finishAdvisor(): PhotoEnhancer.FinishAdvisor? {
         if (coachState != LlmCoach.State.READY || coach.isBusy) return null
-        return PhotoEnhancer.CutAdvisor { photo, answer ->
-            val started = coach.ask(LlmCoach.Kind.CROP, photo, LlmCoach.CROP_PROMPT, ContextCompat.getMainExecutor(context)) { text, done ->
-                if (done) answer(text)
-            }
-            if (!started) answer(null)
-        }
-    }
-
-    /** The coach's eye for distractions, when there is a coach. */
-    fun cleanAdvisor(): PhotoEnhancer.CleanAdvisor? {
-        if (coachState != LlmCoach.State.READY) return null
-        return PhotoEnhancer.CleanAdvisor { photo, candidates, answer ->
-            val started = coach.ask(LlmCoach.Kind.CLEAN, photo, LlmCoach.cleanPrompt(candidates), ContextCompat.getMainExecutor(context)) { text, done ->
+        return PhotoEnhancer.FinishAdvisor { photo, facts, candidates, answer ->
+            val started = coach.ask(LlmCoach.Kind.FINISH, photo, LlmCoach.finishPrompt(facts, candidates), ContextCompat.getMainExecutor(context)) { text, done ->
                 if (done) answer(text)
             }
             if (!started) answer(null)
@@ -450,23 +442,20 @@ private fun CameraAndGuidance(
     // committed to the heavy work then - so the first retouch is prompt.
     LaunchedEffect(coachState) { if (coachState == LlmCoach.State.READY) inpainter.warmUp() }
 
-    // The retouch, once the review is up: detector, coach, LaMa, then the
-    // chip appears. Absent a coach or the LaMa file, the review just never
-    // says "looking".
-    LaunchedEffect(cleanPending, coachState) {
+    // The retouch, once the review is up: LaMa does what the plan says,
+    // then the chip appears. An empty plan, or no LaMa file, and the review
+    // just stops saying "looking".
+    LaunchedEffect(cleanPending) {
         val result = cleanPending ?: return@LaunchedEffect
         val source = reviewSource ?: return@LaunchedEffect
-        val small = result.small ?: return@LaunchedEffect
-        if (coachState == LlmCoach.State.LOADING) return@LaunchedEffect
         cleanPending = null
-        val advisor = cleanAdvisor()
-        if (advisor == null || !inpainter.available) {
-            Log.i(TAG, "clean: skipped (coach=${coachState} lama=${inpainter.available})")
+        if (result.job.isEmpty || !inpainter.available) {
+            Log.i(TAG, "retouch: skipped (holes=${result.job.remove.size} strips=${result.job.extend.size} lama=${inpainter.available})")
             overlayState.review?.let { r -> overlayState = overlayState.copy(review = r.copy(cleaning = false)) }
             return@LaunchedEffect
         }
-        enhancer.clean(small, result.proposal, result.subject, advisor, inpainter, ContextCompat.getMainExecutor(context)) { clean ->
-            if (reviewSource != source) return@clean
+        enhancer.retouch(result, inpainter, ContextCompat.getMainExecutor(context)) { clean ->
+            if (reviewSource != source) return@retouch
             reviewClean = clean
             overlayState.review?.let { r ->
                 overlayState = overlayState.copy(
@@ -474,7 +463,7 @@ private fun CameraAndGuidance(
                         cleaning = false,
                         cleanBefore = clean?.before?.asImageBitmap(),
                         cleanAfter = clean?.after?.asImageBitmap(),
-                        cleanNote = clean?.why?.ifBlank { "distractions painted out" },
+                        cleanNote = clean?.let { c -> c.why.ifBlank { Finishing.describe(c.job).joinToString(", ").lowercase() } },
                         useClean = clean != null,
                     ),
                 )
@@ -491,7 +480,7 @@ private fun CameraAndGuidance(
         if (coachState == LlmCoach.State.MISSING && coach.modelFile() != null) { ensureCoach(); return@LaunchedEffect }
         if (coachState == LlmCoach.State.LOADING) return@LaunchedEffect
         val u = Uri.parse(debugEnhanceUri)
-        enhancer.analyse(u, ContextCompat.getMainExecutor(context), cutAdvisor()) { openReview(u, it) }
+        enhancer.analyse(u, ContextCompat.getMainExecutor(context), finishAdvisor()) { openReview(u, it) }
     }
     var captureInFlight by remember { mutableStateOf(false) }
 
@@ -1094,7 +1083,7 @@ private fun CameraAndGuidance(
                     )
                     if (uri != null) {
                         if (overlayState.mode == CoachMode.PORTRAIT) {
-                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), cutAdvisor()) { openReview(uri, it) }
+                            enhancer.analyse(uri, ContextCompat.getMainExecutor(context), finishAdvisor()) { openReview(uri, it) }
                         } else {
                             // Scenes, objects, creative: no crop to a person - the shot stands, with the look.
                             openReview(uri, PhotoEnhancer.Result(null, null))
@@ -1703,15 +1692,15 @@ private fun CameraAndGuidance(
                 if (r != null && src != null && !r.saving) {
                     overlayState = overlayState.copy(review = r.copy(saving = true))
                     val look = Looks.ALL[r.look].matrix
-                    val holes = if (r.useClean) reviewClean?.holes else null
-                    enhancer.saveFinal(src, pendingEnhance, r.enhanced, look, ContextCompat.getMainExecutor(context), holes, inpainter) { saved ->
+                    val job = if (r.useClean) reviewClean?.job else null
+                    enhancer.saveFinal(src, pendingEnhance, r.enhanced, look, ContextCompat.getMainExecutor(context), job, inpainter) { saved ->
                         if (saved != null) {
                             lastCaptureUri = saved
                             val chosen = if (r.enhanced) (if (r.useClean) r.cleanAfter ?: r.after else r.after) else (if (r.useClean) r.cleanBefore else null)
                             overlayState = overlayState.copy(thumbnail = chosen ?: overlayState.thumbnail)
                         }
                         haptics.click()
-                        Log.i(TAG, "review: kept ${if (r.enhanced) "enhanced" else "original"} look=${Looks.ALL[r.look].name} clean=${holes != null} saved=$saved")
+                        Log.i(TAG, "review: kept ${if (r.enhanced) "enhanced" else "original"} look=${Looks.ALL[r.look].name} painted=${job != null} saved=$saved")
                         closeReview()
                     }
                 }

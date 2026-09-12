@@ -440,3 +440,48 @@ piece device-verified on the iQOO 15 before it was committed.
   check), on the *What's on the Mac?* tap, or when the screen changed and
   twenty seconds have passed. The reading loop is ML Kit; the model is
   never in a loop of its own.
+
+### The finish is one conversation (build-39 → 40)
+
+- **One look, one plan**: after the shutter the detectors run first - face,
+  body, everything in the frame - and everything they know goes to Gemma
+  in one question with the photo: the facts in words (*"The face is 16% of
+  the frame tall, its top 2% below the top edge, centred. In the frame:
+  shoulders, hips, knees; out of the frame: feet. Edges: above the head
+  plain, left edge busy, right edge soft, bottom edge plain."*) and the
+  numbered list of what could be painted out. Gemma answers six fixed
+  lines - `CROP`, `HEADROOM`, `EXTEND`, `REMOVE`, `LOOK`, `WHY` - which
+  `Finishing.parse` (pure Kotlin, tested; any order, any case, or all on
+  one line) reads into a plan. Two calls became one; the review opens
+  after the same wait it did for the crop alone.
+- **The model decides, the rules check, LaMa paints**: `CROP` goes to the
+  crop ladder as the preferred cut (or `KEEP`); `HEADROOM ADD` and
+  `EXTEND LEFT/RIGHT/BOTTOM` become strips painted in, but only where
+  the geometry agrees - the edge's luminance spread under 40 (a plain
+  strip under 16 still gets the reflected headroom on the rules alone,
+  as before), the ankles fully in for the floor - and only the amount
+  the headroom rule says is missing; `REMOVE` becomes holes through
+  `Retouch`. A sideways `EXTEND` is read as "room to the side" and the
+  geometry picks the side: the desk test showed Gemma 3n names the side
+  that is already plain, so the room goes where the face is within 35%
+  of the edge, when that edge is paintable. `Finishing.job` is the
+  instruction set for LaMa: holes on the photo as shot, then strips. The
+  model never draws a mask. A plan that keeps the frame but paints
+  something out still opens the review (AS SHOT alone, then the chip).
+- **Measured on the iQOO 15** (E2B, warm): plan 2.6-3.2 s after a
+  1.5-1.7 s first token; the very first ask after a fresh install pays a
+  one-time 40 s GPU kernel compile that the driver then caches. A hole
+  on the 1024-px review copy 3.7 s; a 15% strip through its band 3.6 s.
+  The model's reason line sometimes comes under a key of its own
+  (`GOOD natural indoor vibe`, `Why ...`); the parser takes the last
+  unlabelled line as the reason.
+- **Painting room in**: the canvas grows by the strips, each first filled
+  with the edge beside it reflected and softened (the preview, and the
+  fallback without LaMa), then LaMa paints each strip inside a band along
+  that edge - the strip plus twice its depth of real photo, the full
+  length of the edge, squashed to 512 and stretched back. Holes are
+  filled first in their own square window (unchanged), so a stray cup
+  keeps its detail and a painted sky does not need any. The review's
+  ENHANCED card shows the reflected guess at once and swaps to LaMa's
+  when the retouch lands; the RETOUCHED chip toggles both the holes and
+  the painted strips, and the save repeats the same job at full size.

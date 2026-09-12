@@ -26,7 +26,9 @@ import `in`.arasan.xthink.guidance.BodyPose
 import `in`.arasan.xthink.guidance.CropProposal
 import `in`.arasan.xthink.guidance.CropRect
 import `in`.arasan.xthink.guidance.Cut
-import `in`.arasan.xthink.guidance.HeadroomExtension
+import `in`.arasan.xthink.guidance.Extension
+import `in`.arasan.xthink.guidance.Finishing
+import `in`.arasan.xthink.guidance.Side
 import `in`.arasan.xthink.guidance.PhotographerCrop
 import `in`.arasan.xthink.guidance.SubjectBox
 import `in`.arasan.xthink.ui.Looks
@@ -45,15 +47,15 @@ import java.util.concurrent.Executors
  */
 class PhotoEnhancer(private val context: Context) {
 
-    /** One proposal: what the card shows, and what [save] needs. */
+    /** One proposal: what the card shows, and what [saveFinal] needs. */
     class Proposal(
         val sourceUri: Uri,
         val before: Bitmap,
         val after: Bitmap,
         val proposal: CropProposal,
         val sourceName: String,
-        /** Fraction of the photo's height added above it before cropping; 0 for none. */
-        val extraTop: Float,
+        /** Room painted in around the photo before the crop; empty for none. */
+        val extensions: List<Extension>,
     )
 
     private val faces = FaceDetection.getClient(
@@ -81,13 +83,9 @@ class PhotoEnhancer(private val context: Context) {
     private val worker: Executor = Executors.newSingleThreadExecutor()
 
     /**
-     * Look at the photo at [uri]. [onResult] is called on [callbackExecutor]
-     * with a proposal, or null when the photo is already framed or has no
-     * person in it.
-     */
-    /**
      * The look at a photo: the small decode for the review, a crop if one is
-     * worth it, and whether the photo is soft (missed focus or motion).
+     * worth it, whether the photo is soft (missed focus or motion), and what
+     * LaMa is to do once the review is up.
      */
     class Result(
         val small: Bitmap?,
@@ -95,104 +93,46 @@ class PhotoEnhancer(private val context: Context) {
         val soft: Boolean = false,
         /** Index into Looks.ALL the coach suggested, or null. */
         val suggestedLook: Int? = null,
-        /** The face, as a fraction of [small]; what the retouch must leave alone. */
+        /** The face, as a fraction of [small]. */
         val subject: SubjectBox? = null,
+        /** The inpainter's instructions: holes to fill on the photo as shot, room to paint in. */
+        val job: Finishing.LamaJob = Finishing.LamaJob.NONE,
+        /** The coach's reason for its plan, in its words. */
+        val why: String = "",
     )
 
     /**
-     * The retouch: what was painted out and why, the small photo without
-     * it, and the same under the proposal's crop when there is one.
+     * The retouch, done: what LaMa did and why, the small photo with the
+     * holes filled, and the same with the room painted in and the crop
+     * applied when there is one.
      */
     class Clean(
-        val holes: List<CropRect>,
+        val job: Finishing.LamaJob,
         val why: String,
         val before: Bitmap,
         val after: Bitmap?,
     )
 
     /**
-     * Someone who says which of the numbered things are distractions - the
-     * on-device model, looking at the photo. Answers once, on any thread,
-     * in the shape Retouch.parse reads, or null.
+     * Someone who decides the finish - the on-device model, looking at the
+     * photo. Called with the small photo, the detectors' facts in words and
+     * the numbered list of what could be painted out; must answer exactly
+     * once, on any thread, in the shape Finishing.parse reads, or null.
+     * Absent, the rules decide alone.
      */
-    fun interface CleanAdvisor {
-        fun advise(photo: Bitmap, candidates: String, answer: (String?) -> Unit)
+    fun interface FinishAdvisor {
+        fun advise(photo: Bitmap, facts: String, candidates: String, answer: (String?) -> Unit)
     }
 
     /**
-     * After the review has opened: find what is in the photo, put the list
-     * to the advisor, fill the holes it names with [inpainter]. [onResult]
-     * on [callbackExecutor] with the retouch, or null when there is nothing
-     * worth removing (or nothing could be).
+     * Look at the photo at [uri]: the face, the body, and - with an
+     * [advisor] - everything in the frame, put to the coach as one
+     * question. [onResult] on [callbackExecutor] with what to offer.
      */
-    fun clean(
-        small: Bitmap,
-        proposal: Proposal?,
-        subject: SubjectBox?,
-        advisor: CleanAdvisor,
-        inpainter: Inpainter,
-        callbackExecutor: Executor,
-        onResult: (Clean?) -> Unit,
-    ) {
-        val started = System.currentTimeMillis()
-        fun none(why: String) {
-            Log.i(TAG, "clean: nothing - $why (%d ms)".format(System.currentTimeMillis() - started))
-            callbackExecutor.execute { onResult(null) }
-        }
-        worker.execute {
-            objects.process(InputImage.fromBitmap(small, 0)).addOnSuccessListener(worker) { found ->
-                val w = small.width.toFloat()
-                val h = small.height.toFloat()
-                val boxes = found.map { CropRect(it.boundingBox.left / w, it.boundingBox.top / h, it.boundingBox.right / w, it.boundingBox.bottom / h) }
-                val labels = found.map { o -> o.labels.maxByOrNull { it.confidence }?.text }
-                val candidates = Retouch.eligible(boxes, subject, labels)
-                Log.i(TAG, "clean: found " + boxes.mapIndexed { i, b -> "%s %.2f,%.2f-%.2f,%.2f".format(labels[i] ?: "?", b.left, b.top, b.right, b.bottom) }.joinToString(" | ") + " face=$subject")
-                if (candidates.isEmpty()) { none("${found.size} found, none eligible"); return@addOnSuccessListener }
-                val list = Retouch.describe(candidates)
-                Log.i(TAG, "clean: ${found.size} found, ${candidates.size} offered:\n$list")
-                var answered = false
-                advisor.advise(small, list) { words ->
-                    worker.execute {
-                        if (answered) return@execute
-                        answered = true
-                        val decision = Retouch.parse(words, candidates.size)
-                        Log.i(TAG, "clean: coach says '${words?.trim()?.take(80)}' -> remove=${decision.remove} why='${decision.why}'")
-                        val holes = Retouch.holes(candidates, decision.remove)
-                        if (holes.isEmpty()) { none("the coach kept everything"); return@execute }
-                        val cleaned = inpainter.inpaint(small, holes)
-                        if (cleaned == null) { none("inpainting failed"); return@execute }
-                        val after = proposal?.let { cropOf(cleaned, it) }
-                        Log.i(TAG, "clean: ${holes.size} hole(s) filled (%d ms)".format(System.currentTimeMillis() - started))
-                        callbackExecutor.execute { onResult(Clean(holes, decision.why, cleaned, after)) }
-                    }
-                }
-            }.addOnFailureListener(worker) {
-                Log.w(TAG, "clean: object detection failed", it)
-                callbackExecutor.execute { onResult(null) }
-            }
-        }
-    }
-
-    /** The proposal's crop, cut from another rendering of the same photo. */
-    private fun cropOf(src: Bitmap, proposal: Proposal): Bitmap {
-        val canvas = if (proposal.extraTop > 0f) extendTop(src, proposal.extraTop) else src
-        val px = PhotographerCrop.toPixels(proposal.proposal.crop, canvas.width, canvas.height)
-        return Bitmap.createBitmap(canvas, px[0], px[1], px[2], px[3])
-    }
-
-    /**
-     * Someone who names the cut - the on-device model. Called with the small
-     * photo; must answer exactly once, on any thread, with the coach's words
-     * or null. Absent, the rules decide alone.
-     */
-    fun interface CutAdvisor {
-        fun advise(photo: Bitmap, answer: (String?) -> Unit)
-    }
-
     fun analyse(
         uri: Uri,
         callbackExecutor: Executor,
-        advisor: CutAdvisor? = null,
+        advisor: FinishAdvisor? = null,
         onResult: (Result) -> Unit,
     ) {
         worker.execute {
@@ -211,23 +151,41 @@ class PhotoEnhancer(private val context: Context) {
                     callbackExecutor.execute { onResult(Result(small, null, soft)) }
                     return@addOnSuccessListener
                 }
+                val w = small.width.toFloat()
+                val h = small.height.toFloat()
+                val box = SubjectBox(
+                    cx = face.boundingBox.exactCenterX() / w,
+                    cy = face.boundingBox.exactCenterY() / h,
+                    w = face.boundingBox.width() / w,
+                    h = face.boundingBox.height() / h,
+                )
+                val eyeL = face.getLandmark(FaceLandmark.LEFT_EYE)?.position?.y
+                val eyeR = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position?.y
+                val eyesY = if (eyeL != null && eyeR != null) (eyeL + eyeR) / 2f / h else null
                 pose.process(image).addOnCompleteListener(worker) { task ->
                     val body = task.result?.takeIf { task.isSuccessful }?.let { toBodyPose(it, small.height) }
-                    // The cut: the coach's word if there is a coach, else the rules'.
                     if (advisor == null) {
-                        finish(uri, small, face, body, null, null, soft, started, callbackExecutor, onResult)
-                    } else {
+                        // The rules alone: the ladder's cut, reflected headroom, nothing painted out.
+                        finish(uri, small, box, eyesY, body, emptyList(), Finishing.Plan.NONE, soft, started, callbackExecutor, onResult)
+                        return@addOnCompleteListener
+                    }
+                    // With a coach: everything the detectors know goes into one question.
+                    objects.process(image).addOnCompleteListener(worker) { t ->
+                        val things = t.result?.takeIf { t.isSuccessful } ?: emptyList()
+                        val boxes = things.map { CropRect(it.boundingBox.left / w, it.boundingBox.top / h, it.boundingBox.right / w, it.boundingBox.bottom / h) }
+                        val labels = things.map { o -> o.labels.maxByOrNull { it.confidence }?.text }
+                        val candidates = Retouch.eligible(boxes, box, labels)
+                        val facts = Finishing.facts(box, body, edgeSpread(small, box))
+                        val list = Retouch.describe(candidates)
+                        Log.i(TAG, "enhance: $facts ${things.size} found, ${candidates.size} offered:\n$list")
                         var answered = false
-                        advisor.advise(small) { words ->
+                        advisor.advise(small, facts, list) { words ->
                             worker.execute {
                                 if (answered) return@execute
                                 answered = true
-                                val cut = PhotographerCrop.parseCut(words)
-                                val look = words?.let { w ->
-                                    Looks.ALL.indexOfFirst { w.contains(it.name, ignoreCase = true) }.takeIf { it >= 0 }
-                                }
-                                Log.i(TAG, "enhance: coach says '${words?.trim()?.take(40)}' -> cut=$cut look=${look?.let { Looks.ALL[it].name }}")
-                                finish(uri, small, face, body, cut, look, soft, started, callbackExecutor, onResult)
+                                val plan = Finishing.parse(words, candidates.size)
+                                Log.i(TAG, "enhance: coach says '${words?.trim()?.replace('\n', '/')?.take(140)}' -> $plan")
+                                finish(uri, small, box, eyesY, body, candidates, plan, soft, started, callbackExecutor, onResult)
                             }
                         }
                     }
@@ -239,71 +197,127 @@ class PhotoEnhancer(private val context: Context) {
         }
     }
 
-    /** The geometry, once the face, the body and (maybe) the coach's cut are known. */
+    /** The geometry, once the face, the body and (maybe) the coach's plan are known. */
     private fun finish(
         uri: Uri,
         small: Bitmap,
-        face: com.google.mlkit.vision.face.Face,
+        box: SubjectBox,
+        eyes: Float?,
         body: BodyPose?,
-        preferredCut: Cut?,
-        suggestedLook: Int?,
+        candidates: List<Retouch.Candidate>,
+        plan: Finishing.Plan,
         soft: Boolean,
         started: Long,
         callbackExecutor: Executor,
         onResult: (Result) -> Unit,
     ) {
-        run {
-                    val w = small.width.toFloat()
-                    val h = small.height.toFloat()
-                    val box = SubjectBox(
-                        cx = face.boundingBox.exactCenterX() / w,
-                        cy = face.boundingBox.exactCenterY() / h,
-                        w = face.boundingBox.width() / w,
-                        h = face.boundingBox.height() / h,
-                    )
-                    val eyeL = face.getLandmark(FaceLandmark.LEFT_EYE)?.position?.y
-                    val eyeR = face.getLandmark(FaceLandmark.RIGHT_EYE)?.position?.y
-                    var eyesY = if (eyeL != null && eyeR != null) (eyeL + eyeR) / 2f / h else null
-
-                    // A head against a plain top edge: add the missing room
-                    // above it first, then crop the taller picture.
-                    val extra = HeadroomExtension.extraTop(box, topStripStdDev(small, box))
-                    var canvas = small
-                    var subject = box
-                    var pose = body
-                    if (extra > 0f) {
-                        canvas = extendTop(small, extra)
-                        subject = HeadroomExtension.shift(box, extra)
-                        pose = HeadroomExtension.shift(body, extra)
-                        eyesY = eyesY?.let { HeadroomExtension.shiftY(it, extra) }
-                    }
-                    val cw = canvas.width.toFloat()
-                    val ch = canvas.height.toFloat()
-                    var crop = PhotographerCrop.propose(subject, eyesY, pose, cw / ch, preferredCut = preferredCut)
-                    if (crop == null && extra > 0f) {
-                        // Nothing to crop, but the room above was worth adding on its own.
-                        crop = CropProposal(CropRect(0f, 0f, 1f, 1f), emptyList())
-                    }
-                    val elapsed = System.currentTimeMillis() - started
-                    if (crop == null) {
-                        Log.i(TAG, "enhance: already framed face=%.2f body=%s (%d ms)".format(box.h, body != null, elapsed))
-                        callbackExecutor.execute { onResult(Result(small, null, soft, suggestedLook, box)) }
-                        return
-                    }
-                    val reasons = if (extra > 0f) listOf("Added space above the head") + crop.rationale else crop.rationale
-                    val px = PhotographerCrop.toPixels(crop.crop, canvas.width, canvas.height)
-                    val after = Bitmap.createBitmap(canvas, px[0], px[1], px[2], px[3])
-                    Log.i(
-                        TAG,
-                        "enhance: crop %s extraTop=%.2f body=%s reasons=%s (%d ms)".format(
-                            crop.crop, extra, body != null, reasons, elapsed,
-                        ),
-                    )
-                    val name = uri.lastPathSegment ?: "xthink"
-                    callbackExecutor.execute {
-                        onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extra), soft, suggestedLook, box))
-                    }
+        val suggestedLook = plan.look?.let { name -> Looks.ALL.indexOfFirst { it.name.equals(name, ignoreCase = true) }.takeIf { it >= 0 } }
+        // Room painted in first - the plan's, as far as the rules allow -
+        // then the crop of the bigger picture. The preview gets a reflected
+        // strip; LaMa paints the real one in the retouch.
+        val extensions = Finishing.extensions(plan, box, body, edgeSpread(small, box))
+        val canvas = extend(small, extensions, null)
+        val subject = Finishing.shift(box, extensions)
+        val pose = Finishing.shift(body, extensions)
+        val eyesY = eyes?.let { Finishing.shiftY(it, extensions) }
+        val cw = canvas.width.toFloat()
+        val ch = canvas.height.toFloat()
+        var crop = if (plan.keepFrame && !plan.trimHeadroom) null else PhotographerCrop.propose(subject, eyesY, pose, cw / ch, preferredCut = plan.cut)
+        if (crop == null && extensions.isNotEmpty()) {
+            // Nothing to crop, but the room painted in is worth having on its own.
+            crop = CropProposal(CropRect(0f, 0f, 1f, 1f), emptyList())
         }
+        val job = Finishing.job(plan, candidates, extensions)
+        val elapsed = System.currentTimeMillis() - started
+        if (crop == null) {
+            Log.i(TAG, "enhance: already framed face=%.2f body=%s remove=%d (%d ms)".format(box.h, body != null, job.remove.size, elapsed))
+            callbackExecutor.execute { onResult(Result(small, null, soft, suggestedLook, box, job, plan.why)) }
+            return
+        }
+        val reasons = Finishing.describe(Finishing.LamaJob(emptyList(), extensions)) + crop.rationale
+        val px = PhotographerCrop.toPixels(crop.crop, canvas.width, canvas.height)
+        val after = Bitmap.createBitmap(canvas, px[0], px[1], px[2], px[3])
+        Log.i(TAG, "enhance: crop %s extend=%s remove=%d body=%s reasons=%s (%d ms)".format(crop.crop, extensions, job.remove.size, body != null, reasons, elapsed))
+        val name = uri.lastPathSegment ?: "xthink"
+        callbackExecutor.execute {
+            onResult(Result(small, Proposal(uri, small, after, CropProposal(crop.crop, reasons), name, extensions), soft, suggestedLook, box, job, plan.why))
+        }
+    }
+
+    /**
+     * Once the review is up: LaMa does what the plan says - fills the holes
+     * on the photo as shot, then paints the room in and cuts the crop.
+     * [onResult] on [callbackExecutor] with the retouch, or null when the
+     * job is empty, the net is not on the phone, or it failed.
+     */
+    fun retouch(result: Result, inpainter: Inpainter, callbackExecutor: Executor, onResult: (Clean?) -> Unit) {
+        val small = result.small
+        val job = result.job
+        if (small == null || job.isEmpty || !inpainter.available) {
+            callbackExecutor.execute { onResult(null) }
+            return
+        }
+        worker.execute {
+            val started = System.currentTimeMillis()
+            var cleaned = small
+            if (job.remove.isNotEmpty()) {
+                val filled = inpainter.inpaint(small, job.remove)
+                if (filled == null) {
+                    Log.w(TAG, "retouch: inpainting failed")
+                    callbackExecutor.execute { onResult(null) }
+                    return@execute
+                }
+                cleaned = filled
+            }
+            val after = result.proposal?.let { cropOf(cleaned, it, inpainter) }
+            Log.i(TAG, "retouch: ${job.remove.size} hole(s) filled, ${job.extend.size} strip(s) painted (%d ms)".format(System.currentTimeMillis() - started))
+            callbackExecutor.execute { onResult(Clean(job, result.why, cleaned, after)) }
+        }
+    }
+
+    /** The proposal's crop, cut from another rendering of the same photo; the room painted in by [inpainter] when given. */
+    private fun cropOf(src: Bitmap, proposal: Proposal, inpainter: Inpainter?): Bitmap {
+        val canvas = extend(src, proposal.extensions, inpainter)
+        val px = PhotographerCrop.toPixels(proposal.proposal.crop, canvas.width, canvas.height)
+        return Bitmap.createBitmap(canvas, px[0], px[1], px[2], px[3])
+    }
+
+    /**
+     * The photo with room around it. Each strip is first filled with the
+     * edge beside it, reflected and softened - a fair guess on the plain
+     * edges the rules allow, and the preview until LaMa is done - then,
+     * given an [inpainter], painted by LaMa in a band along that edge.
+     */
+    private fun extend(src: Bitmap, extensions: List<Extension>, inpainter: Inpainter?): Bitmap {
+        if (extensions.isEmpty()) return src
+        val c = Finishing.canvas(src.width, src.height, extensions)
+        val out = Bitmap.createBitmap(c[0], c[1], Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(out)
+        canvas.drawBitmap(src, c[2].toFloat(), c[3].toFloat(), null)
+        for (e in extensions) {
+            val hp = Retouch.toPixels(Finishing.hole(e, extensions), out.width, out.height)
+            val vertical = e.side == Side.TOP || e.side == Side.BOTTOM
+            val depth = if (vertical) hp[3].coerceIn(1, src.height) else hp[2].coerceIn(1, src.width)
+            val strip = when (e.side) {
+                Side.TOP -> Bitmap.createBitmap(src, 0, 0, src.width, depth)
+                Side.BOTTOM -> Bitmap.createBitmap(src, 0, src.height - depth, src.width, depth)
+                Side.LEFT -> Bitmap.createBitmap(src, 0, 0, depth, src.height)
+                Side.RIGHT -> Bitmap.createBitmap(src, src.width - depth, 0, depth, src.height)
+            }
+            val soft = Bitmap.createScaledBitmap(
+                Bitmap.createScaledBitmap(strip, maxOf(1, strip.width / 24), maxOf(1, strip.height / 24), true),
+                hp[2], hp[3], true,
+            )
+            val flip = Matrix().apply { if (vertical) preScale(1f, -1f) else preScale(-1f, 1f) }
+            val mirrored = Bitmap.createBitmap(soft, 0, 0, soft.width, soft.height, flip, true)
+            canvas.drawBitmap(mirrored, hp[0].toFloat(), hp[1].toFloat(), null)
+        }
+        if (inpainter == null) return out
+        var painted = out
+        for (e in extensions) {
+            painted = inpainter.inpaint(painted, listOf(Finishing.hole(e, extensions)), Finishing.band(e, extensions)) ?: painted
+        }
+        return painted
     }
 
     /**
@@ -345,11 +359,12 @@ class PhotoEnhancer(private val context: Context) {
     private fun lum(c: Int): Int = ((c shr 16 and 0xFF) * 77 + (c shr 8 and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
 
     /**
-     * Write what the photographer chose: the crop (if [useCrop]) and the
-     * look (if [look] is a colour matrix), from the full-resolution photo,
-     * saved next to the original as a new file. The original is never
-     * touched. Nothing is written - and null is returned - when the choice
-     * is the photo exactly as shot.
+     * Write what the photographer chose: LaMa's work (if [job], with an
+     * [inpainter]), the crop (if [useCrop]) and the look (if [look] is a
+     * colour matrix), from the full-resolution photo, saved next to the
+     * original as a new file. The original is never touched. Nothing is
+     * written - and null is returned - when the choice is the photo
+     * exactly as shot.
      */
     fun saveFinal(
         source: Uri,
@@ -357,28 +372,28 @@ class PhotoEnhancer(private val context: Context) {
         useCrop: Boolean,
         look: FloatArray?,
         callbackExecutor: Executor,
-        holes: List<CropRect>? = null,
+        job: Finishing.LamaJob? = null,
         inpainter: Inpainter? = null,
         onSaved: (Uri?) -> Unit,
     ) {
         val cropping = useCrop && crop != null
-        val cleaning = !holes.isNullOrEmpty() && inpainter != null
-        if (!cropping && look == null && !cleaning) {
+        val painting = job != null && !job.isEmpty && inpainter != null && inpainter.available
+        if (!cropping && look == null && !painting) {
             callbackExecutor.execute { onSaved(null) }
             return
         }
         worker.execute {
             val result = runCatching {
                 var full = decode(source, 0)
-                if (cleaning) {
+                if (painting && job!!.remove.isNotEmpty()) {
                     // The same holes, on the full photo; LaMa works in a
                     // window around them, so the rest keeps its pixels.
-                    full = inpainter!!.inpaint(full, holes!!) ?: full
+                    full = inpainter!!.inpaint(full, job.remove) ?: full
                 }
                 if (cropping) {
-                    if (crop!!.extraTop > 0f) full = extendTop(full, crop.extraTop)
-                    val px = PhotographerCrop.toPixels(crop.proposal.crop, full.width, full.height)
-                    full = Bitmap.createBitmap(full, px[0], px[1], px[2], px[3])
+                    // The room painted in - by LaMa when the retouch is on,
+                    // else the reflected guess - then the crop.
+                    full = cropOf(full, crop!!, if (painting) inpainter else null)
                 }
                 if (look != null) {
                     val out = Bitmap.createBitmap(full.width, full.height, Bitmap.Config.ARGB_8888)
@@ -396,7 +411,7 @@ class PhotoEnhancer(private val context: Context) {
                 val out = resolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, values)
                     ?: error("MediaStore refused the insert")
                 resolver.openOutputStream(out)!!.use { full.compress(Bitmap.CompressFormat.JPEG, JPEG_QUALITY, it) }
-                Log.i(TAG, "enhance: saved ${full.width}x${full.height} crop=$cropping look=${look != null} clean=$cleaning -> $out")
+                Log.i(TAG, "enhance: saved ${full.width}x${full.height} crop=$cropping look=${look != null} painted=$painting -> $out")
                 out
             }.onFailure { Log.e(TAG, "enhance: save failed", it) }.getOrNull()
             callbackExecutor.execute { onSaved(result) }
@@ -446,22 +461,35 @@ class PhotoEnhancer(private val context: Context) {
     }
 
     /**
-     * Luminance spread of the rows above the face, across the face's own
-     * columns widened a little - the part an extension would have to
-     * blend with. Sampled on a grid; exactness is not the point.
+     * Luminance spread along each edge - what a strip painted there would
+     * have to blend with. Above the head it is the face's own columns,
+     * widened a little; the other edges are a band the full length of the
+     * edge. Sampled on a grid; exactness is not the point.
      */
-    private fun topStripStdDev(bmp: Bitmap, face: SubjectBox): Float {
-        val faceTop = ((face.cy - face.h / 2f) * bmp.height).toInt().coerceIn(1, bmp.height)
-        val rows = maxOf(faceTop, (bmp.height * 0.06f).toInt()).coerceAtMost(bmp.height)
-        val x0 = ((face.cx - face.w) * bmp.width).toInt().coerceIn(0, bmp.width - 1)
-        val x1 = ((face.cx + face.w) * bmp.width).toInt().coerceIn(x0 + 1, bmp.width)
+    private fun edgeSpread(bmp: Bitmap, face: SubjectBox): Map<Side, Float> {
+        val w = bmp.width
+        val h = bmp.height
+        val faceTop = ((face.cy - face.h / 2f) * h).toInt().coerceIn(1, h)
+        val rows = maxOf(faceTop, (h * 0.06f).toInt()).coerceAtMost(h)
+        val x0 = ((face.cx - face.w) * w).toInt().coerceIn(0, w - 1)
+        val x1 = ((face.cx + face.w) * w).toInt().coerceIn(x0 + 1, w)
+        val band = (minOf(w, h) * EDGE_BAND).toInt().coerceAtLeast(2)
+        return mapOf(
+            Side.TOP to spread(bmp, x0, 0, x1, rows),
+            Side.LEFT to spread(bmp, 0, 0, band, h),
+            Side.RIGHT to spread(bmp, w - band, 0, w, h),
+            Side.BOTTOM to spread(bmp, 0, h - band, w, h),
+        )
+    }
+
+    private fun spread(bmp: Bitmap, x0: Int, y0: Int, x1: Int, y1: Int): Float {
         val stepX = maxOf(1, (x1 - x0) / 24)
-        val stepY = maxOf(1, rows / 12)
+        val stepY = maxOf(1, (y1 - y0) / 24)
         var n = 0
         var sum = 0.0
         var sumSq = 0.0
-        var y = 0
-        while (y < rows) {
+        var y = y0
+        while (y < y1) {
             var x = x0
             while (x < x1) {
                 val c = bmp.getPixel(x, y)
@@ -478,28 +506,6 @@ class PhotoEnhancer(private val context: Context) {
         return kotlin.math.sqrt((sumSq / n - mean * mean).coerceAtLeast(0.0)).toFloat()
     }
 
-    /**
-     * A taller picture with [extra] of its height added on top: the top
-     * strip reflected, then softened by a scale down and up so the seam
-     * and any texture disappear. Only ever used on a plain strip.
-     */
-    private fun extendTop(src: Bitmap, extra: Float): Bitmap {
-        val add = (src.height * extra).toInt().coerceAtLeast(1)
-        val out = Bitmap.createBitmap(src.width, src.height + add, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        canvas.drawBitmap(src, 0f, add.toFloat(), null)
-        val stripH = add.coerceAtMost(src.height)
-        val strip = Bitmap.createBitmap(src, 0, 0, src.width, stripH)
-        val soft = Bitmap.createScaledBitmap(
-            Bitmap.createScaledBitmap(strip, maxOf(1, src.width / 24), maxOf(1, stripH / 24), true),
-            src.width, add, true,
-        )
-        val flip = Matrix().apply { preScale(1f, -1f) }
-        val mirrored = Bitmap.createBitmap(soft, 0, 0, soft.width, soft.height, flip, true)
-        canvas.drawBitmap(mirrored, 0f, 0f, null)
-        return out
-    }
-
     fun close() {
         faces.close()
         pose.close()
@@ -514,5 +520,7 @@ class PhotoEnhancer(private val context: Context) {
         const val SOFT_FLOOR = 60.0
         /** Below this ML Kit is extrapolating a landmark it cannot see. */
         const val IN_FRAME = 0.6f
+        /** The band along a side or bottom edge whose texture is measured, as a fraction of the short side. */
+        const val EDGE_BAND = 0.08f
     }
 }

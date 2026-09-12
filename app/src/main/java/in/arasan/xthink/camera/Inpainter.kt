@@ -110,14 +110,19 @@ class Inpainter(private val context: Context) {
      * [src] with [holes] (fractions of the frame) filled. Synchronous and
      * slow - seconds - so call it off the main thread. Returns null when
      * the network is not on the phone or failed.
+     *
+     * The net works inside [where] - by default the square Retouch.window
+     * picks around the holes. A strip painted in along an edge passes its
+     * own band instead: not square, squashed to the net's square and
+     * stretched back, which on a plain edge costs nothing visible.
      */
-    fun inpaint(src: Bitmap, holes: List<CropRect>): Bitmap? {
+    fun inpaint(src: Bitmap, holes: List<CropRect>, where: CropRect? = null): Bitmap? {
         if (holes.isEmpty()) return null
         val s = ensureSession() ?: return null
         val started = SystemClock.uptimeMillis()
         return runCatching {
             val aspect = src.width.toFloat() / src.height
-            val window = Retouch.window(holes, aspect)
+            val window = where ?: Retouch.window(holes, aspect)
             val wp = Retouch.toPixels(window, src.width, src.height)
             val square = Bitmap.createBitmap(src, wp[0], wp[1], wp[2], wp[3])
             val net = Bitmap.createScaledBitmap(square, SIDE, SIDE, true)
