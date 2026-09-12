@@ -309,8 +309,20 @@ class LlmCoach(private val context: Context) {
 
         /** Any script in the frame - Tamil, Hindi, anything - into English. */
         val TRANSLATE_PROMPT = """
-            Read all the text in this image, whatever language or script it is in, and translate it into English.
-            Reply with only the English translation, keeping the line breaks. If there is no text, say: No text found.
+            Read all the text in this image - Tamil, Hindi, or any other language - and translate it into ENGLISH.
+            Reply with ONLY the English translation, in the Latin alphabet, keeping the line breaks.
+            Never repeat the original script. If the text is already English, reply with it as is. If there is no text, reply: No text found.
+        """.trimIndent()
+
+        /** True when the answer still carries a non-Latin script - the model echoed instead of translating. */
+        fun looksUntranslated(text: String): Boolean =
+            text.any { c -> c in '\u0B80'..'\u0BFF' || c in '\u0900'..'\u097F' || c in '\u0C00'..'\u0D7F' }
+
+        /** The second, blunter ask when the first came back in the original script. */
+        fun retranslatePrompt(echo: String): String = """
+            This text is not in English: 
+            $echo
+            Translate it into English. Reply with only the English, in the Latin alphabet.
         """.trimIndent()
 
         /** OCR output into clean, copyable text. */

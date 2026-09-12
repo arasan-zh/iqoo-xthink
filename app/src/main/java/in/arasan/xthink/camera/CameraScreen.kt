@@ -143,6 +143,9 @@ private const val TRACK_LOST_MS = 1_500L
 /** Genius stops proposing after this many plan-and-check rounds. */
 private const val GENIUS_MAX_ATTEMPTS = 3
 
+/** In ASK, an answer is dropped once the phone has turned this far from where it was asked. */
+private const val ASK_MOVE_DEG = 25f
+
 /** The coach model loads on its own only this long after start, and only on a cool phone. */
 private const val COACH_DEFERRED_LOAD_MS = 60_000L
 
@@ -782,9 +785,52 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
     }
 
     fun askTranslate() {
-        aPrompt = "Translate"
-        askLook(LlmCoach.Kind.TRANSLATE, "Translate", LlmCoach.TRANSLATE_PROMPT, speak = false)
+        if (coachState != LlmCoach.State.READY) { askFail("Gemma is not loaded yet - a moment"); return }
+        val snap = previewSnapshot() ?: run { askFail("no frame"); return }
+        aKind = "Translate"; aPrompt = "Translate"; aPhase = "LOOKING"; aAnswer = ""; aNote = null
         refreshAsk()
+        val main = ContextCompat.getMainExecutor(context)
+        val ok = coach.ask(LlmCoach.Kind.TRANSLATE, snap, LlmCoach.TRANSLATE_PROMPT, main) { text, done ->
+            if (aPhase != "LOOKING") return@ask
+            aAnswer = text
+            if (!done) { refreshAsk(); return@ask }
+            // Echoed the Tamil/Hindi back? Ask once more, bluntly, text-only.
+            if (LlmCoach.looksUntranslated(text)) {
+                aNote = "translating\u2026"
+                refreshAsk()
+                val again = coach.askText(LlmCoach.Kind.WRITE, LlmCoach.retranslatePrompt(text), main) { english, d2 ->
+                    if (aPhase != "LOOKING") return@askText
+                    if (english.isNotBlank()) aAnswer = english
+                    if (d2) { aPhase = "DONE"; aNote = if (LlmCoach.looksUntranslated(aAnswer)) "could not translate this" else null; haptics.play(HapticCue.TICK, 0.5f) }
+                    refreshAsk()
+                }
+                if (!again) { aPhase = "DONE"; refreshAsk() }
+                return@ask
+            }
+            aPhase = "DONE"
+            haptics.play(HapticCue.TICK, 0.5f)
+            Log.i(TAG, "ask Translate: ${text.length} chars: ${text.take(100).replace('\n', ' ')}")
+            refreshAsk()
+        }
+        if (!ok) askFail("Gemma is busy")
+    }
+
+    // An answer belongs to the frame it was asked about: when the phone
+    // moves on, the answer goes, so nothing looks stuck.
+    LaunchedEffect(askMode) {
+        if (!askMode) return@LaunchedEffect
+        var ref: Float? = null
+        while (true) {
+            delay(500L)
+            val s = latestAttitude[0] ?: continue
+            val yaw = s.attitude.rollDeg + s.attitude.pitchDeg
+            val r = ref
+            if (r != null && aPhase in setOf("DONE", "SAVED") && kotlin.math.abs(yaw - r) > ASK_MOVE_DEG) {
+                aAnswer = ""; aPrompt = ""; aPhase = "READY"; aNote = null
+                refreshAsk()
+            }
+            if (aPhase in setOf("DONE", "SAVED")) { if (r == null) ref = yaw } else ref = null
+        }
     }
 
     fun askCopy() {
