@@ -15,6 +15,7 @@ mlkitFaceDetection = "16.1.7"
 mlkitObjectDetection = "17.0.2"
 mlkitPoseDetection = "18.0.0-beta5"
 mediapipeGenai = "0.10.35"
+mlkitText = "16.0.1"
 zxing = "3.5.3"
 
 [libraries]
@@ -42,6 +43,7 @@ mlkit-face-detection = { group = "com.google.mlkit", name = "face-detection", ve
 # "object" is a Kotlin keyword, so the alias avoids it: libs.mlkit.objects
 mlkit-objects = { group = "com.google.mlkit", name = "object-detection", version.ref = "mlkitObjectDetection" }
 mlkit-pose = { group = "com.google.mlkit", name = "pose-detection", version.ref = "mlkitPoseDetection" }
+mlkit-text = { group = "com.google.mlkit", name = "text-recognition", version.ref = "mlkitText" }
 mediapipe-core = { group = "com.google.mediapipe", name = "tasks-core", version.ref = "mediapipeGenai" }
 mediapipe-genai = { group = "com.google.mediapipe", name = "tasks-genai", version.ref = "mediapipeGenai" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }

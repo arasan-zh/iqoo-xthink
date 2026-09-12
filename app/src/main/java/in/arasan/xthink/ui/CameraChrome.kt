@@ -192,20 +192,24 @@ fun ModeTabs(
     portraitOnly: Boolean = false,
     videoMode: Boolean = false,
     onVideo: () -> Unit = {},
+    typeMode: Boolean = false,
+    onType: () -> Unit = {},
 ) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        ModeTab("PORTRAIT", !videoMode && mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
+        val photo = !videoMode && !typeMode
+        ModeTab("PORTRAIT", photo && mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         // The selfie lens is for people: the other modes stay on the rear camera.
         if (!portraitOnly) {
-            ModeTab("SCENE", !videoMode && mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
-            ModeTab("OBJECT", !videoMode && mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
-            ModeTab("CREATIVE", !videoMode && mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
+            ModeTab("SCENE", photo && mode == CoachMode.WIDE) { onModeSelected(CoachMode.WIDE) }
+            ModeTab("OBJECT", photo && mode == CoachMode.OBJECT) { onModeSelected(CoachMode.OBJECT) }
+            ModeTab("CREATIVE", photo && mode == CoachMode.CREATIVE) { onModeSelected(CoachMode.CREATIVE) }
         }
         ModeTab("VIDEO", videoMode, onClick = onVideo)
+        if (!portraitOnly) ModeTab("TYPE", typeMode, onClick = onType)
     }
 }
 

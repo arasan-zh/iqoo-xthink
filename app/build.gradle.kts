@@ -85,6 +85,7 @@ dependencies {
     // Bundled for the same reason as the face model: it must work on first launch, offline.
     implementation(libs.mlkit.objects)
     implementation(libs.mlkit.pose)
+    implementation(libs.mlkit.text)
     implementation(libs.mediapipe.genai)
     implementation(libs.mediapipe.core)
     // QR code for the install link. Pure Java, generates a bit matrix; Compose draws it.

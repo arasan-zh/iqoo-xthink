@@ -36,6 +36,9 @@ data class OverlayState(
     val captureNonce: Int = 0,
     /** The photographer's chosen mode, for the rail and the tabs. */
     val mode: CoachMode = CoachMode.PORTRAIT,
+    /** TYPE tab: the camera reads text and the phone types it on a paired Mac. */
+    val typeMode: Boolean = false,
+    val type: TypeState? = null,
     /** VIDEO tab: the shutter records, focus follows the subject. */
     val videoMode: Boolean = false,
     /** True while a clip is being recorded. */
@@ -68,7 +71,7 @@ data class OverlayState(
 ) {
     val verb: Verb? get() = instruction?.verb
     /** False in CREATIVE: nothing coaches, only the camera controls draw. */
-    val assisted: Boolean get() = mode != CoachMode.CREATIVE
+    val assisted: Boolean get() = mode != CoachMode.CREATIVE && !typeMode
     val isLocked: Boolean get() = verb == Verb.LOCKED
     val isSeeking: Boolean get() = verb == Verb.SEEKING
 

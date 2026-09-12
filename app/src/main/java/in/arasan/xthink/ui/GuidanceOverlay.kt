@@ -79,6 +79,10 @@ fun GuidanceOverlay(
     onPickLook: (Int) -> Unit,
     onToggleGuide: () -> Unit,
     onVideoMode: () -> Unit,
+    onTypeMode: () -> Unit,
+    onPairMac: () -> Unit,
+    onTypeText: () -> Unit,
+    onTypeTextEnter: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     // The capture flash: a brief white wash whenever a photo is taken, auto
@@ -221,7 +225,10 @@ fun GuidanceOverlay(
             ) {
                 // One card's worth of space: the looks when they are open,
                 // else the words of guidance when they are switched on.
-                if (state.showLooks) {
+                val type = state.type
+                if (state.typeMode && type != null) {
+                    TypePanel(state = type, onPair = onPairMac, onType = onTypeText, onTypeEnter = onTypeTextEnter)
+                } else if (state.showLooks) {
                     LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
                 } else if (state.assisted && state.showGuide) {
                     GuidanceCard(state = state)
@@ -244,6 +251,8 @@ fun GuidanceOverlay(
                         portraitOnly = state.mirrored,
                         videoMode = state.videoMode,
                         onVideo = onVideoMode,
+                        typeMode = state.typeMode,
+                        onType = onTypeMode,
                     )
                     BottomBar(
                         locked = state.isLocked,

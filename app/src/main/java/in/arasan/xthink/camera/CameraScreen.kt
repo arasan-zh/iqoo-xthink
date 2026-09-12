@@ -88,6 +88,7 @@ import `in`.arasan.xthink.guidance.ThermalTier
 import `in`.arasan.xthink.guidance.Verb
 import `in`.arasan.xthink.ui.Looks
 import `in`.arasan.xthink.ui.ReviewState
+import `in`.arasan.xthink.ui.TypeState
 import `in`.arasan.xthink.ui.GuidanceOverlay
 import `in`.arasan.xthink.ui.OverlayState
 import `in`.arasan.xthink.ui.StatusValue
@@ -387,6 +388,81 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
     val governor = remember { ThermalGovernor() }
     val thermalPlan = remember { arrayOf(ThermalPlan.forTier(ThermalTier.COOL)) }
 
+    // --- type on Mac ------------------------------------------------------
+    // TYPE: the camera reads text (ML Kit OCR, on-device, ~1 Hz) and the
+    // phone, registered as a Bluetooth keyboard, types it on the Mac.
+    var typeMode by remember { mutableStateOf(false) }
+    val keyboard = remember { MacKeyboard(context) }
+    val reader = remember { ScreenReader() }
+    var ocrText by remember { mutableStateOf("") }
+    var typing by remember { mutableStateOf(false) }
+    var typeResult by remember { mutableStateOf<String?>(null) }
+    var keyboardState by remember { mutableStateOf(MacKeyboard.State.NO_BLUETOOTH) }
+    DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close() } }
+
+    fun keyboardLine(): String = when (keyboardState) {
+        MacKeyboard.State.NO_BLUETOOTH -> "No Bluetooth on this phone"
+        MacKeyboard.State.NEEDS_PERMISSION -> "Bluetooth permission needed"
+        MacKeyboard.State.BLUETOOTH_OFF -> "Turn Bluetooth on, then Pair"
+        MacKeyboard.State.REGISTERING -> "Becoming a keyboard\u2026"
+        MacKeyboard.State.READY -> "Keyboard ready \u2014 on the Mac, connect to \u201cxThink\u201d"
+        MacKeyboard.State.CONNECTING -> "Connecting\u2026"
+        MacKeyboard.State.CONNECTED -> "Typing on ${keyboard.hostName ?: "the Mac"}"
+    }
+
+    fun refreshType() {
+        overlayState = overlayState.copy(
+            typeMode = typeMode,
+            type = if (typeMode) TypeState(
+                keyboard = keyboardLine(),
+                connected = keyboardState == MacKeyboard.State.CONNECTED,
+                text = ocrText,
+                typing = typing,
+                lastResult = typeResult,
+            ) else null,
+        )
+    }
+
+    val bluetoothLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        Log.i(TAG, "keyboard: permissions $grants")
+        if (grants.values.all { it }) keyboard.start(ContextCompat.getMainExecutor(context)) { st ->
+            keyboardState = st
+            refreshType()
+        }
+    }
+    val discoverableLauncher = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        Log.i(TAG, "keyboard: discoverable result=${r.resultCode}")
+        keyboard.connectBonded()
+    }
+
+    fun typeText(enter: Boolean) {
+        val text = ocrText
+        if (text.isBlank() || typing) return
+        typing = true
+        typeResult = null
+        refreshType()
+        keyboard.type(text, enter) { typed, dropped ->
+            typing = false
+            typeResult = "Typed $typed keys" + if (dropped.isNotEmpty()) " \u00b7 no key for $dropped" else ""
+            haptics.play(HapticCue.TICK, 0.5f)
+            refreshType()
+        }
+    }
+
+    // The camera reads text about once a second while TYPE is up.
+    LaunchedEffect(typeMode) {
+        if (!typeMode) return@LaunchedEffect
+        while (true) {
+            delay(1_000L)
+            if (typing || reader.busy) continue
+            val snap = previewSnapshot() ?: continue
+            reader.read(snap, ContextCompat.getMainExecutor(context)) { text ->
+                if (text.isNotBlank() || ocrText.isBlank()) ocrText = text
+                refreshType()
+            }
+        }
+    }
+
     // The analyser is created inside the camera effect; the mode switch and
     // the governor both need to reach it from outside, so hold a reference.
     val analyzerRef = remember { arrayOfNulls<FaceAnalyzer>(1) }
@@ -469,6 +545,11 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
     // --- camera + analysis -----------------------------------------------
 
     fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
+        if (typeMode && leaveVideo) {
+            typeMode = false
+            overlayState = overlayState.copy(typeMode = false, type = null)
+            Log.i(TAG, "mode -> photo (from TYPE)")
+        }
         if (videoMode && leaveVideo) {
             videoMode = false
             overlayState = overlayState.copy(videoMode = false, recording = false)
@@ -555,6 +636,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                 videoMode = overlayState.videoMode,
                 recording = overlayState.recording,
                 recordingMs = overlayState.recordingMs,
+                typeMode = overlayState.typeMode,
+                type = overlayState.type,
             )
 
             // The lock game: feel the frame come together without looking.
@@ -771,6 +854,41 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
             onZoomSelected = { ratio ->
                 cameraControl?.cameraControl?.setZoomRatio(ratio)
             },
+            onTypeMode = {
+                if (!typeMode) {
+                    if (videoMode) { stopRecording(); videoMode = false }
+                    typeMode = true
+                    ocrText = ""
+                    typeResult = null
+                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false)
+                    refreshType()
+                    Log.i(TAG, "mode -> TYPE")
+                    if (keyboard.hasPermission()) {
+                        keyboard.start(ContextCompat.getMainExecutor(context)) { st ->
+                            keyboardState = st
+                            refreshType()
+                        }
+                    } else {
+                        bluetoothLauncher.launch(keyboard.permissions)
+                    }
+                }
+            },
+            onPairMac = {
+                when (keyboardState) {
+                    MacKeyboard.State.NEEDS_PERMISSION -> bluetoothLauncher.launch(keyboard.permissions)
+                    else -> {
+                        if (keyboardState != MacKeyboard.State.READY && keyboardState != MacKeyboard.State.CONNECTING) {
+                            keyboard.start(ContextCompat.getMainExecutor(context)) { st -> keyboardState = st; refreshType() }
+                        }
+                        // Discoverable for two minutes; a Mac that already
+                        // paired with us is asked to reconnect meanwhile.
+                        discoverableLauncher.launch(keyboard.discoverableIntent())
+                        keyboard.connectBonded()
+                    }
+                }
+            },
+            onTypeText = { typeText(enter = false) },
+            onTypeTextEnter = { typeText(enter = true) },
             onVideoMode = {
                 if (!videoMode) {
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) !=
@@ -779,12 +897,15 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null) {
                         audioLauncher.launch(Manifest.permission.RECORD_AUDIO)
                     }
                     videoMode = true
-                    overlayState = overlayState.copy(videoMode = true, review = null)
+                    typeMode = false
+                    overlayState = overlayState.copy(videoMode = true, review = null, typeMode = false, type = null)
                     Log.i(TAG, "mode -> VIDEO")
                 }
             },
             onShutter = {
-                if (videoMode) {
+                if (typeMode) {
+                    typeText(enter = true)
+                } else if (videoMode) {
                     if (activeRecording == null) startRecording() else stopRecording()
                 } else {
                     autoCapture.notifyManualCapture()
@@ -911,6 +1032,8 @@ private fun buildOverlayState(
     videoMode: Boolean,
     recording: Boolean,
     recordingMs: Long,
+    typeMode: Boolean,
+    type: TypeState?,
 ): OverlayState {
     val focus = when {
         !hasAutofocus -> StatusValue("Focus", "Fixed", true)
@@ -959,6 +1082,8 @@ private fun buildOverlayState(
         videoMode = videoMode,
         recording = recording,
         recordingMs = recordingMs,
+        typeMode = typeMode,
+        type = type,
     )
 }
 
