@@ -1,5 +1,7 @@
 package `in`.arasan.xthink.ui
 
+import android.media.AudioManager
+import android.media.ToneGenerator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -35,6 +37,15 @@ fun Splash(onDone: () -> Unit) {
     val reveal = remember { Animatable(0f) }
     val fade = remember { Animatable(1f) }
     LaunchedEffect(Unit) {
+        // A soft two-note chime as the Q appears: the app's opening sound.
+        runCatching {
+            val tone = ToneGenerator(AudioManager.STREAM_MUSIC, 45)
+            tone.startTone(ToneGenerator.TONE_PROP_ACK, 120)
+            delay(160)
+            tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 140)
+            delay(400)
+            tone.release()
+        }
         reveal.animateTo(1f, tween(520, easing = FastOutSlowInEasing))
         delay(700)
         fade.animateTo(0f, tween(380))

@@ -24,19 +24,23 @@ object XT {
 
     /** The stock-camera active-mode colour from the reference. */
     val Gold = Color(0xFFF5A524)
+    /** STEVE: the deep indigo the panel sits in, and its brushed gold. */
+    val LuxeTop = Color(0xF0141633)
+    val LuxeBottom = Color(0xF7070812)
+    val LuxeGold = Color(0xFFD9B36B)
     /** Recording red. */
     val Record = Color(0xFFEF4444)
 
-    val Chip = Color.Black.copy(alpha = 0.55f)
-    val ChipStrong = Color.Black.copy(alpha = 0.72f)
+    val Chip = Color.Black.copy(alpha = 0.38f)
+    val ChipStrong = Color.Black.copy(alpha = 0.62f)
     val OnChip = Color.White
     val OnChipMuted = Color.White.copy(alpha = 0.62f)
 
     /** FAKE chrome sits quieter than anything real, on purpose. */
     val Inert = Color.White.copy(alpha = 0.78f)
 
-    val Corner = 20.dp
-    val CornerSmall = 14.dp
+    val Corner = 22.dp
+    val CornerSmall = 16.dp
     val Gutter = 12.dp
 
     /**

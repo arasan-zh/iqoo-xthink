@@ -87,13 +87,10 @@ fun GuidanceOverlay(
     onListen: () -> Unit,
     onGeniusRun: () -> Unit,
     onGeniusStop: () -> Unit,
-    onSignsMode: () -> Unit,
     onFitMode: () -> Unit,
     onFitPick: (String) -> Unit,
     onFitReset: () -> Unit,
     onAskMode: () -> Unit,
-    onAskSpeak: () -> Unit,
-    onAskScan: () -> Unit,
     onAskTranslate: () -> Unit,
     onAskCopy: () -> Unit,
     onAskSave: () -> Unit,
@@ -247,15 +244,11 @@ fun GuidanceOverlay(
                 val genius = state.genius
                 val ask = state.ask
                 val fit = state.fit
-                if (state.signsMode) {
-                    SignsPanel(sign = state.sign)
-                } else if (state.fitMode && fit != null) {
+                if (state.fitMode && fit != null) {
                     FitPanel(state = fit, onMode = onFitPick, onReset = onFitReset)
                 } else if (state.askMode && ask != null) {
                     AskPanel(
                         state = ask,
-                        onAsk = onAskSpeak,
-                        onScan = onAskScan,
                         onTranslate = onAskTranslate,
                         onCopy = onAskCopy,
                         onSave = onAskSave,
@@ -294,8 +287,6 @@ fun GuidanceOverlay(
                         onAsk = onAskMode,
                         fitMode = state.fitMode,
                         onFit = onFitMode,
-                        signsMode = state.signsMode,
-                        onSigns = onSignsMode,
                     )
                     BottomBar(
                         locked = state.isLocked,

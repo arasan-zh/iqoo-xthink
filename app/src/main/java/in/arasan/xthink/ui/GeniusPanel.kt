@@ -19,6 +19,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.border
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -72,8 +74,9 @@ fun GeniusPanel(
         modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(XT.Corner))
-            .background(XT.ChipStrong)
-            .padding(horizontal = 14.dp, vertical = 12.dp),
+            .background(Brush.verticalGradient(listOf(XT.LuxeTop, XT.LuxeBottom)))
+            .border(1.dp, XT.LuxeGold.copy(alpha = 0.35f), RoundedCornerShape(XT.Corner))
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -81,7 +84,7 @@ fun GeniusPanel(
                 modifier = Modifier
                     .size(8.dp)
                     .clip(CircleShape)
-                    .background(if (state.connected) XT.Green else XT.Amber),
+                    .background(if (state.connected) XT.Green else XT.LuxeGold),
             )
             Spacer(Modifier.width(8.dp))
             Text(
@@ -108,10 +111,10 @@ fun GeniusPanel(
                     "FAILED" -> "COULD NOT FINISH"
                     else -> "STEVE"
                 },
-                color = if (busy) XT.Amber else if (state.phase == "DONE") XT.Green else XT.OnChipMuted,
+                color = if (busy) XT.LuxeGold else if (state.phase == "DONE") XT.Green else XT.LuxeGold.copy(alpha = 0.75f),
                 fontSize = 11.sp,
-                fontWeight = FontWeight.SemiBold,
-                letterSpacing = 1.2.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 2.sp,
                 modifier = Modifier.weight(1f),
             )
         }
@@ -199,7 +202,7 @@ private fun Answer(
         modifier = modifier
             .height(if (compact) 34.dp else 42.dp)
             .clip(RoundedCornerShape(21.dp))
-            .background(if (filled) XT.Amber else XT.Chip)
+            .background(if (filled) XT.LuxeGold else Color.White.copy(alpha = 0.08f))
             .clickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,

@@ -203,21 +203,19 @@ fun ModeTabs(
     onAsk: () -> Unit = {},
     fitMode: Boolean = false,
     onFit: () -> Unit = {},
-    signsMode: Boolean = false,
-    onSigns: () -> Unit = {},
 ) {
     // Six tabs do not all fit a phone's width at a readable size, so the
     // row scrolls; the selected tab is scrolled into view when it changes.
     val scroll = rememberScrollState()
-    LaunchedEffect(mode, videoMode, typeMode, askMode, fitMode, signsMode) {
-        if (typeMode || askMode || fitMode || signsMode) scroll.animateScrollTo(scroll.maxValue) else if (!videoMode && mode == CoachMode.PORTRAIT) scroll.animateScrollTo(0)
+    LaunchedEffect(mode, videoMode, typeMode, askMode, fitMode) {
+        if (typeMode || askMode || fitMode) scroll.animateScrollTo(scroll.maxValue) else if (!videoMode && mode == CoachMode.PORTRAIT) scroll.animateScrollTo(0)
     }
     Row(
         modifier = modifier.horizontalScroll(scroll),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        val photo = !videoMode && !typeMode && !askMode && !fitMode && !signsMode
+        val photo = !videoMode && !typeMode && !askMode && !fitMode
         ModeTab("PORTRAIT", photo && mode == CoachMode.PORTRAIT) { onModeSelected(CoachMode.PORTRAIT) }
         // The selfie lens is for people: the other modes stay on the rear camera.
         if (!portraitOnly) {
@@ -227,8 +225,7 @@ fun ModeTabs(
         }
         ModeTab("VIDEO", videoMode, onClick = onVideo)
         ModeTab("FIT", fitMode, onClick = onFit)
-        ModeTab("SIGNS", signsMode, onClick = onSigns)
-        ModeTab("ASK", askMode, onClick = onAsk)
+        ModeTab("TRANSLATE", askMode, onClick = onAsk)
         if (!portraitOnly) ModeTab("STEVE", typeMode, onClick = onType)
     }
 }

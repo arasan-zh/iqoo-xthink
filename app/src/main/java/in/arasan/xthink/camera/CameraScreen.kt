@@ -1415,22 +1415,8 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     }
                 }
             },
-            onSignsMode = {
-                if (!signsMode) {
-                    if (videoMode) { stopRecording(); videoMode = false }
-                    if (typeMode) { keyboard.cancelled = true; typeMode = false }
-                    askMode = false; fitMode = false
-                    signsMode = true
-                    fitGesture = null
-                    overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, askMode = false, ask = null, fitMode = false, fit = null)
-                    applyFitPick()
-                    refreshSigns()
-                    Log.i(TAG, "mode -> SIGNS")
-                }
-            },
             onFitMode = {
                 if (!fitMode) {
-                    if (signsMode) { signsMode = false; overlayState = overlayState.copy(signsMode = false, sign = null) }
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
                     askMode = false
@@ -1464,11 +1450,9 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null)
                     refreshAsk()
                     ensureCoach()
-                    Log.i(TAG, "mode -> ASK")
+                    Log.i(TAG, "mode -> TRANSLATE")
                 }
             },
-            onAskSpeak = { askSpeak() },
-            onAskScan = { askScan() },
             onAskTranslate = { askTranslate() },
             onAskCopy = { askCopy() },
             onAskSave = { askSave() },
@@ -1493,7 +1477,7 @@ private fun CameraAndGuidance(debugEnhanceUri: String? = null, debugGenius: Stri
             },
             onShutter = {
                 if (askMode) {
-                    askSpeak()
+                    askTranslate()
                 } else if (typeMode) {
                     geniusSpeak()
                 } else if (videoMode) {

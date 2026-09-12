@@ -43,15 +43,13 @@ data class AskState(
 )
 
 /**
- * ASK. Point the camera at anything: ask about it, read it, translate it,
- * keep it. One look per tap - nothing runs on a timer - so the phone
- * stays cool and the answer belongs to the frame you meant.
+ * TRANSLATE. Point the camera at text in any script and get the English.
+ * One look per tap - nothing runs on a timer - so the phone stays cool
+ * and the answer belongs to the frame you meant.
  */
 @Composable
 fun AskPanel(
     state: AskState,
-    onAsk: () -> Unit,
-    onScan: () -> Unit,
     onTranslate: () -> Unit,
     onCopy: () -> Unit,
     onSave: () -> Unit,
@@ -99,7 +97,7 @@ fun AskPanel(
         ) {
             if (state.prompt.isBlank() && state.answer.isBlank()) {
                 Text(
-                    text = "Point the camera at anything. Ask about it, scan its text, translate it to English, or save it.",
+                    text = "Point the camera at a sign, a menu, a page \u2014 Tamil, Hindi, anything \u2014 and tap Translate.",
                     color = XT.OnChipMuted,
                     fontSize = 13.sp,
                     lineHeight = 18.sp,
@@ -117,9 +115,7 @@ fun AskPanel(
             if (busy) {
                 Answer(text = "Stop", filled = false, onClick = onStop, modifier = Modifier.weight(1f))
             } else {
-                Answer(text = "Ask", filled = state.ready && state.speechAvailable, onClick = onAsk, modifier = Modifier.weight(1f))
-                Answer(text = "Scan", filled = false, onClick = onScan, modifier = Modifier.weight(1f))
-                Answer(text = "Translate", filled = false, onClick = onTranslate, modifier = Modifier.weight(1.2f))
+                Answer(text = "Translate to English", filled = state.ready, onClick = onTranslate, modifier = Modifier.weight(1f))
             }
         }
         if (!busy && state.answer.isNotBlank()) {
