@@ -789,11 +789,11 @@ private fun CameraAndGuidance(
         refreshGenius()
         Handler(Looper.getMainLooper()).postDelayed({
             if (gPhase != "CHECKING") return@postDelayed
-            val snap = previewSnapshot()
-            if (snap == null) { geniusDone("could not see the screen"); return@postDelayed }
-            val started = reader.read(snap, ContextCompat.getMainExecutor(context)) { screen ->
-                if (gPhase != "CHECKING") return@read
-                if (screen.isBlank()) { geniusDone("nothing readable on the screen"); return@read }
+            // The reading loop has the screen from the last two seconds; a
+            // fresh read is only taken when it has nothing.
+            fun judge(screen: String) {
+                if (gPhase != "CHECKING") return
+                if (screen.isBlank()) { geniusDone("nothing readable on the screen"); return }
                 Log.i(TAG, "genius: screen reads ${screen.length} chars: ${screen.take(100).replace('\n', ' ')}")
                 val asked = coach.askText(LlmCoach.Kind.CHECK, LlmCoach.checkPrompt(gHeard, screen, gAttempt, gRepeat), ContextCompat.getMainExecutor(context)) { text, done ->
                     if (!done || gPhase != "CHECKING") return@askText
@@ -812,6 +812,10 @@ private fun CameraAndGuidance(
                 }
                 if (!asked) geniusDone("coach busy; not verified")
             }
+            if (gScreen.isNotBlank()) { judge(gScreen); return@postDelayed }
+            val snap = previewSnapshot()
+            if (snap == null) { geniusDone("could not see the screen"); return@postDelayed }
+            val started = reader.read(snap, ContextCompat.getMainExecutor(context)) { screen -> judge(screen) }
             if (!started) geniusDone("screen reader busy; not verified")
         }, GENIUS_SETTLE_MS)
     }
@@ -2142,7 +2146,16 @@ private fun CameraAndGuidance(
             if (!ok) { geniusFail("the keyboard link dropped or Stop was pressed"); return@perform }
             gTyped = MacWatch.typed(gPlan)
             gInputSeen = null
-            geniusCheck(GENIUS_CLAUDE_SETTLE_MS)
+            // Claude has the brief; from here its questions are answered as
+            // they come, and the watch ends when it reports the job done.
+            gMonitor = true
+            gRepeat = true
+            gMonitorSince[0] = SystemClock.uptimeMillis()
+            gMonitorRation[0] = LookRation(20_000L, 60_000L)
+            gPhase = "MONITORING"
+            gNote = "Claude is working - its questions are answered as they come"
+            geniusLog("Brief typed - watching Claude until it is done")
+            refreshGenius()
         }
     }
 

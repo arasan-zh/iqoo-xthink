@@ -744,3 +744,13 @@ piece device-verified on the iQOO 15 before it was committed.
   hearing vocabulary now names what is actually asked of the Mac: a
   website by name, a video or a song on YouTube, a portfolio as one HTML
   file opened in the browser.
+- **The first live run, and what it taught**: Terminal opened, Claude
+  started, the trust dialog was answered on Yes with Down and Enter, the
+  brief went in once the input box was read, and Claude Code reached
+  the /portfolio skill's own destination menu - where Steve's check gave
+  up with "screen reader busy", because the check took its own reading
+  while the two-second loop held the reader. The check now judges the
+  loop's latest reading and only reads for itself when there is none.
+  And once the brief is typed Steve keeps babysitting: Claude's
+  questions are answered as they come (the destination menu, tool
+  permissions), and the watch ends when Claude reports the job done.

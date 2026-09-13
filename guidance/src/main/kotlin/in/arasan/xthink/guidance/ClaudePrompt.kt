@@ -62,6 +62,9 @@ object ClaudePrompt {
 
     /** The line the prompt was found on, for the log. */
     fun line(screen: String): String {
+        val lines = screen.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        lines.firstOrNull { (CURSOR.containsMatchIn(it) || NUMBERED.containsMatchIn(it)) && YES_WORDS.containsMatchIn(it.replace(CURSOR, "").replace(NUMBERED, "")) && !NO_WORDS.containsMatchIn(it.substringBefore(',')) }
+            ?.let { return it.replace(CURSOR, "").replace(NUMBERED, "").trim() }
         val m = YES_NO.find(screen) ?: ENTER.find(screen) ?: return ""
         val start = screen.lastIndexOf('\n', m.range.first).let { if (it < 0) 0 else it + 1 }
         val end = screen.indexOf('\n', m.range.last).let { if (it < 0) screen.length else it }
