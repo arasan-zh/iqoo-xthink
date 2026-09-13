@@ -175,7 +175,7 @@ class LlmCoach(private val context: Context) {
             val started = SystemClock.uptimeMillis()
             val sb = StringBuilder()
             var finalText: String? = null
-            val oneLine = kind == Kind.COMMAND || kind == Kind.UNDERSTAND || kind == Kind.WATCH
+            val oneLine = kind == Kind.COMMAND || kind == Kind.UNDERSTAND || kind == Kind.WATCH || kind == Kind.LIVE
             runCatching {
                 val session = LlmInferenceSession.createFromOptions(
                     model,
@@ -252,6 +252,33 @@ class LlmCoach(private val context: Context) {
         const val TOP_K = 40
         const val TEMPERATURE = 0.7f
         const val IMAGE_LONG_EDGE = 512
+
+        /** A shot style in words, for the prompt. */
+        fun shotWords(style: String): String = when (style) {
+            "CLOSE_UP" -> "close-up"
+            "EXTREME_CLOSE_UP" -> "extreme close-up"
+            "MEDIUM_SHOT" -> "medium shot (waist up)"
+            "WIDE_SHOT" -> "wide shot (whole body, with the place around them)"
+            "LOW_ANGLE" -> "low-angle shot (camera below the eyes, looking up)"
+            "HIGH_ANGLE" -> "high-angle shot (camera above the eyes, looking down)"
+            "DUTCH_ANGLE" -> "dutch angle (the frame tilted on purpose)"
+            "BIRDS_EYE" -> "bird's-eye shot (straight down from above)"
+            "OVER_SHOULDER" -> "over-the-shoulder shot"
+            "POV" -> "point-of-view shot"
+            else -> style.lowercase().replace('_', ' ')
+        }
+
+        /**
+         * The chosen shot, coached: one line on the one change that gets
+         * it, from the live frame. Asked on a rationed clock while the
+         * style is chosen - a session the photographer started.
+         */
+        fun shotPrompt(style: String): String = """
+            You are a photography coach looking through the phone camera. The photographer wants a ${shotWords(style)} of the person in front of them.
+            Say the ONE most useful change to get exactly that shot - distance, camera height, angle, where the person sits in the frame, the light - in at most 12 words, specific to what you see.
+            If the frame already is that shot, say only: That's the shot.
+            No greeting, no preamble.
+        """.trimIndent()
 
         val LIVE_PROMPT = """
             You are a photography coach looking through the phone camera. Say the ONE most useful change

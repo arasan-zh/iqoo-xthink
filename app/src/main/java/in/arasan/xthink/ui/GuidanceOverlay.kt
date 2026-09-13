@@ -299,6 +299,8 @@ fun GuidanceOverlay(
                     GeniusPanel(state = genius, onPair = onPairMac, onSpeak = onListen, onRun = onGeniusRun, onStop = onGeniusStop)
                 } else if (state.showShots) {
                     ShotsRow(style = state.shotStyle, onPick = onPickShot)
+                } else if (state.assisted && state.guideMuted && state.shotStyle != null && (state.shotAdvice != null || state.shotAdvising)) {
+                    ShotAdviceCard(style = state.shotStyle.name, text = state.shotAdvice, thinking = state.shotAdvising)
                 } else if (state.assisted && state.showGuide && !state.guideMuted) {
                     GuidanceCard(state = state)
                 }

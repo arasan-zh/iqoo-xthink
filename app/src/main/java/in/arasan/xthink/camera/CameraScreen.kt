@@ -89,6 +89,7 @@ import `in`.arasan.xthink.guidance.PlanStep
 import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
 import `in`.arasan.xthink.guidance.Finishing
+import `in`.arasan.xthink.guidance.LookRation
 import `in`.arasan.xthink.guidance.MacWatch
 import `in`.arasan.xthink.guidance.WatchSession
 import `in`.arasan.xthink.guidance.Route
@@ -511,6 +512,7 @@ private fun CameraAndGuidance(
     /** A modest copy of what the preview shows, for the coach's eyes. */
     fun previewSnapshot(): Bitmap? = runCatching { previewView.bitmap }.getOrNull()
 
+
     LaunchedEffect(debugEnhanceUri, coachState) {
         if (debugEnhanceUri == null) return@LaunchedEffect
         // Wait for the coach to load (or be absent) so the hook tests the same path a capture takes.
@@ -525,6 +527,39 @@ private fun CameraAndGuidance(
     // knows the motor.
     val lockHaptics = remember { LockHaptics() }
     val haptics = remember { HapticDriver(context) }
+
+    // The chosen shot, coached: while a style is chosen Gemma looks through
+    // the camera on the rationed clock - the first frame at once, then only
+    // a changed frame and no sooner than fifteen seconds, or once in
+    // forty-five - and says the one change that gets the shot.
+    val shotStyleNow = overlayState.shotStyle
+    LaunchedEffect(shotStyleNow) {
+        overlayState = overlayState.copy(shotAdvice = null, shotAdvising = false)
+        if (shotStyleNow == null) return@LaunchedEffect
+        val ration = LookRation()
+        var asking = false
+        while (overlayState.shotStyle == shotStyleNow) {
+            if (!asking && coachState == LlmCoach.State.READY && !coach.isBusy && overlayState.review == null) {
+                val snap = previewSnapshot()
+                if (snap != null && ration.look(SystemClock.uptimeMillis(), lumaGrid(snap))) {
+                    asking = true
+                    overlayState = overlayState.copy(shotAdvising = true)
+                    val ok = coach.ask(LlmCoach.Kind.LIVE, snap, LlmCoach.shotPrompt(shotStyleNow.name), ContextCompat.getMainExecutor(context)) { text, done ->
+                        if (!done) return@ask
+                        asking = false
+                        if (overlayState.shotStyle == shotStyleNow) {
+                            val line = text.trim().trim('"').trimEnd('.')
+                            if (line.isNotBlank() && line != overlayState.shotAdvice) haptics.play(HapticCue.TICK, 0.4f)
+                            overlayState = overlayState.copy(shotAdvice = line.ifBlank { overlayState.shotAdvice }, shotAdvising = false)
+                            Log.i(TAG, "shot ${shotStyleNow.name} (look ${ration.looks}): $line")
+                        }
+                    }
+                    if (!ok) { asking = false; overlayState = overlayState.copy(shotAdvising = false) }
+                }
+            }
+            delay(2000)
+        }
+    }
 
     // The retouch, once the review is up: LaMa does what the plan says,
     // then the chip appears. An empty plan, or no LaMa file, and the review
@@ -1590,6 +1625,8 @@ private fun CameraAndGuidance(
                 review = overlayState.review,
                 easyShot = overlayState.easyShot,
                 retouch = overlayState.retouch,
+                shotAdvice = overlayState.shotAdvice,
+                shotAdvising = overlayState.shotAdvising,
                 look = overlayState.look,
                 showLooks = overlayState.showLooks,
                 lookPreview = overlayState.lookPreview,
@@ -2140,6 +2177,8 @@ private fun buildOverlayState(
     review: ReviewState?,
     easyShot: Boolean,
     retouch: Boolean,
+    shotAdvice: String?,
+    shotAdvising: Boolean,
     look: Int,
     showLooks: Boolean,
     lookPreview: ImageBitmap?,
@@ -2204,6 +2243,8 @@ private fun buildOverlayState(
         review = review,
         easyShot = easyShot,
         retouch = retouch,
+        shotAdvice = shotAdvice,
+        shotAdvising = shotAdvising,
         look = look,
         showLooks = showLooks,
         lookPreview = lookPreview,

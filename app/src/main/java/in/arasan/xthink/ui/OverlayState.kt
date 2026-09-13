@@ -70,6 +70,9 @@ data class OverlayState(
     val baseFocalMm: Float = 23.5f,
     /** A shot style the photographer picked (PORTRAIT only), or null for the automatic ladder. */
     val shotStyle: ShotType? = null,
+    /** Gemma's one line on how to get the chosen shot, and whether it is looking now. */
+    val shotAdvice: String? = null,
+    val shotAdvising: Boolean = false,
     /** True while the Shots row is open. */
     val showShots: Boolean = false,
     /** The look chosen on the camera page; baked into every capture, pre-selected in the review. */

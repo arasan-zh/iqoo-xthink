@@ -658,3 +658,12 @@ piece device-verified on the iQOO 15 before it was committed.
   And the inpainter lives in the activity now, like the coach, so a trip
   to Chat or Voice no longer closes and reloads it (two seconds each
   time).
+- **Gemma coaches the chosen shot**: picking a style in the Shot chip
+  starts a session - while it is chosen Gemma looks through the camera on
+  the rationed clock (`LookRation`, pure, tested: the first frame at
+  once, then only a changed frame and no sooner than fifteen seconds, or
+  once in forty-five) and says the one change that gets that shot -
+  distance, height, angle, placement, light - in a card where the
+  guide's words used to be, with a tick when the line changes. "That's
+  the shot" when it is. The arrows and the reticle keep doing the
+  geometry underneath; Gemma adds what geometry cannot see.

@@ -9,6 +9,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -219,5 +221,36 @@ private fun captionFor(instruction: Instruction?, mode: CoachMode): String = whe
         Magnitude.NUDGE -> "Nearly framed."
         Magnitude.MOVE -> "Keep going."
         Magnitude.BIG -> "A fair way to go."
+    }
+}
+
+/**
+ * Gemma on the chosen shot: the style, and the one change that gets it,
+ * where the guide's words sit when they are not muted by a style.
+ */
+@Composable
+fun ShotAdviceCard(style: String, text: String?, thinking: Boolean, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(XT.Corner))
+            .background(XT.ChipStrong)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(text = "GEMMA · " + style.replace('_', ' '), color = XT.Green, fontSize = 11.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp)
+            if (thinking) {
+                Spacer(Modifier.width(8.dp))
+                Text(text = "looking…", color = XT.OnChipMuted, fontSize = 11.sp)
+            }
+        }
+        Text(
+            text = text ?: "Looking through the camera…",
+            color = if (text != null) Color.White else XT.OnChipMuted,
+            fontSize = 17.sp,
+            lineHeight = 22.sp,
+            fontWeight = FontWeight.Medium,
+        )
     }
 }
