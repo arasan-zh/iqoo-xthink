@@ -116,6 +116,9 @@ object GeniusRouter {
         "whatsapp" to "WhatsApp", "spotify" to "Spotify", "zoom" to "zoom.us",
     )
 
+    /** An app the router itself would open: the model naming one of these has fixed the hearing, not invented it. */
+    fun knownApp(name: String): Boolean = APPS.values.any { it.equals(name.trim(), ignoreCase = true) }
+
     /** The app's proper name for a spoken one, e.g. "vs code" -> "Visual Studio Code". */
     fun appName(spoken: String): String {
         val key = spoken.trim().lowercase().removeSuffix(" app").removeSuffix(" browser").trim()
@@ -276,9 +279,9 @@ object GeniusRouter {
     }
 
     fun projectBrief(request: String): String =
-        "Create a single self-contained index.html for: $request. Put all HTML, CSS and JavaScript in that one file, " +
-            "no build step, no external assets except Google Fonts. Make it polished, responsive and finished - " +
-            "real copy, not lorem ipsum. Write only that one file."
+        request.trim().trimEnd('.') + ". Put it in a new folder named after the project in the current directory; " +
+            "keep it small and finished, real copy and no placeholders unless something is unknown; when it works, open it " +
+            "(a page in the browser, or run it) and end with a short summary of what was made."
 
     /**
      * The plan for a routed request. [text] is what the model wrote for a
@@ -300,19 +303,6 @@ object GeniusRouter {
         val host = REMOTE_HOSTS.entries.firstOrNull { Regex("\\b${it.key}\\b").containsMatchIn(s) }?.value ?: return null
         val tool = REMOTE_TOOLS.find(s)?.value
         return Route.Terminal(spoken.trim(), if (tool != null) "ssh -t $host $tool" else "ssh $host")
-    }
-
-    /**
-     * Routes the words settle on their own, with no model in the way: an
-     * app or a site by name, a plain search, a key, dictation, a known
-     * machine's command, a project for Claude Code (which structures the
-     * work itself), help. A Plan, a shell request without its command, a
-     * letter to write and a WhatsApp message still go to the model.
-     */
-    fun isCertain(route: Route): Boolean = when (route) {
-        is Route.Open, is Route.Website, is Route.Search, is Route.Key, is Route.Type, is Route.Project, is Route.Help -> true
-        is Route.Terminal -> route.command != null
-        else -> false
     }
 
     fun steps(route: Route, text: String? = null): List<PlanStep> = when (route) {
@@ -345,9 +335,8 @@ object GeniusRouter {
             )
         } ?: emptyList()
         is Route.Project -> listOf(
-            PlanStep("OPEN Visual Studio Code", GeniusPlan.open("Visual Studio Code")),
-            PlanStep("NEW window", listOf(GeniusPlan.chord("cmd+shift+n")!!, MacOp.Wait(2000))),
-            PlanStep("OPEN terminal", listOf(GeniusPlan.chord("ctrl+`")!!, MacOp.Wait(1500))),
+            PlanStep("OPEN Terminal", GeniusPlan.open("Terminal")),
+            PlanStep("NEW window", listOf(GeniusPlan.chord("cmd+n")!!, MacOp.Wait(1500))),
             PlanStep("RUN claude", listOf(MacOp.Type("claude"), GeniusPlan.chord("enter")!!, MacOp.Wait(7000))),
             route.skill?.let { skill ->
                 val ask = "$skill ${portfolioArgs(route.request)}"

@@ -45,11 +45,11 @@ class GeniusPlanTest {
     }
 
     @Test
-    fun `CLAUDE opens VS Code, its terminal, claude, then the request`() {
+    fun `CLAUDE opens Terminal, a new window, claude, then the request`() {
         val ops = GeniusPlan.claude("create a portfolio website for Arasan")
         val typed = ops.filterIsInstance<MacOp.Type>().map { it.text }
-        assertEquals(listOf("Visual Studio Code", "claude", "create a portfolio website for Arasan"), typed)
-        assertTrue(ops.any { it is MacOp.Chord && it.usage == 0x35 && it.modifiers == GeniusPlan.MOD_CTRL })
+        assertEquals(listOf("Terminal", "claude", "create a portfolio website for Arasan"), typed)
+        assertTrue(ops.any { it is MacOp.Chord && it.modifiers == GeniusPlan.MOD_CMD })
     }
 
     @Test

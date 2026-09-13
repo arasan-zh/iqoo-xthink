@@ -868,21 +868,14 @@ private fun CameraAndGuidance(
         gAttempt = 1
         gWaits = 0
         gNote = null
-        // The words first: a route they settle on their own is on the card
-        // at once, with no model in the way - and with no model at all.
-        val quick = GeniusRouter.route(heard)
-        if (GeniusRouter.isCertain(quick)) {
-            Log.i(TAG, "steve: words -> ${quick::class.simpleName} (no model)")
-            geniusAct(quick, heard)
-            return
-        }
         if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
         gPhase = "THINKING"
         refreshGenius()
         gDraft = ""
         val main = ContextCompat.getMainExecutor(context)
-        // Gemma reads the sentence first - one line, KIND | ARG. When that
-        // line cannot be read, the words route it instead.
+        // Gemma reads every request first - fixing what speech misheard,
+        // writing the brief when it is a project - as one line, KIND | ARG.
+        // When that line cannot be read, the words route it instead.
         val understood = coach.askText(LlmCoach.Kind.UNDERSTAND, LlmCoach.understandPrompt(heard), main) { text, done ->
             if (!done || gPhase != "THINKING") return@askText
             val (route, fromModel) = GeniusIntent.decide(text, heard)

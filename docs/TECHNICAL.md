@@ -608,3 +608,16 @@ piece device-verified on the iQOO 15 before it was committed.
   personal when the words name none). Other projects still get the
   router's brief. The skill confirms its destination in the terminal
   before writing; the camera's check after the run is what answers it.
+- **Gemma reads every request, and Claude runs in Terminal** (the build
+  after): the no-model fast path is gone again. Every spoken request
+  goes to Gemma once, as one line - it fixes what speech misheard
+  ("sofa ri", "get hub", "elite desk", "cloud code"), writes the brief
+  when it is a project (one paragraph a coding agent can act on), and
+  hands a portfolio to the Mac's `/portfolio` skill with the
+  destination and the details as its arguments. The word router still
+  stands behind it: a named machine's command read from the words beats
+  the model, and an unreadable line falls back to the words; a corrected
+  app the router knows, or a site, is taken from the model even when the
+  name was not in the sentence as heard. A project
+  or a CLAUDE step now opens the Terminal app in a new window, starts
+  `claude`, and types the request - not VS Code's terminal.

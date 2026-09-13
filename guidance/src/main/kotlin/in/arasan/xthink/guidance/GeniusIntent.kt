@@ -46,6 +46,13 @@ object GeniusIntent {
         val fromWords = GeniusRouter.route(spoken)
         // A named machine is exact in the words; the model's reading of it is not.
         if (fromWords is Route.Terminal && fromWords.command != null) return fromWords to false
+        // A project's brief is the model's to expand: its words need not be the user's.
+        if (fromModel is Route.Project && (fromWords is Route.Project || fromWords is Route.Plan)) return fromModel to true
+        // The model fixes what speech misheard - "sofa ri", "get hub": an app
+        // the router knows, or a site, is taken at its word even when the
+        // name was not in the sentence as heard.
+        if (fromModel is Route.Open && GeniusRouter.knownApp(fromModel.app)) return fromModel to true
+        if (fromModel is Route.Website) return fromModel to true
         if (fromModel == null || !plausible(fromModel, spoken)) return fromWords to false
         // A concrete reading of the words beats the model's vaguer one.
         if (fromWords !is Route.Plan && fromModel::class != fromWords::class && fromWords !is Route.Website) return fromWords to false
@@ -74,6 +81,7 @@ object GeniusIntent {
             }
             "TERMINAL", "SHELL", "COMMAND" -> if (arg.isBlank()) null else Route.Terminal(arg, command = arg)
             "WRITE" -> if (arg.isBlank()) null else Route.Write(arg)
+            "PORTFOLIO" -> if (arg.isBlank()) null else Route.Project(arg, "/portfolio")
             "PROJECT", "CLAUDE", "CODE" -> if (arg.isBlank()) null else GeniusRouter.project(arg)
             "WHATSAPP" -> {
                 val number = Regex("""\+?\d[\d ]{7,}\d""").find(arg)?.value?.replace(" ", "") ?: return null

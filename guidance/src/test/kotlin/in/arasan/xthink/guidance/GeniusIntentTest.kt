@@ -72,4 +72,25 @@ class GeniusIntentTest {
     fun `a decorated answer still parses`() {
         assertEquals(Route.Open("Terminal"), GeniusIntent.parse("Sure!\n**OPEN | terminal**\n"))
     }
+
+    @Test
+    fun `a portfolio from the model is the skill, and a project's brief is the model's to expand`() {
+        val (p, fromModel) = GeniusIntent.decide("PORTFOLIO | personal, Priya, video editor", "create a portfolio website for Priya a video editor")
+        assertEquals(Route.Project("personal, Priya, video editor", "/portfolio"), p)
+        assertTrue(fromModel)
+        val (b, _) = GeniusIntent.decide("PROJECT | Build a small to-do app on one page: add, tick off and delete items, saved in the browser; plain HTML, CSS and JavaScript", "build me a to do app")
+        assertTrue((b as Route.Project).request.startsWith("Build a small to-do app"))
+    }
+
+    @Test
+    fun `a misheard app or site is taken from the model, which fixed the hearing`() {
+        val (a, fromModel) = GeniusIntent.decide("OPEN | Safari", "open sofa ri")
+        assertEquals(Route.Open("Safari"), a)
+        assertTrue(fromModel)
+        val (w, _) = GeniusIntent.decide("WEBSITE | github.com", "go to get hub")
+        assertTrue(w is Route.Website && w.url.contains("github.com"))
+        // ...but an app the router has never heard of is not.
+        val (x, _) = GeniusIntent.decide("OPEN | Sofa Ri", "open sofa ri")
+        assertTrue(x != Route.Open("Sofa Ri"))
+    }
 }

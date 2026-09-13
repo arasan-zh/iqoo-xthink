@@ -324,7 +324,7 @@ class LlmCoach(private val context: Context) {
         private const val VERBS = """
             OPEN <app name>          - open an app (Terminal, Safari, Notes, Visual Studio Code...)
             TERMINAL <command>       - open Terminal and run a shell command
-            CLAUDE <request>         - open Visual Studio Code, start Claude Code, and give it this request (use for anything that creates, writes, builds or fixes code, websites, documents)
+            CLAUDE <request>         - open Terminal, start Claude Code, and give it this request (use for anything that creates, writes, builds or fixes code, websites, documents)
             TYPE <text>              - type text into the current window
             KEY <chord>              - press keys: enter, tab, escape, cmd+space, cmd+n, ctrl+c ...
             WAIT <milliseconds>      - pause
@@ -424,29 +424,30 @@ class LlmCoach(private val context: Context) {
 
         /** What kind of Mac job a sentence is, in one line the macros can act on. */
         fun understandPrompt(spoken: String): String = """
-            Classify a spoken request for a Mac. Reply with ONE line in the form KIND | ARG and nothing else.
+            You turn what a phone heard into one clear request for a Mac. First fix what speech got wrong - misheard names and words ("cloud code" is Claude Code, "elite desk" is elitedesk, "get hub" is GitHub, "sofa ri" is Safari) - then reply with ONE line in the form KIND | ARG and nothing else.
             KIND is one of:
             OPEN - open an app; ARG is the app's name
             WEBSITE - open a website; ARG is the domain if given, else the site's name
-            TERMINAL - shell work; ARG is the exact one-line macOS shell command
+            TERMINAL - shell work; ARG is the exact one-line macOS shell command (on the remote server elitedesk: ssh -t elitedesk <command>)
             WRITE - write a letter, notes, a story, a poem; ARG is what to write, as asked
-            PROJECT - create or build code, a website, an app; ARG is what to build
+            PORTFOLIO - a portfolio website; ARG is the destination (reelzo, client <name>, venture <name>, or personal), then the person, their role and the details given, comma separated
+            PROJECT - create or build any other code, site or app; ARG is the brief for Claude Code: one paragraph starting with the verb - what to build, its parts, the stack (plain HTML, CSS and JavaScript unless another was named), the look - only what was asked, filled in with sensible defaults
             WHATSAPP - message someone on WhatsApp; ARG is the number ; the message
             HELP - the user asks what you can do
             OTHER - anything else
             Examples:
             open the terminal and show the current directory -> TERMINAL | pwd
-            open safari browser -> OPEN | Safari
+            open sofa ri browser -> OPEN | Safari
             search for the apple website and open it -> WEBSITE | apple
             write a love letter to Priya -> WRITE | a love letter to Priya
-            create a portfolio website for Priya -> PROJECT | a portfolio website for Priya
+            create a portfolio website for Priya, a video editor -> PORTFOLIO | personal, Priya, video editor
+            build me a to do app -> PROJECT | Build a small to-do app on one page: add, tick off and delete items, saved in the browser; plain HTML, CSS and JavaScript; clean and minimal
+            connect to elite desk and open htop -> TERMINAL | ssh -t elitedesk htop
             text 9442851409 on whatsapp saying hello -> WHATSAPP | 9442851409 ; hello
-            write a one page science fiction story -> WRITE | a one page science fiction story
             what can you do -> HELP |
             Request: $spoken
         """.trimIndent()
 
-        /** The writing itself: a letter, notes, a story - plain text, ready to type. */
         fun writePrompt(spoken: String): String = """
             $spoken
             Write it now, in full, as plain text with normal paragraphs - no title line, no markdown, no notes about what you did.

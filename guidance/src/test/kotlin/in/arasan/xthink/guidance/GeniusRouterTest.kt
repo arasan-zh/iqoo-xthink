@@ -63,12 +63,12 @@ class GeniusRouterTest {
     }
 
     @Test
-    fun `projects go to VS Code in a new window and Claude Code`() {
+    fun `projects go to a new Terminal window and Claude Code`() {
         assertTrue(GeniusRouter.route("create a portfolio website for Priya") is Route.Project)
         val steps = GeniusRouter.steps(Route.Project("a portfolio website for Priya"))
-        assertEquals(listOf("OPEN Visual Studio Code", "NEW window", "OPEN terminal", "RUN claude", "ASK a portfolio website for Priya"), steps.map { it.line })
-        assertTrue(steps[1].ops.any { it is MacOp.Chord && it.modifiers == (GeniusPlan.MOD_CMD or GeniusPlan.MOD_SHIFT) })
-        assertTrue(steps.last().ops.any { it is MacOp.Type && it.text.contains("single self-contained index.html") })
+        assertEquals(listOf("OPEN Terminal", "NEW window", "RUN claude", "ASK a portfolio website for Priya"), steps.map { it.line })
+        assertTrue(steps[1].ops.any { it is MacOp.Chord && it.modifiers == GeniusPlan.MOD_CMD })
+        assertTrue(steps.last().ops.any { it is MacOp.Type && it.text.contains("new folder named after the project") })
     }
 
     @Test
@@ -138,18 +138,6 @@ class GeniusRouterTest {
         assertEquals(Route.Terminal("ssh into the elite desk", "ssh elitedesk"), GeniusRouter.route("ssh into the elite desk"))
         assertEquals(Route.Terminal("show me top on elitedesk", "ssh -t elitedesk top"), GeniusRouter.route("show me top on elitedesk"))
         assertTrue(GeniusRouter.route("open htop") !is Route.Terminal || (GeniusRouter.route("open htop") as Route.Terminal).command == null)
-    }
-
-    @Test
-    fun `the words settle most requests without the model`() {
-        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("open safari")))
-        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("open github.com")))
-        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("create a portfolio website for Priya")))
-        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("connect to elitedesk and open htop")))
-        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("type hello there")))
-        assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("list the files in my home folder")))
-        assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("write a letter to my landlord")))
-        assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("do something useful")))
     }
 
     @Test

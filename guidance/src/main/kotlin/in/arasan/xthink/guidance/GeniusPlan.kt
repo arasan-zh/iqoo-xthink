@@ -24,7 +24,7 @@ data class PlanStep(val line: String, val ops: List<MacOp>)
  *
  *  - `OPEN <app>`         Spotlight: Cmd+Space, the name, Enter.
  *  - `TERMINAL <command>` open Terminal, type the command, Enter.
- *  - `CLAUDE <request>`   open VS Code, its terminal (Ctrl+`), start
+ *  - `CLAUDE <request>`   open Terminal, a new window, start
  *                         `claude`, hand it the request.
  *  - `TYPE <text>`        type text into whatever has focus.
  *  - `KEY <chord>`        press a chord: enter, tab, escape, cmd+space,
@@ -90,9 +90,9 @@ object GeniusPlan {
 
     /** VS Code, its integrated terminal, `claude`, then the request. */
     fun claude(request: String): List<MacOp> =
-        open("Visual Studio Code") + listOf(
-            chord("ctrl+`")!!, MacOp.Wait(1200),
-            MacOp.Type("claude"), chord("enter")!!, MacOp.Wait(5000),
+        open("Terminal") + listOf(
+            chord("cmd+n")!!, MacOp.Wait(1500),
+            MacOp.Type("claude"), chord("enter")!!, MacOp.Wait(7000),
             MacOp.Type(request.trim()), chord("enter")!!, MacOp.Wait(1500),
         )
 
