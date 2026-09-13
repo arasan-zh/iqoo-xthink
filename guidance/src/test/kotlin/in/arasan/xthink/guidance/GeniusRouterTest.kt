@@ -139,4 +139,16 @@ class GeniusRouterTest {
         assertEquals(Route.Terminal("show me top on elitedesk", "ssh -t elitedesk top"), GeniusRouter.route("show me top on elitedesk"))
         assertTrue(GeniusRouter.route("open htop") !is Route.Terminal || (GeniusRouter.route("open htop") as Route.Terminal).command == null)
     }
+
+    @Test
+    fun `the words settle most requests without the model`() {
+        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("open safari")))
+        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("open github.com")))
+        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("create a portfolio website for Priya")))
+        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("connect to elitedesk and open htop")))
+        assertTrue(GeniusRouter.isCertain(GeniusRouter.route("type hello there")))
+        assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("list the files in my home folder")))
+        assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("write a letter to my landlord")))
+        assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("do something useful")))
+    }
 }

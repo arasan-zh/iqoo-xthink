@@ -588,3 +588,13 @@ piece device-verified on the iQOO 15 before it was committed.
   the machine too. The Mac's `~/.ssh/config` must know `elitedesk`.
 - **FIT is a tab again**, between CREATIVE and WATCH, with its squats
   and push-ups; the deep link still works.
+- **Most requests never wait for the model**: the word router runs
+  first, and a route it settles on its own - an app or a site by name, a
+  plain search, a key, dictation, a known machine's command, a project
+  for Claude Code, help - is on the card at once, with no model call (and
+  with no model on the phone at all). Gemma is asked only when the words
+  are open: a Plan, a shell request without its command, a letter, a
+  WhatsApp message. A project goes to Claude Code as said, inside the
+  router's fixed brief (a new folder, a single self-contained page, open
+  it, summarise) - the agent structures the work itself, so the Gemma
+  brief from the build before is gone.

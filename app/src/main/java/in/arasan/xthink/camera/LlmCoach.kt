@@ -453,16 +453,6 @@ class LlmCoach(private val context: Context) {
             Keep it under 220 words.
         """.trimIndent()
 
-        /**
-         * The brief for Claude Code, from what the user said. One paragraph,
-         * because it is typed into the CLI and Enter sends it; the plan card
-         * shows it before it runs.
-         */
-        fun briefPrompt(spoken: String): String = """
-            You write the brief that will be typed into Claude Code, a coding agent, on a Mac. The user said: "$spoken".
-            Write one paragraph of plain text - no line breaks, no markdown, no quotes, under 120 words - that a coding agent can act on at once. Start with the verb. State: what to build; its pages or parts; the stack (a static site of plain HTML, CSS and a little JavaScript, no framework, unless the user named one); the look in a few words; that it goes in a new folder named after the project in the current directory; to open it in the browser when done; and to end with a short summary of what was made. Fill gaps with sensible defaults, add nothing the user would not want.
-        """.trimIndent()
-
         /** A short WhatsApp message when the words gave none. */
         fun messagePrompt(spoken: String): String = """
             Write the WhatsApp message for this request, one or two friendly sentences, plain text only, no quotes: $spoken

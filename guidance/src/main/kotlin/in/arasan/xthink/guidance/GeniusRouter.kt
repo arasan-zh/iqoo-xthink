@@ -278,6 +278,19 @@ object GeniusRouter {
         return Route.Terminal(spoken.trim(), if (tool != null) "ssh -t $host $tool" else "ssh $host")
     }
 
+    /**
+     * Routes the words settle on their own, with no model in the way: an
+     * app or a site by name, a plain search, a key, dictation, a known
+     * machine's command, a project for Claude Code (which structures the
+     * work itself), help. A Plan, a shell request without its command, a
+     * letter to write and a WhatsApp message still go to the model.
+     */
+    fun isCertain(route: Route): Boolean = when (route) {
+        is Route.Open, is Route.Website, is Route.Search, is Route.Key, is Route.Type, is Route.Project, is Route.Help -> true
+        is Route.Terminal -> route.command != null
+        else -> false
+    }
+
     fun steps(route: Route, text: String? = null): List<PlanStep> = when (route) {
         is Route.Open -> if (!route.newWindow) listOf(PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app))) else listOf(
             PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app)),

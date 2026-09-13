@@ -818,18 +818,10 @@ private fun CameraAndGuidance(
                 true
             }
             is Route.Open, is Route.Website, is Route.Search, is Route.Type, is Route.Key -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
-            is Route.Project -> {
-                // Claude Code gets a brief, not the sentence: the model writes
-                // it from what was said, and the card shows it before it runs.
-                gPhase = "WRITING"
-                refreshGenius()
-                // From the whole sentence: the model's one-line reading of it drops the details.
-                coach.askText(LlmCoach.Kind.WRITE, LlmCoach.briefPrompt(heard), main) { text, done ->
-                    if (!done || gPhase != "WRITING") return@askText
-                    val brief = text.trim().trim('"').replace(Regex("\\s*\\n+\\s*"), " ").take(700)
-                    geniusPropose(GeniusRouter.steps(Route.Project(brief.ifBlank { route.request })), "PLANNED")
-                }
-            }
+            // A project goes to Claude Code as said, inside the router's fixed
+            // brief: the agent structures the work itself, and no model here
+            // stands between the words and the card.
+            is Route.Project -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
             is Route.Terminal -> if (route.command != null) {
                 geniusPropose(GeniusRouter.steps(route, route.command), "PLANNED"); true
             } else coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.shellPrompt(heard), main) { text, done ->
@@ -876,6 +868,14 @@ private fun CameraAndGuidance(
         gAttempt = 1
         gWaits = 0
         gNote = null
+        // The words first: a route they settle on their own is on the card
+        // at once, with no model in the way - and with no model at all.
+        val quick = GeniusRouter.route(heard)
+        if (GeniusRouter.isCertain(quick)) {
+            Log.i(TAG, "steve: words -> ${quick::class.simpleName} (no model)")
+            geniusAct(quick, heard)
+            return
+        }
         if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
         gPhase = "THINKING"
         refreshGenius()
