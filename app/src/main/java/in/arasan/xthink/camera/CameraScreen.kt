@@ -939,6 +939,24 @@ private fun CameraAndGuidance(
         if (!asked) geniusFail("Steve is busy")
     }
 
+    /** The sentence, understood: one line, KIND | ARG, from the model; the words route it when that cannot be read. */
+    fun geniusUnderstand(heard: String) {
+        val main = ContextCompat.getMainExecutor(context)
+        val understood = coach.askText(LlmCoach.Kind.UNDERSTAND, LlmCoach.understandPrompt(heard), main) { text, done ->
+            if (!done || gPhase != "THINKING") return@askText
+            val (route, fromModel) = GeniusIntent.decide(text, heard)
+            Log.i(TAG, "steve: gemma says '${text.trim().take(60)}' -> ${route::class.simpleName}${if (!fromModel) " (router)" else ""}")
+            geniusAct(route, heard)
+        }
+        if (!understood) geniusFail("Steve is busy")
+    }
+
+    /**
+     * What the phone heard never goes straight in. Gemma first rewrites it
+     * as the sentence the user most likely said, against everything Steve
+     * knows (the hearing prompt); the room shows both; then the cleaned
+     * sentence is understood and routed.
+     */
     fun geniusPlan(heard: String) {
         gHeard = heard
         gPlan = emptyList()
@@ -952,16 +970,20 @@ private fun CameraAndGuidance(
         refreshGenius()
         gDraft = ""
         val main = ContextCompat.getMainExecutor(context)
-        // Gemma reads every request first - fixing what speech misheard,
-        // writing the brief when it is a project - as one line, KIND | ARG.
-        // When that line cannot be read, the words route it instead.
-        val understood = coach.askText(LlmCoach.Kind.UNDERSTAND, LlmCoach.understandPrompt(heard), main) { text, done ->
+        val hearing = coach.askText(LlmCoach.Kind.UNDERSTAND, LlmCoach.hearingPrompt(heard), main) { text, done ->
             if (!done || gPhase != "THINKING") return@askText
-            val (route, fromModel) = GeniusIntent.decide(text, heard)
-            Log.i(TAG, "steve: gemma says '${text.trim().take(60)}' -> ${route::class.simpleName}${if (!fromModel) " (router)" else ""}")
-            geniusAct(route, heard)
+            val clean = text.trim().trim('"', '\'', ' ').trimEnd('.').lineSequence().firstOrNull { it.isNotBlank() }?.trim() ?: ""
+            val sentence = if (clean.isBlank() || clean.length > heard.length * 3 + 40) heard else clean
+            if (!sentence.equals(heard, ignoreCase = true)) {
+                geniusLog("Heard \u201c$heard\u201d \u2192 \u201c$sentence\u201d")
+                gHeard = sentence
+                gRepeat = GeniusRouter.isRepeating(sentence)
+                refreshGenius()
+            }
+            Log.i(TAG, "steve: heard '$heard' -> '$sentence'")
+            geniusUnderstand(sentence)
         }
-        if (!understood) geniusFail("Steve is busy")
+        if (!hearing) geniusFail("Steve is busy")
     }
 
 

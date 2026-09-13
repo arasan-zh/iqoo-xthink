@@ -723,3 +723,12 @@ piece device-verified on the iQOO 15 before it was committed.
   works, keys for a question, DONE when the job is finished - the room
   says so and stops. Ten minutes at most; Stop ends it. Every press is a
   stamped line in the room's log.
+- **What the phone heard never goes straight in**: speech gets names and
+  jargon wrong, and everything Steve does is names and jargon. Gemma now
+  rewrites the heard words first as the sentence the user most likely
+  said, against a vocabulary of everything Steve knows - the apps,
+  Claude Code and its misreadings, monitoring, the terminal's commands,
+  elitedesk, sites, writing, WhatsApp - keeping every detail given; the
+  room's log shows "Heard … → …"; then the cleaned sentence is
+  understood and routed as before. One more ask of about a second and a
+  half per request, spent before anything can go wrong.

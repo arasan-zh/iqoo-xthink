@@ -49,6 +49,8 @@ object GeniusIntent {
         if (fromWords is Route.Terminal && fromWords.command != null) return fromWords to false
         // A project's brief is the model's to expand: its words need not be the user's.
         if (fromModel is Route.Project && (fromWords is Route.Project || fromWords is Route.Plan)) return fromModel to true
+        // A domain in the words is the destination, whatever app the model named to get there.
+        if (fromWords is Route.Website && fromWords.url.startsWith("https://") && !fromWords.url.contains("duckduckgo")) return fromWords to false
         // The model fixes what speech misheard - "sofa ri", "get hub": an app
         // the router knows, or a site, is taken at its word even when the
         // name was not in the sentence as heard.

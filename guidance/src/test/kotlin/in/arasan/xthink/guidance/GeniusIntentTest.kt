@@ -93,4 +93,11 @@ class GeniusIntentTest {
         val (m, fromModelM) = GeniusIntent.decide("WEBSITE | microsoft", "search for the apple website")
         assertTrue(m is Route.Website && m.query == "apple"); assertTrue(!fromModelM)
     }
+
+    @Test
+    fun `a domain in the words wins over the app the model named to reach it`() {
+        val (r, fromModel) = GeniusIntent.decide("OPEN | Safari", "open safari and go to github.com")
+        assertTrue(r is Route.Website && r.url.contains("github.com"))
+        assertTrue(!fromModel)
+    }
 }

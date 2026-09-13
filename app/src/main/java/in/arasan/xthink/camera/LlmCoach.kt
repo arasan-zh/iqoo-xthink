@@ -354,6 +354,25 @@ class LlmCoach(private val context: Context) {
             If the job is finished - a summary of what it did, or a bare shell prompt with nothing asked - reply exactly: DONE
         """.trimIndent()
 
+        /**
+         * The words the phone heard, rewritten as the sentence the user most
+         * likely said - speech gets names and jargon wrong, and everything
+         * Steve does is names and jargon. The vocabulary is the base prompt:
+         * what a request can be about. One sentence back, nothing else.
+         */
+        fun hearingPrompt(heard: String): String = """
+            A phone's speech recogniser heard this, with mistakes: "$heard"
+            Rewrite it as the one sentence the user most likely said. It is a request for a Mac, and it is about one of these:
+            apps - Safari, Chrome, Terminal, Notes, TextEdit, Finder, Mail, Calendar, Messages, WhatsApp, Slack, Visual Studio Code, Xcode;
+            Claude Code (the coding agent in the terminal, often heard as cloud code, claw, clod) - build, create, write, fix a website, an app, a portfolio, a to-do app;
+            monitoring Claude - keep an eye on it, press enter when it asks, answer its prompts;
+            the terminal - run a command, make test, make dev, git, npm, ls, pwd, htop, until it passes, keep checking;
+            the remote server elitedesk (heard as elite desk) - connect, ssh, open htop;
+            websites - GitHub, Google, YouTube, a domain; searching; writing a letter, notes, a story; a WhatsApp message to a number; what can you do.
+            Common mishearings: "get hub", "git hub" = GitHub; "sofa ri" = Safari; "cloud code", "claw code", "clod code" = Claude Code; "elite desk" = elitedesk; "h top" = htop; "port folio" = portfolio; "make taste" = make test; "what's up" = WhatsApp; "vs code", "visual studio" = Visual Studio Code; "dot com" = .com, "dot in" = .in, "dot org" = .org (write the domain as one word: github.com).
+            Rules: keep the user's meaning and every detail they gave - names, numbers, words to type; fix only what was misheard; never invent a website, a name or a command that was not said - a name you do not know stays as heard; add nothing (not "on a Mac", not politeness). Reply with the sentence only - no quotes, no explanation.
+        """.trimIndent()
+
         /** Nothing readable for a while: where is the screen, and how should the phone move. */
         val AIM_PROMPT = """
             You are helping point a phone camera at a computer screen so its text can be read. In at most 10 words, say where the screen is in this picture and how to move the phone to fill the frame with it - left, right, up, down, closer, farther, tilt. If no screen is in view, say only: No screen in view.
