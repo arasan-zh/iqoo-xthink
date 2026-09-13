@@ -10,9 +10,8 @@ data class Joint(val x: Float, val y: Float)
 enum class Exercise(val label: String, val downBelowDeg: Float, val upAboveDeg: Float) {
     /** Knee angle: hip - knee - ankle. Standing ~175°, a proper squat under 100°. */
     SQUAT("Squats", downBelowDeg = 100f, upAboveDeg = 160f),
-
-    /** Elbow angle: shoulder - elbow - wrist. Arms straight ~170°, chest down under 95°. */
-    PUSHUP("Push-ups", downBelowDeg = 95f, upAboveDeg = 155f),
+    // Push-ups were here: the elbow angle from a phone on the floor, looking
+    // along a body, was not something the pose model could be trusted with.
 }
 
 object JointAngles {

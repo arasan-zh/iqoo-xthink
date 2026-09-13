@@ -1292,8 +1292,8 @@ private fun CameraAndGuidance(
     // --- camera + analysis -----------------------------------------------
 
     // --- FIT ----------------------------------------------------------------
-    // Squats and push-ups counted from ML Kit Pose on the analysis frames,
-    // by the knee or elbow angle (RepCounter, pure Kotlin); hand signs from
+    // Squats counted from ML Kit Pose on the analysis frames, by the knee
+    // angle (RepCounter, pure Kotlin); hand signs from
     // MediaPipe's gesture model, thumbs up as a hands-free shutter.
     var fitPick by remember { mutableStateOf("SQUAT") }
     var repCounter by remember { mutableStateOf(RepCounter(Exercise.SQUAT)) }
@@ -1317,7 +1317,7 @@ private fun CameraAndGuidance(
 
     fun applyFitPick() {
         val a = analyzerRef[0] ?: return
-        a.fitExercise = if (fitMode) (if (fitPick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT) else null
+        a.fitExercise = if (fitMode) Exercise.SQUAT else null
         a.fitGestures = signsMode
     }
 
@@ -1981,7 +1981,7 @@ private fun CameraAndGuidance(
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
                     askMode = false
                     fitMode = true
-                    repCounter = RepCounter(if (fitPick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
+                    repCounter = RepCounter(Exercise.SQUAT)
                     fitGesture = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, askMode = false, ask = null)
                     applyFitPick()
@@ -2025,7 +2025,7 @@ private fun CameraAndGuidance(
             onWatchFinish = { leaveWatch("finish") },
             onFitPick = { pick ->
                 fitPick = pick
-                repCounter = RepCounter(if (pick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
+                repCounter = RepCounter(Exercise.SQUAT)
                 fitGesture = null
                 applyFitPick()
                 refreshFit()

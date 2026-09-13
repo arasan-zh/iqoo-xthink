@@ -676,3 +676,9 @@ piece device-verified on the iQOO 15 before it was committed.
   back in front the footage is offered - to WhatsApp's contact picker
   with the video attached, or the sheet - so the two go one after the
   other, the words then the film.
+- **FIT: push-ups are gone**: the elbow angle from a phone on the floor,
+  looking along a body, was not something the pose model could be
+  trusted with, and the count was wrong. Squats stay - the knee angle
+  from a propped-up phone, side or front, counts cleanly. FIT takes no
+  pictures: the click on each rep is the lock haptic and the spoken
+  count, not a shutter.

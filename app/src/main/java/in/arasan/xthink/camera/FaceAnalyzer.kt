@@ -215,8 +215,6 @@ class FaceAnalyzer(
                 val angle: Float? = when (exercise) {
                     Exercise.SQUAT -> bestAngle(j(PoseLandmark.LEFT_HIP), j(PoseLandmark.LEFT_KNEE), j(PoseLandmark.LEFT_ANKLE),
                         j(PoseLandmark.RIGHT_HIP), j(PoseLandmark.RIGHT_KNEE), j(PoseLandmark.RIGHT_ANKLE))
-                    Exercise.PUSHUP -> bestAngle(j(PoseLandmark.LEFT_SHOULDER), j(PoseLandmark.LEFT_ELBOW), j(PoseLandmark.LEFT_WRIST),
-                        j(PoseLandmark.RIGHT_SHOULDER), j(PoseLandmark.RIGHT_ELBOW), j(PoseLandmark.RIGHT_WRIST))
                 }
                 onFit?.invoke(angle, gesture, dtMs)
             }

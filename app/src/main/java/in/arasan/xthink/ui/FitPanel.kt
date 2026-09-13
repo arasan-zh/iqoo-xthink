@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** What FIT shows. [mode] is "SQUAT" or "PUSHUP". */
+/** What FIT shows. [mode] is "SQUAT" - the one exercise the pose model counts reliably from a propped-up phone. */
 data class FitState(
     val mode: String,
     val count: Int,
@@ -52,8 +52,7 @@ fun FitPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill("Squats", state.mode == "SQUAT", { onMode("SQUAT") }, Modifier.weight(1f))
-            Pill("Push-ups", state.mode == "PUSHUP", { onMode("PUSHUP") }, Modifier.weight(1f))
+            Pill("Squats", true, { onMode("SQUAT") }, Modifier.weight(1f))
         }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(

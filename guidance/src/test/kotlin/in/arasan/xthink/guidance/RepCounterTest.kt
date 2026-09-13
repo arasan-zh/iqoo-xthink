@@ -38,9 +38,9 @@ class RepCounterTest {
     }
 
     @Test
-    fun `push-ups use the elbow's thresholds`() {
-        val c = RepCounter(Exercise.PUSHUP)
-        assertEquals(3, feed(c, listOf(170f, 90f, 90f, 90f, 165f, 88f, 88f, 88f, 170f, 92f, 92f, 92f, 160f)))
+    fun `three clean squats count three, and reset starts over`() {
+        val c = RepCounter(Exercise.SQUAT)
+        assertEquals(3, feed(c, listOf(175f, 90f, 90f, 90f, 170f, 88f, 88f, 88f, 172f, 92f, 92f, 92f, 165f)))
         c.reset()
         assertEquals(0, c.count); assertEquals(RepCounter.Phase.WAITING, c.phase)
     }
