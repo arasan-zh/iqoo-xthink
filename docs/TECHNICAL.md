@@ -635,3 +635,8 @@ piece device-verified on the iQOO 15 before it was committed.
   Notes would need a tap in there anyway (Android lets no app paste into
   or close another), so the one tap picks the app instead. Back returns
   to xThink.
+- **No look on the camera page**: the Natural chip and the looks row it
+  opened are gone from the viewfinder; the look is chosen in the review,
+  where the six tiles preview it on the shot itself. The camera-page look
+  state and its handlers remain wired but nothing on the camera shows
+  them.

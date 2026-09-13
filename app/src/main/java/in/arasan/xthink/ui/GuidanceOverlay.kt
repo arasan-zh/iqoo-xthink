@@ -244,7 +244,6 @@ fun GuidanceOverlay(
                         if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
                         if (state.assisted && state.guideMuted) GuideMutedChip()
                         else if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
-                        LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
                         if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode && !state.watchMode) {
                             RetouchToggle(on = state.retouch, onToggle = onToggleRetouch)
                         }
@@ -300,8 +299,6 @@ fun GuidanceOverlay(
                     GeniusPanel(state = genius, onPair = onPairMac, onSpeak = onListen, onRun = onGeniusRun, onStop = onGeniusStop)
                 } else if (state.showShots) {
                     ShotsRow(style = state.shotStyle, onPick = onPickShot)
-                } else if (state.showLooks) {
-                    LooksRow(look = state.look, preview = state.lookPreview, onPick = onPickLook)
                 } else if (state.assisted && state.showGuide && !state.guideMuted) {
                     GuidanceCard(state = state)
                 }
