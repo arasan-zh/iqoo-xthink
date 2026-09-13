@@ -131,13 +131,12 @@ fun SteveSurface(
             }
         }
     }
-    val macWindow: @Composable (Modifier) -> Unit = { m ->
+    // [windowHeight]: landscape - the window is this tall and its width follows, so the lines under it stay on screen; null: full width, 16:9.
+    val macWindow: @Composable (Modifier, androidx.compose.ui.unit.Dp?) -> Unit = { m, windowHeight ->
         Column(modifier = m) {
             // --- the Mac, through the room ---
             Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(16f / 9f)
+                modifier = (if (windowHeight != null) Modifier.height(windowHeight).aspectRatio(16f / 9f, matchHeightConstraintsFirst = true) else Modifier.fillMaxWidth().aspectRatio(16f / 9f))
                     .onGloballyPositioned { window = it.boundsInRoot() }
                     // A tap in the window focuses the lens there - on the terminal.
                     .pointerInput(Unit) {
@@ -295,12 +294,13 @@ fun SteveSurface(
                 .padding(horizontal = Palette.Gutter)
                 .padding(top = 8.dp, bottom = 16.dp),
         ) {
+            val available = maxHeight
             if (maxWidth > maxHeight) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     Column(modifier = Modifier.weight(1.25f).fillMaxHeight()) {
                         header()
                         Spacer(Modifier.height(8.dp))
-                        macWindow(Modifier.fillMaxWidth())
+                        macWindow(Modifier.fillMaxWidth(), (available - 250.dp).coerceAtLeast(160.dp))
                         Spacer(Modifier.height(10.dp))
                         link()
                     }
@@ -319,7 +319,7 @@ fun SteveSurface(
                     Spacer(Modifier.height(10.dp))
                     link()
                     Spacer(Modifier.height(12.dp))
-                    macWindow(Modifier.fillMaxWidth())
+                    macWindow(Modifier.fillMaxWidth(), null)
                     Spacer(Modifier.height(12.dp))
                     phaseLine()
                     Spacer(Modifier.height(10.dp))
