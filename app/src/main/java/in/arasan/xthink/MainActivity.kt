@@ -122,6 +122,7 @@ class MainActivity : ComponentActivity() {
                 val chatReader = remember { ScreenReader() }
                 DisposableEffect(chatReader) { onDispose { chatReader.close() } }
                 val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+                    android.util.Log.i("xThink", "chat: picked ${uri ?: "nothing"} (screen=$screen)")
                     if (uri == null) return@rememberLauncherForActivityResult
                     chatImage = runCatching {
                         android.graphics.ImageDecoder.decodeBitmap(android.graphics.ImageDecoder.createSource(contentResolver, uri)) { d, info, _ ->
@@ -232,7 +233,7 @@ class MainActivity : ComponentActivity() {
                                 onMic = { chatMic() },
                                 onHome = { speech.stop(); screen = "CAMERA" },
                             )
-                            BackHandler { screen = "CAMERA" }
+                            BackHandler { android.util.Log.i("xThink", "chat: back"); screen = "CAMERA" }
                         }
                         "VOICE" -> {
                             VoiceScreen(

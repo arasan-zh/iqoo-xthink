@@ -147,6 +147,9 @@ fun ChatScreen(
                 }
             }
             // The composer: a photo, words, the mic, send.
+            if (attachment == null && turns.isEmpty()) {
+                Text(text = "Tap the camera for a photo, hold it to shoot one", color = Palette.NightMuted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
+            }
             if (attachment != null) {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
                     androidx.compose.foundation.Image(
@@ -180,7 +183,7 @@ fun ChatScreen(
                     // Tap: a photo from the gallery. Hold: take one now.
                     NightRound(onClick = onAttach, onLongClick = onCapture, size = 40.dp) { Glyph("camera", Palette.NightInk, 18.dp) }
                     Box(modifier = Modifier.weight(1f)) {
-                        if (draft.isBlank()) Text(text = if (listening) "Listening…" else if (attachment == null) "Message… hold the camera to shoot" else "Ask about the photo…", color = Palette.NightMuted, fontSize = 16.sp, maxLines = 1)
+                        if (draft.isBlank()) Text(text = if (listening) "Listening…" else if (attachment == null) "Message…" else "Ask about the photo…", color = Palette.NightMuted, fontSize = 16.sp, maxLines = 1)
                         BasicTextField(
                             value = draft,
                             onValueChange = onDraft,
