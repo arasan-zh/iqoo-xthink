@@ -164,6 +164,8 @@ private const val GENIUS_MAX_ATTEMPTS_REPEAT = 8
 /** Babysitting Claude: the same prompt is answered once in this long; the watch ends after this many minutes. */
 private const val MONITOR_REANSWER_MS = 15_000L
 private const val MONITOR_MAX_MS = 10L * 60L * 1000L
+/** After starting claude, the brief is typed when its input box is read, or after this long regardless. */
+private const val CLAUDE_READY_MAX_MS = 45_000L
 
 /** A clean plan runs by itself after this many seconds unless cancelled. */
 private const val GENIUS_AUTORUN_S = 5
@@ -652,6 +654,9 @@ private fun CameraAndGuidance(
     val gAnswered = remember { mutableMapOf<String, Long>() }
     val gMonitorRation = remember { arrayOf(LookRation(20_000L, 60_000L)) }
     val gPressing = remember { booleanArrayOf(false) }
+    // A brief for Claude, held back until the camera sees Claude ready for it.
+    var gPendingAsk by remember { mutableStateOf<PlanStep?>(null) }
+    val gAskSince = remember { longArrayOf(0L) }
     var gNote by remember { mutableStateOf<String?>(null) }
     var gDraft by remember { mutableStateOf("") }
     var gCountdown by remember { mutableIntStateOf(0) }
@@ -849,15 +854,31 @@ private fun CameraAndGuidance(
         gPhase = "RUNNING"
         refreshGenius()
         Log.i(TAG, "genius: RUN confirmed - ${steps.size} steps")
-        val ops = steps.flatMap { it.ops }
+        // A brief for Claude is not typed blind: the run stops after starting
+        // claude, the camera waits for the trust dialog (answered) and the
+        // input box, and only then is the ASK step performed.
+        val askIdx = steps.indexOfFirst { it.line.startsWith("ASK ") }
+        val holdAsk = askIdx > 0 && steps.any { it.line == "RUN claude" }
+        val toRun = if (holdAsk) steps.subList(0, askIdx) else steps
+        gPendingAsk = if (holdAsk) steps[askIdx] else null
+        val ops = toRun.flatMap { it.ops }
         val stepOfOp = IntArray(ops.size)
         var k = 0
-        steps.forEachIndexed { i, st -> repeat(st.ops.size) { stepOfOp[k++] = i } }
+        toRun.forEachIndexed { i, st -> repeat(st.ops.size) { stepOfOp[k++] = i } }
         keyboard.perform(
             ops,
             onProgress = { i -> if (i < stepOfOp.size && stepOfOp[i] != gStep) { gStep = stepOfOp[i]; refreshGenius() } },
             onDone = { ok ->
-                if (!ok) { geniusFail("the keyboard link dropped or Stop was pressed"); return@perform }
+                if (!ok) { gPendingAsk = null; geniusFail("the keyboard link dropped or Stop was pressed"); return@perform }
+                if (gPendingAsk != null) {
+                    gPhase = "CLAUDE"
+                    gStep = askIdx
+                    gAskSince[0] = SystemClock.uptimeMillis()
+                    gNote = "Claude is starting - the brief goes in once it is ready"
+                    geniusLog("Claude started - waiting for it to be ready")
+                    refreshGenius()
+                    return@perform
+                }
                 gTyped = MacWatch.typed(steps)
                 gInputSeen = null
                 // The camera is in the loop: the Mac gets a moment (longer
@@ -1025,6 +1046,7 @@ private fun CameraAndGuidance(
     fun geniusStop() {
         Log.i(TAG, "genius: stop pressed")
         if (gMonitor) { gMonitor = false; geniusLog("Stopped watching Claude") }
+        gPendingAsk = null
         keyboard.cancelled = true
         speech.stop()
         gPhase = "READY"
@@ -2091,6 +2113,40 @@ private fun CameraAndGuidance(
     }
 
     /**
+     * One reading of the terminal while Claude starts and a brief waits:
+     * the trust dialog and its kin are answered as they appear, and the
+     * moment Claude's input box is read the brief is typed - or after
+     * forty-five seconds regardless, so a misread does not hold it forever.
+     */
+    fun claudeTick(screen: String) {
+        val ask = gPendingAsk ?: return
+        val now = SystemClock.uptimeMillis()
+        ClaudePrompt.answer(screen)?.let { keys ->
+            val key = ClaudePrompt.key(screen)
+            if (now - (gAnswered[key] ?: 0L) >= MONITOR_REANSWER_MS) {
+                gAnswered[key] = now
+                geniusAnswer(keys, "Claude asked: ${ClaudePrompt.line(screen).take(60)}")
+            }
+            return
+        }
+        if (gPressing[0]) return
+        val ready = ClaudePrompt.readyForInput(screen)
+        if (!ready && now - gAskSince[0] < CLAUDE_READY_MAX_MS) return
+        gPendingAsk = null
+        geniusLog(if (ready) "Claude is ready - asking" else "Asking Claude anyway, after ${(now - gAskSince[0]) / 1000} s")
+        gPhase = "RUNNING"
+        refreshGenius()
+        gPressing[0] = true
+        keyboard.perform(ask.ops, onProgress = {}) { ok ->
+            gPressing[0] = false
+            if (!ok) { geniusFail("the keyboard link dropped or Stop was pressed"); return@perform }
+            gTyped = MacWatch.typed(gPlan)
+            gInputSeen = null
+            geniusCheck(GENIUS_CLAUDE_SETTLE_MS)
+        }
+    }
+
+    /**
      * One reading of the terminal while babysitting Claude: a prompt the
      * patterns know is answered at once (each once, so the screen still
      * showing it a moment later does not press twice); otherwise, on a
@@ -2171,10 +2227,11 @@ private fun CameraAndGuidance(
                     gInputSeen = MacWatch.inputSeen(gTyped, text)
                     gMisses = if (text.isBlank()) gMisses + 1 else 0
                     if (text.isNotBlank()) gAim = null
-                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING", "MONITORING")
+                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING", "MONITORING", "CLAUDE")
                     val due = SystemClock.uptimeMillis() - gNarratedAt[0] > WATCH_NARRATE_MIN_MS
                     if (quiet && due && text.isNotBlank() && MacWatch.changed(previous, text)) geniusNarrate("changed", null)
                     if (gMonitor && gPhase == "MONITORING") monitorTick(text, still)
+                    if (gPhase == "CLAUDE") claudeTick(text)
                     if (gAutoZoom) {
                         val zoom = overlayState.zoomRatio
                         AutoZoom.next(zoom, box, gMisses, cameraControl?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f)?.let { z ->

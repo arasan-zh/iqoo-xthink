@@ -92,7 +92,7 @@ fun SteveSurface(
     onAutoZoom: () -> Unit = {},
     onFocus: (Float, Float) -> Unit = { _, _ -> },
 ) {
-    val busy = state.phase in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING", "MONITORING")
+    val busy = state.phase in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING", "MONITORING", "CLAUDE")
     val awaiting = state.phase in setOf("PLANNED", "PROPOSED")
     val refused = state.refusals.any { it != null }
     val linking = !state.connected && state.keyboard.let { it.contains("Connecting") || it.contains("Becoming") || it.contains("ready") }
@@ -206,6 +206,7 @@ fun SteveSurface(
                 "PLANNED" -> if (refused) "Refused" else if (state.countdown > 0) "Runs in ${state.countdown}" else "Ready to run"
                 "PROPOSED" -> "Next step proposed"
                 "MONITORING" -> "Watching Claude - Enter when it asks"
+                "CLAUDE" -> "Claude is starting…"
                 "DONE" -> "Done"
                 "FAILED" -> "Could not"
                 else -> "Say what the Mac should do."

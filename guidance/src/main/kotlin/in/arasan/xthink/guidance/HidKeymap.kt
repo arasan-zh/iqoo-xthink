@@ -28,6 +28,16 @@ data class HidKey(val usage: Int, val shift: Boolean) {
 object HidKeymap {
 
     const val ENTER = 0x28
+
+    /** The arrows: right, left, down, up - HID usages 0x4F..0x52. */
+
+    const val RIGHT = 0x4F
+
+    const val LEFT = 0x50
+
+    const val DOWN = 0x51
+
+    const val UP = 0x52
     const val TAB = 0x2B
     const val SPACE = 0x2C
     const val BACKSPACE = 0x2A

@@ -47,6 +47,7 @@ object GeniusPlan {
     private val NAMED: Map<String, Int> = mapOf(
         "enter" to HidKeymap.ENTER, "return" to HidKeymap.ENTER,
         "tab" to HidKeymap.TAB, "space" to HidKeymap.SPACE, "escape" to HidKeymap.ESCAPE, "esc" to HidKeymap.ESCAPE,
+        "down" to HidKeymap.DOWN, "up" to HidKeymap.UP, "left" to HidKeymap.LEFT, "right" to HidKeymap.RIGHT,
         "backspace" to HidKeymap.BACKSPACE, "delete" to HidKeymap.BACKSPACE,
         "`" to 0x35, "backtick" to 0x35, "grave" to 0x35,
         "up" to 0x52, "down" to 0x51, "left" to 0x50, "right" to 0x4F,

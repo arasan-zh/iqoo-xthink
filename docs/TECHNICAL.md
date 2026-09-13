@@ -732,3 +732,15 @@ piece device-verified on the iQOO 15 before it was committed.
   room's log shows "Heard … → …"; then the cleaned sentence is
   understood and routed as before. One more ask of about a second and a
   half per request, spent before anything can go wrong.
+- **The trust dialog, and the brief that waited**: Claude's trust dialog
+  opens with the cursor on "No, exit"; a bare Enter there quit Claude and
+  the brief, typed seven seconds after `claude` regardless, landed in the
+  shell. Now a menu is read as a menu - the cursor's line and the yes
+  line are found and the arrows walk from one to the other before Enter
+  (arrows joined the keymap) - and a plan with a brief for Claude stops
+  after starting it: the camera answers the dialogs as they appear and
+  types the brief only when Claude's input box is read ("? for
+  shortcuts", the > line), or after forty-five seconds regardless. The
+  hearing vocabulary now names what is actually asked of the Mac: a
+  website by name, a video or a song on YouTube, a portfolio as one HTML
+  file opened in the browser.

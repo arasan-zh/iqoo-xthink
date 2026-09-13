@@ -7,12 +7,23 @@ import org.junit.Test
 class ClaudePromptTest {
 
     @Test
-    fun `the trust prompt, the confirm, the permission - Enter`() {
+    fun `the trust dialog opens on No - the arrow walks to Yes before Enter`() {
         val trust = "Security guide\n> No, exit\nYes, I trust this folder\n\nEnter to confirm · Esc to cancel"
-        assertEquals(listOf("KEY enter"), ClaudePrompt.answer(trust))
+        assertEquals(listOf("KEY down", "KEY enter"), ClaudePrompt.answer(trust))
         assertEquals("Yes, I trust this folder", ClaudePrompt.line(trust))
+        // Yes first and the cursor on it: Enter alone.
         assertEquals(listOf("KEY enter"), ClaudePrompt.answer("Do you want to proceed?\n❯ 1. Yes\n  2. No"))
+        // Yes first, the cursor read on No below it: up, then Enter.
+        assertEquals(listOf("KEY up", "KEY enter"), ClaudePrompt.answer("Do you want to proceed?\n  1. Yes\n> 2. No, and tell Claude what to do differently"))
         assertEquals(listOf("KEY enter"), ClaudePrompt.answer("Bash(make test)\nAllow this tool for this session?"))
+    }
+
+    @Test
+    fun `claude at its input box is ready to be asked`() {
+        assertEquals(true, ClaudePrompt.readyForInput("Welcome to Claude Code\n> \n? for shortcuts"))
+        assertEquals(true, ClaudePrompt.readyForInput("Try \"fix the failing test\""))
+        assertEquals(false, ClaudePrompt.readyForInput("Security guide\n> No, exit\nYes, I trust this folder"))
+        assertEquals(false, ClaudePrompt.readyForInput("arasan@mac ~ %"))
     }
 
     @Test

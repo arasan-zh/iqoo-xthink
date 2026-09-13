@@ -19,15 +19,46 @@ object ClaudePrompt {
         setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE),
     )
 
-    /** What to press for the prompt on [screen], as plan lines; null when no prompt is showing. */
+    /** The cursor on a choice, as the camera reads it: ❯ most often comes back as >. */
+    private val CURSOR = Regex("""^\s*[❯>›»•●]\s*""")
+    private val NUMBERED = Regex("""^\s*\d+\.\s""")
+    private val YES_WORDS = Regex("""\b(?:yes|trust|allow|proceed|accept|continue)\b""", RegexOption.IGNORE_CASE)
+    private val NO_WORDS = Regex("""\b(?:no|exit|cancel|deny|don't)\b""", RegexOption.IGNORE_CASE)
+
+    /** Claude Code sitting at its input box, waiting to be asked. */
+    private val READY = Regex("""\?\s*for\s*shortcuts|try\s+"|bypass\s+permissions|^\s*>\s*$""", setOf(RegexOption.IGNORE_CASE, RegexOption.MULTILINE))
+
+    /**
+     * What to press for the prompt on [screen], as plan lines; null when no
+     * prompt is showing. A menu is read as a menu: the cursor's line and
+     * the yes line are found, and the arrows walk from one to the other
+     * before Enter - the trust dialog opens with the cursor on "No, exit",
+     * and a bare Enter there quits Claude.
+     */
     fun answer(screen: String): List<String>? {
         if (screen.isBlank()) return null
-        return when {
-            YES_NO.containsMatchIn(screen) -> listOf("TYPE y", "KEY enter")
-            ENTER.containsMatchIn(screen) -> listOf("KEY enter")
-            else -> null
+        if (YES_NO.containsMatchIn(screen)) return listOf("TYPE y", "KEY enter")
+        val lines = screen.lines().map { it.trim() }.filter { it.isNotEmpty() }
+        val options = lines.indices.filter { i ->
+            val l = lines[i]
+            CURSOR.containsMatchIn(l) || NUMBERED.containsMatchIn(l) ||
+                (YES_WORDS.containsMatchIn(l) || NO_WORDS.containsMatchIn(l)) && l.length <= 40 && !l.endsWith("?")
         }
+        if (options.size >= 2) {
+            fun bare(i: Int) = lines[i].replace(CURSOR, "").replace(NUMBERED, "").trim()
+            val yes = options.firstOrNull { YES_WORDS.containsMatchIn(bare(it)) && !NO_WORDS.containsMatchIn(bare(it).substringBefore(',')) }
+            if (yes != null) {
+                val selected = options.firstOrNull { CURSOR.containsMatchIn(lines[it]) } ?: options.first()
+                val moves = options.indexOf(yes) - options.indexOf(selected)
+                val walk = if (moves > 0) List(moves) { "KEY down" } else List(-moves) { "KEY up" }
+                return walk + "KEY enter"
+            }
+        }
+        return if (ENTER.containsMatchIn(screen)) listOf("KEY enter") else null
     }
+
+    /** Claude is at its input box: the brief may be typed. */
+    fun readyForInput(screen: String): Boolean = READY.containsMatchIn(screen)
 
     /** The line the prompt was found on, for the log. */
     fun line(screen: String): String {

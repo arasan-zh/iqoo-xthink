@@ -368,7 +368,7 @@ class LlmCoach(private val context: Context) {
             monitoring Claude - keep an eye on it, press enter when it asks, answer its prompts;
             the terminal - run a command, make test, make dev, git, npm, ls, pwd, htop, until it passes, keep checking;
             the remote server elitedesk (heard as elite desk) - connect, ssh, open htop;
-            websites - GitHub, Google, YouTube, a domain; searching; writing a letter, notes, a story; a WhatsApp message to a number; what can you do.
+            websites - open a website by name or domain (GitHub, Google, a domain); play a video or a song on YouTube; a portfolio - one HTML file, opened in the browser; searching; writing a letter, notes, a story; a WhatsApp message to a number; what can you do.
             Common mishearings: "get hub", "git hub" = GitHub; "sofa ri" = Safari; "cloud code", "claw code", "clod code" = Claude Code; "elite desk" = elitedesk; "h top" = htop; "port folio" = portfolio; "make taste" = make test; "what's up" = WhatsApp; "vs code", "visual studio" = Visual Studio Code; "dot com" = .com, "dot in" = .in, "dot org" = .org (write the domain as one word: github.com).
             Rules: keep the user's meaning and every detail they gave - names, numbers, words to type; fix only what was misheard; never invent a website, a name or a command that was not said - a name you do not know stays as heard; add nothing (not "on a Mac", not politeness). Reply with the sentence only - no quotes, no explanation.
         """.trimIndent()
