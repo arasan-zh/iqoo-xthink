@@ -22,7 +22,13 @@ instructions that require opening Android Studio.
 - Sensor: TYPE_GAME_ROTATION_VECTOR only. Never TYPE_ROTATION_VECTOR.
 - ML Kit face detection: PERFORMANCE_MODE_FAST, landmarks ON, classification OFF.
 - ImageAnalysis: STRATEGY_KEEP_ONLY_LATEST, 480x360, throttled.
-- The on-device LLM runs ONLY on explicit user tap. Never in a loop.
+- The on-device LLM runs because the user asked: on a tap, or inside a
+  session the user started (WATCH). Inside a session it may run on a clock,
+  but rationed - no sooner than 15 s after the last ask, and only when
+  something changed - and the session ends itself (5 min). Never per frame.
+- Whenever a model is loading or working in the background, show it: the
+  animated chip in the top row (camera) or the header (Steve). No silent
+  waits.
 - Front camera mirrors the preview — left/right instructions must invert.
   There is a unit test for this. Keep it passing.
 

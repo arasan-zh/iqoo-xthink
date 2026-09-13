@@ -46,6 +46,8 @@ data class OverlayState(
     /** WATCH: recording, the model looking now and then, the microphone written down. */
     val watchMode: Boolean = false,
     val watch: WatchState? = null,
+    /** What a model is doing in the background - loading, warming up, thinking, painting - for the chip; null when idle. */
+    val model: String? = null,
     /** TRANSLATE / SCAN tabs: read what the camera sees, into English or into clean text. */
     val askMode: Boolean = false,
     val ask: AskState? = null,

@@ -445,6 +445,13 @@ private fun CameraAndGuidance(
 
     // The on-device coach. Absent, quietly, when the model is not on the phone.
     val coach = sharedCoach ?: remember { LlmCoach(context) }
+
+    /** What a model is doing right now, for the chip: the coach first, then LaMa. */
+    fun modelActivity(): String? = coach.activity() ?: when {
+        inpainter.loading -> "LaMa loading"
+        inpainter.painting -> "LaMa painting"
+        else -> null
+    }
     var coachState by remember { mutableStateOf(coach.state) } // a shared model may already be loaded
     val sharpRef = remember { floatArrayOf(0f) }
     // The model loads only when something needs it: STEVE, or - a while
@@ -472,6 +479,16 @@ private fun CameraAndGuidance(
     // LaMa's session is loaded once the coach is - the phone is already
     // committed to the heavy work then - so the first retouch is prompt.
     LaunchedEffect(coachState) { if (coachState == LlmCoach.State.READY) inpainter.warmUp() }
+
+    // The chip follows the models on its own clock too, so a wait in a
+    // mode with no analysis frames (a room, the review) is never silent.
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(400)
+            val m = modelActivity()
+            if (m != overlayState.model) overlayState = overlayState.copy(model = m)
+        }
+    }
 
     /** A modest copy of what the preview shows, for the coach's eyes. */
     fun previewSnapshot(): Bitmap? = runCatching { previewView.bitmap }.getOrNull()
@@ -1501,6 +1518,7 @@ private fun CameraAndGuidance(
                 signsMode = overlayState.signsMode,
                 watchMode = overlayState.watchMode,
                 watch = overlayState.watch,
+                model = modelActivity(),
                 sign = overlayState.sign,
             )
 
@@ -2050,6 +2068,7 @@ private fun buildOverlayState(
     signsMode: Boolean,
     watchMode: Boolean,
     watch: WatchState?,
+    model: String?,
     sign: String?,
 ): OverlayState {
     val focus = when {
@@ -2113,6 +2132,7 @@ private fun buildOverlayState(
         signsMode = signsMode,
         watchMode = watchMode,
         watch = watch,
+        model = model,
         sign = sign,
     )
 }

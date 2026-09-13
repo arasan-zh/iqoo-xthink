@@ -549,3 +549,14 @@ piece device-verified on the iQOO 15 before it was committed.
   and time, at most one look every fifteen seconds. That is a deliberate
   exception for this mode and no other; the camera's own guidance, the
   retouch and Steve keep the rule.
+- **The rule, rewritten, and the chip**: CLAUDE.md now says the model
+  runs because the user asked - on a tap, or inside a session they
+  started - and inside a session on a rationed clock (WATCH: no sooner
+  than 15 s after the last ask, only on change, the session ending
+  itself), never per frame. And no wait is silent: whenever Gemma is
+  loading, warming up (the first generation's kernel compile) or
+  thinking, or LaMa is loading its graph or painting, an animated chip
+  says so - in the camera's top row next to the recording clock, and in
+  Steve's header. The label comes from the coach's own state and busy
+  flag and two flags on the inpainter, read once per analysis frame and
+  on a 400 ms clock of its own, so a room or the review shows it too.

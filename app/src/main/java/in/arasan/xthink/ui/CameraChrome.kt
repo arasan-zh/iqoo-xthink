@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
@@ -226,6 +227,27 @@ fun ModeTabs(
             }
             Spacer(Modifier.width(half))
         }
+    }
+}
+
+/**
+ * A model at work, made visible: a turning arc in the accent and what it
+ * is doing - Gemma loading, warming up, thinking; LaMa loading, painting.
+ * Shown whenever one is busy in the background, so no wait is silent.
+ */
+@Composable
+fun ModelChip(label: String, modifier: Modifier = Modifier) {
+    Row(
+        modifier = modifier
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(XT.Chip)
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        CircularProgressIndicator(color = XT.Green, strokeWidth = 2.dp, modifier = Modifier.size(14.dp))
+        Text(text = "$label\u2026", color = XT.OnChip, fontSize = 12.sp, fontWeight = FontWeight.Medium, maxLines = 1)
     }
 }
 

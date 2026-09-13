@@ -57,6 +57,17 @@ class LlmCoach(private val context: Context) {
 
     val isBusy: Boolean get() = busy.get()
 
+    /** Set after the first generation: the GPU kernels are compiled, the long wait is behind. */
+    @Volatile private var warmed = false
+
+    /** What the model is doing, for the chip; null when idle. */
+    fun activity(): String? = when {
+        state == State.LOADING -> "Gemma loading"
+        busy.get() && !warmed -> "Gemma warming up"
+        busy.get() -> "Gemma thinking"
+        else -> null
+    }
+
     /** Load the model off the main thread. Seconds, once. */
     fun warmUp(callbackExecutor: Executor, onState: (State) -> Unit) {
         val file = modelFile()
@@ -128,7 +139,7 @@ class LlmCoach(private val context: Context) {
                     future.get()
                 }
                 // Free before the final word is delivered, so the caller may ask again at once.
-                busy.set(false)
+                busy.set(false); warmed = true
                 val finalText = tidy(sb.toString())
                 callbackExecutor.execute { onText(finalText, true) }
                 Log.i(
@@ -139,10 +150,10 @@ class LlmCoach(private val context: Context) {
                 )
             }.onFailure {
                 Log.e(TAG, "coach $kind failed", it)
-                busy.set(false)
+                busy.set(false); warmed = true
                 callbackExecutor.execute { onText(sb.toString().ifBlank { "" }, true) }
             }
-            busy.set(false)
+            busy.set(false); warmed = true
         }
         return true
     }
@@ -195,16 +206,16 @@ class LlmCoach(private val context: Context) {
                     }.get()
                 }
                 // Free before the final word is delivered, so the caller may ask again at once.
-                busy.set(false)
+                busy.set(false); warmed = true
                 val out = finalText ?: raw(sb, oneLine)
                 callbackExecutor.execute { onText(out, true) }
                 Log.i(TAG, "coach %s: %d ms, %d chars: %s".format(kind, SystemClock.uptimeMillis() - started, sb.length, out.take(120).replace('\n', ' ')))
             }.onFailure {
                 Log.e(TAG, "coach $kind failed", it)
-                busy.set(false)
+                busy.set(false); warmed = true
                 callbackExecutor.execute { onText(sb.toString(), true) }
             }
-            busy.set(false)
+            busy.set(false); warmed = true
         }
         return true
     }

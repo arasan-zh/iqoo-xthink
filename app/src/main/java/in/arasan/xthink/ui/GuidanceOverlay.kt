@@ -151,6 +151,7 @@ fun GuidanceOverlay(
             onStop = onGeniusStop,
             onHome = onHome,
             onWatch = onGeniusWatch,
+            model = state.model,
         )
         return
     }
@@ -222,6 +223,7 @@ fun GuidanceOverlay(
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TopIcon("mark", onClick = { showQr = true })
                         if (state.recording) RecordingChip(ms = state.recordingMs)
+                        state.model?.let { ModelChip(it) }
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         TopIcon("chat", onClick = { onOpenRoom("CHAT") })

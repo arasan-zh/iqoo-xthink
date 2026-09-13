@@ -56,6 +56,12 @@ class Inpainter(private val context: Context) {
 
     val available: Boolean get() = !loadFailed && modelFile() != null
 
+    /** For the chip: the graph is being loaded / a fill is running. */
+    @Volatile var loading: Boolean = false
+        private set
+    @Volatile var painting: Boolean = false
+        private set
+
     /** Seconds, once, on whichever thread calls; the ONNX session is kept. */
     @Synchronized
     private fun ensureSession(): OrtSession? {
@@ -63,6 +69,7 @@ class Inpainter(private val context: Context) {
         if (loadFailed) return null
         val file = modelFile() ?: return null
         val started = SystemClock.uptimeMillis()
+        loading = true
         val env = OrtEnvironment.getEnvironment()
         // Optimising the graph is most of the first load (tens of seconds).
         // The optimised graph is written once to the cache and read back
@@ -90,10 +97,12 @@ class Inpainter(private val context: Context) {
             }
             env.createSession(file.absolutePath, opts).also {
                 session = it
+                loading = false
                 Log.i(TAG, "inpaint: loaded ${file.name} (${file.length() / 1_000_000} MB) in ${SystemClock.uptimeMillis() - started} ms; graph cached ${cache.length() / 1_000_000} MB")
             }
         }.onFailure {
             loadFailed = true
+            loading = false
             Log.e(TAG, "inpaint: could not load ${file.name}", it)
         }.getOrNull()
     }
@@ -120,6 +129,7 @@ class Inpainter(private val context: Context) {
         if (holes.isEmpty()) return null
         val s = ensureSession() ?: return null
         val started = SystemClock.uptimeMillis()
+        painting = true
         return runCatching {
             val aspect = src.width.toFloat() / src.height
             val window = where ?: Retouch.window(holes, aspect)
@@ -199,7 +209,7 @@ class Inpainter(private val context: Context) {
             canvas.restoreToCount(layer)
             Log.i(TAG, "inpaint: ${holes.size} hole(s) in a ${wp[2]} px window of ${src.width}x${src.height} in ${SystemClock.uptimeMillis() - started} ms")
             result
-        }.onFailure { Log.e(TAG, "inpaint failed", it) }.getOrNull()
+        }.onFailure { Log.e(TAG, "inpaint failed", it) }.getOrNull().also { painting = false }
     }
 
     @Synchronized

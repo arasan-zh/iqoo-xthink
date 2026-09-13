@@ -83,6 +83,7 @@ fun SteveSurface(
     onStop: () -> Unit,
     onHome: () -> Unit,
     onWatch: () -> Unit = {},
+    model: String? = null,
 ) {
     val busy = state.phase in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
     val awaiting = state.phase in setOf("PLANNED", "PROPOSED")
@@ -101,7 +102,7 @@ fun SteveSurface(
             Spacer(Modifier.weight(1f))
             Text(text = "STEVE", color = Gold, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 4.sp)
             Spacer(Modifier.weight(1f))
-            Spacer(Modifier.size(44.dp))
+            if (model != null) ModelChip(model) else Spacer(Modifier.size(44.dp))
         }
     }
     val link: @Composable () -> Unit = {
