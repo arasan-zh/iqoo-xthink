@@ -89,8 +89,8 @@ class GeniusIntentTest {
         assertTrue(fromModel)
         val (w, _) = GeniusIntent.decide("WEBSITE | github.com", "go to get hub")
         assertTrue(w is Route.Website && w.url.contains("github.com"))
-        // ...but an app the router has never heard of is not.
-        val (x, _) = GeniusIntent.decide("OPEN | Sofa Ri", "open sofa ri")
-        assertTrue(x != Route.Open("Sofa Ri"))
+        // ...but a site the model only guessed a name for still has to be in the words.
+        val (m, fromModelM) = GeniusIntent.decide("WEBSITE | microsoft", "search for the apple website")
+        assertTrue(m is Route.Website && m.query == "apple"); assertTrue(!fromModelM)
     }
 }

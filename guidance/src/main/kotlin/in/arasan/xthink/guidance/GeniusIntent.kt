@@ -52,7 +52,9 @@ object GeniusIntent {
         // the router knows, or a site, is taken at its word even when the
         // name was not in the sentence as heard.
         if (fromModel is Route.Open && GeniusRouter.knownApp(fromModel.app)) return fromModel to true
-        if (fromModel is Route.Website) return fromModel to true
+        // ...and a site the model named by its domain ("get hub" -> github.com); a bare
+        // name it guessed at still has to be in the words.
+        if (fromModel is Route.Website && fromModel.url.startsWith("https://") && !fromModel.url.contains("duckduckgo")) return fromModel to true
         if (fromModel == null || !plausible(fromModel, spoken)) return fromWords to false
         // A concrete reading of the words beats the model's vaguer one.
         if (fromWords !is Route.Plan && fromModel::class != fromWords::class && fromWords !is Route.Website) return fromWords to false
