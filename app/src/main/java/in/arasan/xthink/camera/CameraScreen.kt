@@ -1304,6 +1304,11 @@ private fun CameraAndGuidance(
     // angle (RepCounter, pure Kotlin); hand signs from
     // MediaPipe's gesture model, thumbs up as a hands-free shutter.
     var fitPick by remember { mutableStateOf("SQUAT") }
+    fun exerciseFor(pick: String): Exercise = when (pick) {
+        "JACKS" -> Exercise.JUMPING_JACK
+        "KNEES" -> Exercise.KNEE_RAISE
+        else -> Exercise.SQUAT
+    }
     var repCounter by remember { mutableStateOf(RepCounter(Exercise.SQUAT)) }
     var fitGesture by remember { mutableStateOf<String?>(null) }
     var fitBody by remember { mutableStateOf(false) }
@@ -1325,7 +1330,7 @@ private fun CameraAndGuidance(
 
     fun applyFitPick() {
         val a = analyzerRef[0] ?: return
-        a.fitExercise = if (fitMode) Exercise.SQUAT else null
+        a.fitExercise = if (fitMode) exerciseFor(fitPick) else null
         a.fitGestures = signsMode
     }
 
@@ -1989,7 +1994,7 @@ private fun CameraAndGuidance(
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
                     askMode = false
                     fitMode = true
-                    repCounter = RepCounter(Exercise.SQUAT)
+                    repCounter = RepCounter(exerciseFor(fitPick))
                     fitGesture = null
                     overlayState = overlayState.copy(videoMode = false, recording = false, review = null, showLooks = false, showShots = false, typeMode = false, genius = null, askMode = false, ask = null)
                     applyFitPick()
@@ -2053,7 +2058,7 @@ private fun CameraAndGuidance(
             onWatchFinish = { leaveWatch("finish") },
             onFitPick = { pick ->
                 fitPick = pick
-                repCounter = RepCounter(Exercise.SQUAT)
+                repCounter = RepCounter(exerciseFor(pick))
                 fitGesture = null
                 applyFitPick()
                 refreshFit()

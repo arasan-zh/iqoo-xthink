@@ -691,3 +691,11 @@ piece device-verified on the iQOO 15 before it was committed.
   it succeeds, and a proposed next round runs by itself on the countdown
   (Cancel stops it) up to eight rounds instead of three - Gemma in the
   loop until the terminal says done.
+- **FIT: jumping jacks and knee raises**: two more exercises the pose
+  model counts cleanly from a propped-up phone facing a standing person.
+  Jumping jacks read the shoulder angle (hip, shoulder, wrist), arms down
+  under 45°, overhead over 130°, both arms averaged; knee raises read the
+  hip angle (shoulder, hip, knee) of the raised leg - the more bent of
+  the two sides, since the other leg stands - under 115° up, over 160°
+  down. `SidePick` on the exercise says which of the two sides counts;
+  `JointAngles.pick` (pure, tested) applies it.

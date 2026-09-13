@@ -213,8 +213,12 @@ class FaceAnalyzer(
             .addOnSuccessListener { pose ->
                 fun j(t: Int): Joint? = pose.getPoseLandmark(t)?.takeIf { it.inFrameLikelihood >= 0.5f }?.let { Joint(it.position.x, it.position.y) }
                 val angle: Float? = when (exercise) {
-                    Exercise.SQUAT -> bestAngle(j(PoseLandmark.LEFT_HIP), j(PoseLandmark.LEFT_KNEE), j(PoseLandmark.LEFT_ANKLE),
+                    Exercise.SQUAT -> bestAngle(exercise, j(PoseLandmark.LEFT_HIP), j(PoseLandmark.LEFT_KNEE), j(PoseLandmark.LEFT_ANKLE),
                         j(PoseLandmark.RIGHT_HIP), j(PoseLandmark.RIGHT_KNEE), j(PoseLandmark.RIGHT_ANKLE))
+                    Exercise.JUMPING_JACK -> bestAngle(exercise, j(PoseLandmark.LEFT_HIP), j(PoseLandmark.LEFT_SHOULDER), j(PoseLandmark.LEFT_WRIST),
+                        j(PoseLandmark.RIGHT_HIP), j(PoseLandmark.RIGHT_SHOULDER), j(PoseLandmark.RIGHT_WRIST))
+                    Exercise.KNEE_RAISE -> bestAngle(exercise, j(PoseLandmark.LEFT_SHOULDER), j(PoseLandmark.LEFT_HIP), j(PoseLandmark.LEFT_KNEE),
+                        j(PoseLandmark.RIGHT_SHOULDER), j(PoseLandmark.RIGHT_HIP), j(PoseLandmark.RIGHT_KNEE))
                 }
                 onFit?.invoke(angle, gesture, dtMs)
             }
@@ -225,14 +229,11 @@ class FaceAnalyzer(
             }
     }
 
-    /** The angle from whichever side is fully in frame; both sides averaged when both are. */
-    private fun bestAngle(a1: Joint?, b1: Joint?, c1: Joint?, a2: Joint?, b2: Joint?, c2: Joint?): Float? {
+    /** The angle from whichever side is fully in frame; with both in, the exercise says which counts. */
+    private fun bestAngle(exercise: Exercise, a1: Joint?, b1: Joint?, c1: Joint?, a2: Joint?, b2: Joint?, c2: Joint?): Float? {
         val left = if (a1 != null && b1 != null && c1 != null) JointAngles.angle(a1, b1, c1) else null
         val right = if (a2 != null && b2 != null && c2 != null) JointAngles.angle(a2, b2, c2) else null
-        return when {
-            left != null && right != null -> (left + right) / 2f
-            else -> left ?: right
-        }
+        return JointAngles.pick(left, right, exercise.side)
     }
 
     private fun deliver(result: FaceResult) {

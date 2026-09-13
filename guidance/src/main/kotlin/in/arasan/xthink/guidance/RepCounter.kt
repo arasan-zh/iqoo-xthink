@@ -6,15 +6,36 @@ import kotlin.math.sqrt
 /** A body landmark, as fractions of the frame. */
 data class Joint(val x: Float, val y: Float)
 
-/** Which exercise, by the joint whose angle tells the story. */
-enum class Exercise(val label: String, val downBelowDeg: Float, val upAboveDeg: Float) {
+/** When both sides of the body are in frame, which angle counts. */
+enum class SidePick {
+    /** Both move together (a squat, a jumping jack): the average. */
+    AVERAGE,
+    /** One moves, the other stands (a knee raise): the more bent of the two. */
+    MOST_BENT,
+}
+
+/**
+ * Which exercise, by the joint whose angle tells the story. A rep is DOWN
+ * (under the floor) then UP (over the ceiling). Each is counted from a
+ * propped-up phone facing a standing person - the one view the pose
+ * model gives clean joints in; push-ups, on the floor, were not.
+ */
+enum class Exercise(val label: String, val downBelowDeg: Float, val upAboveDeg: Float, val side: SidePick = SidePick.AVERAGE) {
     /** Knee angle: hip - knee - ankle. Standing ~175°, a proper squat under 100°. */
     SQUAT("Squats", downBelowDeg = 100f, upAboveDeg = 160f),
-    // Push-ups were here: the elbow angle from a phone on the floor, looking
-    // along a body, was not something the pose model could be trusted with.
+    /** Shoulder angle: hip - shoulder - wrist. Arms down ~20°, arms overhead ~160°: DOWN is arms down, UP is arms up. */
+    JUMPING_JACK("Jumping jacks", downBelowDeg = 45f, upAboveDeg = 130f),
+    /** Hip angle: shoulder - hip - knee, of the raised leg. Standing ~175°, knee at hip height ~95°. */
+    KNEE_RAISE("Knee raises", downBelowDeg = 115f, upAboveDeg = 160f, side = SidePick.MOST_BENT),
 }
 
 object JointAngles {
+    /** The angle that counts from the two sides, per the exercise; null when neither side is in frame. */
+    fun pick(left: Float?, right: Float?, side: SidePick): Float? = when {
+        left != null && right != null -> if (side == SidePick.AVERAGE) (left + right) / 2f else minOf(left, right)
+        else -> left ?: right
+    }
+
     /** The angle at [b] between [a] and [c], in degrees; 180 when straight. */
     fun angle(a: Joint, b: Joint, c: Joint): Float {
         val abx = a.x - b.x; val aby = a.y - b.y

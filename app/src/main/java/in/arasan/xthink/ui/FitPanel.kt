@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** What FIT shows. [mode] is "SQUAT" - the one exercise the pose model counts reliably from a propped-up phone. */
+/** What FIT shows. [mode] is "SQUAT", "JACKS" or "KNEES" - the exercises the pose model counts reliably from a propped-up phone facing a standing person. */
 data class FitState(
     val mode: String,
     val count: Int,
@@ -52,7 +52,9 @@ fun FitPanel(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Pill("Squats", true, { onMode("SQUAT") }, Modifier.weight(1f))
+            Pill("Squats", state.mode == "SQUAT", { onMode("SQUAT") }, Modifier.weight(1f))
+            Pill("Jumping jacks", state.mode == "JACKS", { onMode("JACKS") }, Modifier.weight(1.2f))
+            Pill("Knee raises", state.mode == "KNEES", { onMode("KNEES") }, Modifier.weight(1.1f))
         }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Text(
@@ -65,7 +67,7 @@ fun FitPanel(
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
                         text = when {
-                            !state.bodySeen -> "STEP BACK, SHOW THE WHOLE BODY"
+                            !state.bodySeen -> if (state.mode == "JACKS") "STEP BACK, ARMS AND LEGS IN" else "STEP BACK, SHOW THE WHOLE BODY"
                             state.phase == "DOWN" -> "DOWN"
                             state.phase == "UP" -> "UP"
                             else -> "READY"

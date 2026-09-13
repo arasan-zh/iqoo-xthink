@@ -44,4 +44,21 @@ class RepCounterTest {
         c.reset()
         assertEquals(0, c.count); assertEquals(RepCounter.Phase.WAITING, c.phase)
     }
+
+    @Test
+    fun `jumping jacks count at the top, knee raises count on the way down`() {
+        val j = RepCounter(Exercise.JUMPING_JACK)
+        // Arms up first (UP), down (DOWN), up again: one.
+        assertEquals(2, feed(j, listOf(150f, 150f, 20f, 20f, 20f, 155f, 25f, 25f, 25f, 160f)))
+        val k = RepCounter(Exercise.KNEE_RAISE)
+        assertEquals(2, feed(k, listOf(175f, 95f, 95f, 95f, 172f, 100f, 100f, 100f, 170f)))
+    }
+
+    @Test
+    fun `a knee raise takes the bent leg, a squat the average of both`() {
+        assertEquals(95f, JointAngles.pick(175f, 95f, SidePick.MOST_BENT))
+        assertEquals(135f, JointAngles.pick(175f, 95f, SidePick.AVERAGE))
+        assertEquals(95f, JointAngles.pick(null, 95f, SidePick.AVERAGE))
+        assertEquals(null, JointAngles.pick(null, null, SidePick.MOST_BENT))
+    }
 }
