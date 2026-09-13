@@ -1,7 +1,9 @@
 package `in`.arasan.xthink.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -58,6 +60,11 @@ fun ChatScreen(
     onAttach: () -> Unit,
     onClearAttach: () -> Unit,
     onHome: () -> Unit,
+    /** Hold the camera button: take a picture now. */
+    onCapture: () -> Unit = {},
+    /** With a photo attached: the text in it, in English; the text in it, read and cleaned. */
+    onTranslate: () -> Unit = {},
+    onScan: () -> Unit = {},
 ) {
     val list = rememberLazyListState()
     LaunchedEffect(turns.size, turns.lastOrNull()?.text?.length) {
@@ -148,7 +155,14 @@ fun ChatScreen(
                         modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
                     )
                     Spacer(Modifier.size(10.dp))
-                    Text(text = "Photo attached", color = Palette.NightMuted, fontSize = 12.sp)
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(text = "Photo attached", color = Palette.NightMuted, fontSize = 12.sp)
+                        Spacer(Modifier.size(6.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            NightPill(text = "Translate", onClick = { if (!busy) onTranslate() })
+                            NightPill(text = "Scan text", onClick = { if (!busy) onScan() })
+                        }
+                    }
                     Spacer(Modifier.size(10.dp))
                     NightRound(onClick = onClearAttach, size = 32.dp) { Text("✕", color = Palette.NightInk, fontSize = 13.sp) }
                 }
@@ -163,9 +177,10 @@ fun ChatScreen(
                         .background(Palette.NightCard)
                         .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                 ) {
-                    NightRound(onClick = onAttach, size = 40.dp) { Glyph("camera", Palette.NightInk, 18.dp) }
+                    // Tap: a photo from the gallery. Hold: take one now.
+                    NightRound(onClick = onAttach, onLongClick = onCapture, size = 40.dp) { Glyph("camera", Palette.NightInk, 18.dp) }
                     Box(modifier = Modifier.weight(1f)) {
-                        if (draft.isBlank()) Text(text = if (listening) "Listening…" else "Message…", color = Palette.NightMuted, fontSize = 16.sp)
+                        if (draft.isBlank()) Text(text = if (listening) "Listening…" else if (attachment == null) "Message… hold the camera to shoot" else "Ask about the photo…", color = Palette.NightMuted, fontSize = 16.sp, maxLines = 1)
                         BasicTextField(
                             value = draft,
                             onValueChange = onDraft,
@@ -199,18 +214,32 @@ fun ChatScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun NightRound(onClick: () -> Unit, size: androidx.compose.ui.unit.Dp = 44.dp, content: @Composable () -> Unit) {
+fun NightRound(onClick: () -> Unit, size: androidx.compose.ui.unit.Dp = 44.dp, onLongClick: (() -> Unit)? = null, content: @Composable () -> Unit) {
     Box(
         modifier = Modifier
             .size(size)
             .clip(CircleShape)
             .background(Palette.NightCard)
-            .clickable(
+            .combinedClickable(
                 interactionSource = remember { MutableInteractionSource() },
                 indication = null,
                 onClick = onClick,
+                onLongClick = onLongClick,
             ),
         contentAlignment = Alignment.Center,
     ) { content() }
+}
+
+/** A small dark pill with a word on it, for what can be done with a photo. */
+@Composable
+fun NightPill(text: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(Palette.NightCardStrong)
+            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp),
+    ) { Text(text = text, color = Palette.NightInk, fontSize = 12.sp) }
 }

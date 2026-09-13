@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import `in`.arasan.xthink.camera.CameraScreen
 import `in`.arasan.xthink.camera.Conversation
 import `in`.arasan.xthink.camera.LlmCoach
+import `in`.arasan.xthink.camera.ScreenReader
 import `in`.arasan.xthink.camera.SpeechInput
 import `in`.arasan.xthink.ui.ChatScreen
 import `in`.arasan.xthink.ui.ChatTurn
@@ -116,6 +117,10 @@ class MainActivity : ComponentActivity() {
                 var chatBusy by remember { mutableStateOf(false) }
                 var chatListening by remember { mutableStateOf(false) }
                 var chatImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+                // Hold the camera button: the system camera takes one, and it lands in the composer.
+                val chatCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp -> if (bmp != null) chatImage = bmp }
+                val chatReader = remember { ScreenReader() }
+                DisposableEffect(chatReader) { onDispose { chatReader.close() } }
                 val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
                     if (uri == null) return@rememberLauncherForActivityResult
                     chatImage = runCatching {
@@ -128,7 +133,12 @@ class MainActivity : ComponentActivity() {
                         }
                     }.getOrNull()
                 }
-                fun chatSend(text: String) {
+                /**
+                 * A turn: what was said (and the photo), then the answer,
+                 * streamed. [kind] and [prompt] replace the chat prompt for
+                 * the photo's set pieces - translate, tidy the scan.
+                 */
+                fun chatSend(text: String, kind: LlmCoach.Kind = LlmCoach.Kind.CHAT, prompt: String? = null) {
                     val msg = text.trim()
                     if ((msg.isEmpty() && chatImage == null) || chatBusy) return
                     if (coachState != LlmCoach.State.READY) { chat.add(ChatTurn(true, msg)); chat.add(ChatTurn(false, "Gemma is still loading - a moment, then ask again.")); chatDraft = ""; return }
@@ -144,10 +154,39 @@ class MainActivity : ComponentActivity() {
                         if (idx < chat.size) chat[idx] = ChatTurn(false, reply)
                         if (done) chatBusy = false
                     }
+                    val ask = prompt ?: LlmCoach.chatPrompt(history, msg)
                     // A photo goes through the model's eyes; words alone through its ears.
-                    val ok = if (image != null) coach.ask(LlmCoach.Kind.CHAT, image, LlmCoach.chatPrompt(history, msg), main, onReply)
-                    else coach.askText(LlmCoach.Kind.CHAT, LlmCoach.chatPrompt(history, msg), main, onReply)
+                    val ok = if (image != null) coach.ask(kind, image, ask, main, onReply)
+                    else coach.askText(kind, ask, main, onReply)
                     if (!ok) { chat[idx] = ChatTurn(false, "Busy - try again in a moment."); chatBusy = false }
+                }
+
+                /** The text in the photo, in English: the model reads and translates in one look. */
+                fun chatTranslate() {
+                    if (chatImage == null) return
+                    chatSend("Translate the text in this photo", LlmCoach.Kind.TRANSLATE, LlmCoach.TRANSLATE_PROMPT)
+                }
+
+                /** The text in the photo: ML Kit reads it, the model cleans the reading (or the reading stands, when the model is away). */
+                fun chatScan() {
+                    val image = chatImage ?: return
+                    if (chatBusy) return
+                    chat.add(ChatTurn(true, "Scan the text in this photo", image.asImageBitmap()))
+                    chat.add(ChatTurn(false, "Reading\u2026"))
+                    chatImage = null
+                    chatBusy = true
+                    val idx = chat.size - 1
+                    val started = chatReader.read(image, main) { text ->
+                        if (text.isBlank()) { chat[idx] = ChatTurn(false, "No text found in the photo."); chatBusy = false; return@read }
+                        chat[idx] = ChatTurn(false, text)
+                        if (coachState != LlmCoach.State.READY) { chatBusy = false; return@read }
+                        val ok = coach.askText(LlmCoach.Kind.TIDY, LlmCoach.tidyPrompt(text), main) { clean, done ->
+                            if (clean.isNotBlank() && idx < chat.size) chat[idx] = ChatTurn(false, clean)
+                            if (done) chatBusy = false
+                        }
+                        if (!ok) chatBusy = false
+                    }
+                    if (!started) { chat[idx] = ChatTurn(false, "The reader is busy - try again in a moment."); chatBusy = false }
                 }
                 fun chatMic() {
                     if (chatListening) { speech.stop(); return }
@@ -180,6 +219,9 @@ class MainActivity : ComponentActivity() {
                                 attachment = chatImage?.let { it.asImageBitmap() },
                                 onAttach = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                                 onClearAttach = { chatImage = null },
+                                onCapture = { runCatching { chatCamera.launch(null) }.onFailure { android.util.Log.w("xThink", "chat: no camera app", it) } },
+                                onTranslate = { chatTranslate() },
+                                onScan = { chatScan() },
                                 modelLine = when (coachState) {
                                     LlmCoach.State.READY -> "Gemma 3n · on the phone"
                                     LlmCoach.State.LOADING -> "loading the model\u2026"

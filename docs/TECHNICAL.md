@@ -640,3 +640,12 @@ piece device-verified on the iQOO 15 before it was committed.
   where the six tiles preview it on the shot itself. The camera-page look
   state and its handlers remain wired but nothing on the camera shows
   them.
+- **Chat: hold to shoot, and the photo's set pieces**: the composer's
+  camera button attaches from the gallery on a tap and, held, takes a
+  picture with the system camera that lands in the composer. With a
+  photo attached, two pills: *Translate* (Gemma reads and translates
+  the text in it to English in one look, the camera page's own prompt)
+  and *Scan text* (ML Kit reads it, the reading appears at once, then
+  Gemma cleans it - or the reading stands when the model is away). Both
+  are turns in the conversation like any other, so a follow-up question
+  knows what was read.
