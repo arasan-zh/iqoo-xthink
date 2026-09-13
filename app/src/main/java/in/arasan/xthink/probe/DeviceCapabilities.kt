@@ -1,6 +1,7 @@
 package `in`.arasan.xthink.probe
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.ImageFormat
@@ -284,7 +285,10 @@ object DeviceCapabilities {
             "QUICK_FALL" to VibrationEffect.Composition.PRIMITIVE_QUICK_FALL,
         )
         val ids = primitives.values.toIntArray()
+        // The probe asks about every primitive by number on purpose; lint wants the named constants.
+        @SuppressLint("WrongConstant")
         val supported = runCatching { v.arePrimitivesSupported(*ids) }.getOrNull()
+        @SuppressLint("WrongConstant")
         val durations = runCatching { v.getPrimitiveDurations(*ids) }.getOrNull()
 
         primitives.keys.forEachIndexed { i, name ->

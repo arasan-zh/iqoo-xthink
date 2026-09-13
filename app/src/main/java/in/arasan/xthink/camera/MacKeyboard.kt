@@ -7,6 +7,7 @@ import android.bluetooth.BluetoothHidDevice
 import android.bluetooth.BluetoothHidDeviceAppSdpSettings
 import android.bluetooth.BluetoothManager
 import android.bluetooth.BluetoothProfile
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -31,6 +32,8 @@ import java.util.concurrent.Executors
  * The key table and the report descriptor live in :guidance (HidKeymap),
  * under test. This class is the profile plumbing and the typing thread.
  */
+// The Bluetooth permissions are asked for by the room before start() is called ([permissions]); lint cannot see that.
+@SuppressLint("MissingPermission")
 class MacKeyboard(private val context: Context) {
 
     enum class State { NO_BLUETOOTH, NEEDS_PERMISSION, BLUETOOTH_OFF, REGISTERING, READY, CONNECTING, CONNECTED }

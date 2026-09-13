@@ -6,6 +6,7 @@ import android.content.ContentValues
 import android.media.AudioManager
 import android.content.pm.ActivityInfo
 import android.content.ContextWrapper
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -1874,6 +1875,8 @@ private fun CameraAndGuidance(
                     // CameraX's own controls, and a pinned CONTROL_ZOOM_RATIO
                     // silently defeated every setZoomRatio that followed.
                     camera.cameraControl.setZoomRatio(1f)
+                    // Camera2 interop: the characteristics behind CameraX's camera - the probe and the telemetry read them.
+                    @SuppressLint("RestrictedApi")
                     val characteristics =
                         Camera2CameraInfo.extractCameraCharacteristics(camera.cameraInfo)
                     val statics = CameraTelemetry.fromCharacteristics(characteristics)
@@ -1920,7 +1923,7 @@ private fun CameraAndGuidance(
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
     // Ways in, shared by the tabs and the home page's cards.
     fun enterSteve() {
-        if (watchMode) leaveWatch("mode")
+                if (watchMode) leaveWatch("mode")
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (askMode) { askMode = false; overlayState = overlayState.copy(askMode = false, ask = null) }
@@ -1953,7 +1956,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterScan() {
-        if (watchMode) leaveWatch("mode")
+                if (watchMode) leaveWatch("mode")
                 if (!askMode || !scanMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
@@ -1969,7 +1972,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterTranslate() {
-        if (watchMode) leaveWatch("mode")
+                if (watchMode) leaveWatch("mode")
                 if (!askMode || scanMode) {
                     scanMode = false
                     overlayState = overlayState.copy(scanMode = false)
@@ -1988,7 +1991,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterFit() {
-        if (watchMode) leaveWatch("mode")
+                if (watchMode) leaveWatch("mode")
                 if (!fitMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
