@@ -89,6 +89,7 @@ fun SteveSurface(
     model: String? = null,
     /** The lens for the window, and a tap in it: fractions of the preview to focus on. */
     onZoom: (Float) -> Unit = {},
+    onAutoZoom: () -> Unit = {},
     onFocus: (Float, Float) -> Unit = { _, _ -> },
 ) {
     val busy = state.phase in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
@@ -149,8 +150,15 @@ fun SteveSurface(
             Spacer(Modifier.height(6.dp))
             // The lens: 1x for the whole desk, 2x or 3x to fill the window with the terminal.
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                Box(
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .background(if (state.autoZoom) Gold else Card)
+                        .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onAutoZoom() }
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                ) { Text(text = "Auto", color = if (state.autoZoom) Night else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
                 for (z in listOf(1f, 2f, 3f)) {
-                    val on = kotlin.math.abs(state.zoom - z) < 0.25f
+                    val on = !state.autoZoom && kotlin.math.abs(state.zoom - z) < 0.25f
                     Box(
                         modifier = Modifier
                             .clip(CircleShape)
@@ -160,7 +168,7 @@ fun SteveSurface(
                     ) { Text(text = "${z.toInt()}x", color = if (on) Night else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
                 }
                 Spacer(Modifier.width(4.dp))
-                Text(text = "tap the window to focus the terminal", color = GoldDim, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(text = state.aim ?: if (state.autoZoom) "${"%.1f".format(state.zoom)}x · the lens follows the text" else "tap the window to focus the terminal", color = if (state.aim != null) XT.Amber else GoldDim, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.height(6.dp))
             val headline = MacWatch.headline(state.screen)

@@ -11,6 +11,7 @@ import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.media.MediaActionSound
 import android.net.Uri
 import android.provider.MediaStore
@@ -34,6 +35,7 @@ import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.core.UseCaseGroup
 import androidx.camera.core.resolutionselector.ResolutionSelector
@@ -92,6 +94,7 @@ import `in`.arasan.xthink.guidance.PlanStep
 import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
 import `in`.arasan.xthink.guidance.Finishing
+import `in`.arasan.xthink.guidance.AutoZoom
 import `in`.arasan.xthink.guidance.LookRation
 import `in`.arasan.xthink.guidance.MacWatch
 import `in`.arasan.xthink.guidance.WatchSession
@@ -179,6 +182,8 @@ private const val WATCH_PERIOD_MS = 2_000L
 /** The model narrates a changed screen at most this often. A run or a tap narrates at once. */
 private const val WATCH_NARRATE_MIN_MS = 20_000L
 private const val WATCH_LOG_MAX = 10
+/** A still for the screen reader is decoded down to about this long edge: plenty for text, cheap enough every few seconds. */
+private const val STILL_LONG_EDGE = 2400
 /** Where a finished watch goes first, when installed: WhatsApp, then WhatsApp Business; else the share sheet. */
 private val WATCH_MESSENGERS = listOf("com.whatsapp", "com.whatsapp.w4b")
 /** The WhatsApp number a finished watch is written to, country code first, no plus. */
@@ -648,6 +653,13 @@ private fun CameraAndGuidance(
     var gInputSeen by remember { mutableStateOf<Boolean?>(null) }
     var gLog by remember { mutableStateOf<List<String>>(emptyList()) }
     var gWatching by remember { mutableStateOf(false) }
+    // The lens on the Mac: steered at the text unless a pill took it; how
+    // many readings in a row found nothing; Gemma's word on the aim.
+    var gAutoZoom by remember { mutableStateOf(true) }
+    var gMisses by remember { mutableIntStateOf(0) }
+    var gAim by remember { mutableStateOf<String?>(null) }
+    val gAimRation = remember { arrayOf(LookRation()) }
+    val stillInFlight = remember { booleanArrayOf(false) }
     val gNarratedAt = remember { longArrayOf(0L) }
     DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close(); speech.close() } }
 
@@ -686,6 +698,8 @@ private fun CameraAndGuidance(
                 draft = gDraft,
                 countdown = gCountdown,
                 zoom = overlayState.zoomRatio,
+                autoZoom = gAutoZoom,
+                aim = gAim,
                 screen = gScreen,
                 log = gLog,
                 inputSeen = gInputSeen,
@@ -810,31 +824,6 @@ private fun CameraAndGuidance(
             refreshGenius()
         }
         if (!asked) { gWatching = false; refreshGenius() }
-    }
-
-    // The reading loop: while Steve's room is open, the camera reads the
-    // Mac screen every couple of seconds. Each reading updates the panel
-    // and the input check; a materially changed screen may also earn a
-    // line from the model, rate limited.
-    LaunchedEffect(typeMode) {
-        if (!typeMode) return@LaunchedEffect
-        while (typeMode) {
-            delay(WATCH_PERIOD_MS)
-            if (!typeMode) break
-            val snap = previewSnapshot()
-            if (snap != null && !reader.busy) {
-                reader.read(snap, ContextCompat.getMainExecutor(context)) { text ->
-                    if (!typeMode) return@read
-                    val previous = gScreen
-                    gScreen = text
-                    gInputSeen = MacWatch.inputSeen(gTyped, text)
-                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
-                    val due = SystemClock.uptimeMillis() - gNarratedAt[0] > WATCH_NARRATE_MIN_MS
-                    if (quiet && due && text.isNotBlank() && MacWatch.changed(previous, text)) geniusNarrate("changed", null)
-                    refreshGenius()
-                }
-            }
-        }
     }
 
     /** The tap. Performs the plan on the table, if CommandSafety lets it. */
@@ -2037,6 +2026,78 @@ private fun CameraAndGuidance(
         Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
     }
 
+    /**
+     * A still from the capture use case, for reading: the full sensor's
+     * detail rather than the preview's, decoded to a modest size and
+     * turned upright. [onBitmap] on the main thread, null on failure.
+     */
+    fun captureStill(onBitmap: (Bitmap?) -> Unit) {
+        if (stillInFlight[0]) { onBitmap(null); return }
+        stillInFlight[0] = true
+        imageCapture.takePicture(ContextCompat.getMainExecutor(context), object : ImageCapture.OnImageCapturedCallback() {
+            override fun onCaptureSuccess(image: ImageProxy) {
+                val bmp = runCatching { decodeStill(image) }.getOrNull()
+                image.close()
+                stillInFlight[0] = false
+                onBitmap(bmp)
+            }
+            override fun onError(e: ImageCaptureException) {
+                stillInFlight[0] = false
+                Log.w(TAG, "still for reading failed", e)
+                onBitmap(null)
+            }
+        })
+    }
+
+    // The reading loop: while Steve's room is open, the camera reads the
+    // Mac screen every couple of seconds from a still. Each reading
+    // updates the panel and the input check, steers the lens at the text
+    // (unless a pill took it) and focuses there; a materially changed
+    // screen may also earn a line from the model, rate limited. Nothing
+    // readable a few times running backs the lens out, and Gemma is asked
+    // - rationed - where the screen is and how to move.
+    LaunchedEffect(typeMode) {
+        if (!typeMode) return@LaunchedEffect
+        gMisses = 0; gAim = null; gAimRation[0] = LookRation()
+        while (typeMode) {
+            delay(WATCH_PERIOD_MS)
+            if (!typeMode) break
+            if (reader.busy || stillInFlight[0] || overlayState.review != null) continue
+            captureStill { still ->
+                if (still == null || !typeMode) return@captureStill
+                reader.readWithBounds(still, ContextCompat.getMainExecutor(context)) { text, box ->
+                    if (!typeMode) return@readWithBounds
+                    val previous = gScreen
+                    gScreen = text
+                    gInputSeen = MacWatch.inputSeen(gTyped, text)
+                    gMisses = if (text.isBlank()) gMisses + 1 else 0
+                    if (text.isNotBlank()) gAim = null
+                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
+                    val due = SystemClock.uptimeMillis() - gNarratedAt[0] > WATCH_NARRATE_MIN_MS
+                    if (quiet && due && text.isNotBlank() && MacWatch.changed(previous, text)) geniusNarrate("changed", null)
+                    if (gAutoZoom) {
+                        val zoom = overlayState.zoomRatio
+                        AutoZoom.next(zoom, box, gMisses, cameraControl?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f)?.let { z ->
+                            cameraControl?.cameraControl?.setZoomRatio(z)
+                            Log.i(TAG, "steve: lens %.1fx -> %.1fx (%s)".format(zoom, z, box?.let { "text fills %.2f".format(maxOf(it.width, it.height)) } ?: "nothing readable x$gMisses"))
+                        }
+                        if (box != null) { val (fx, fy) = AutoZoom.focus(box); focusAt(fx, fy) }
+                    }
+                    // Lost the screen: Gemma says where it is, and how to move.
+                    if (text.isBlank() && gMisses >= AutoZoom.MISSES_TO_BACK_OUT && coachState == LlmCoach.State.READY && !coach.isBusy &&
+                        gAimRation[0].look(SystemClock.uptimeMillis(), lumaGrid(still))
+                    ) {
+                        coach.ask(LlmCoach.Kind.WATCH, still, LlmCoach.AIM_PROMPT, ContextCompat.getMainExecutor(context)) { line, done ->
+                            if (done && typeMode) { gAim = line.trim().trimEnd('.').ifBlank { null }?.let { "Gemma: $it" }; Log.i(TAG, "steve: aim - $line"); refreshGenius() }
+                        }
+                    }
+                    refreshGenius()
+                }
+            }
+        }
+    }
+
+
         GuidanceOverlay(
             state = overlayState,
             onZoomSelected = { requested ->
@@ -2154,7 +2215,8 @@ private fun CameraAndGuidance(
                 overlayState.review?.let { r -> if (r.after != null) overlayState = overlayState.copy(review = r.copy(useCrop = !r.useCrop)) }
             },
             onTap = { x, y -> focusAt(x, y) },
-            onGeniusZoom = { z -> cameraControl?.cameraControl?.setZoomRatio(z); Log.i(TAG, "steve: zoom ${z}x") },
+            onGeniusZoom = { z -> gAutoZoom = false; cameraControl?.cameraControl?.setZoomRatio(z); refreshGenius(); Log.i(TAG, "steve: zoom ${z}x by hand") },
+            onGeniusAutoZoom = { gAutoZoom = true; gMisses = 0; refreshGenius(); Log.i(TAG, "steve: lens back to auto") },
             onGeniusFocus = { x, y -> focusAt(x, y) },
             onToggleShots = {
                 overlayState = overlayState.copy(showShots = !overlayState.showShots, showLooks = false)
@@ -2363,4 +2425,17 @@ private fun lumaGrid(src: Bitmap): IntArray {
         val c = px[i]
         (((c shr 16) and 0xFF) * 77 + ((c shr 8) and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
     }
+}
+
+/** A JPEG still from the capture use case, decoded down to STILL_LONG_EDGE and turned upright. */
+private fun decodeStill(image: ImageProxy): Bitmap? {
+    val buffer = image.planes[0].buffer
+    val bytes = ByteArray(buffer.remaining()).also { buffer.get(it) }
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    var sample = 1
+    while (maxOf(bounds.outWidth, bounds.outHeight) / (sample * 2) >= STILL_LONG_EDGE) sample *= 2
+    val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+    val rot = image.imageInfo.rotationDegrees
+    return if (rot == 0) bmp else Bitmap.createBitmap(bmp, 0, 0, bmp.width, bmp.height, android.graphics.Matrix().apply { postRotate(rot.toFloat()) }, true)
 }

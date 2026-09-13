@@ -1,6 +1,7 @@
 package `in`.arasan.xthink.camera
 
 import android.graphics.Bitmap
+import `in`.arasan.xthink.guidance.CropRect
 import android.util.Log
 import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
@@ -21,7 +22,14 @@ class ScreenReader {
         private set
 
     /** [onText] on [executor] with the text, empty when nothing was read. */
-    fun read(bitmap: Bitmap, executor: Executor, onText: (String) -> Unit): Boolean {
+    fun read(bitmap: Bitmap, executor: Executor, onText: (String) -> Unit): Boolean =
+        readWithBounds(bitmap, executor) { text, _ -> onText(text) }
+
+    /**
+     * The text, and the box all of it filled as fractions of [bitmap] -
+     * null when nothing was read - so the lens can be steered at it.
+     */
+    fun readWithBounds(bitmap: Bitmap, executor: Executor, onResult: (String, CropRect?) -> Unit): Boolean {
         if (busy) return false
         busy = true
         val started = System.currentTimeMillis()
@@ -33,12 +41,17 @@ class ScreenReader {
                     .map { it.text.trim() }
                     .filter { it.isNotEmpty() }
                 val text = lines.joinToString("\n")
-                Log.i(TAG, "ocr: ${lines.size} lines, ${text.length} chars in ${System.currentTimeMillis() - started} ms")
-                executor.execute { onText(text) }
+                val boxes = result.textBlocks.mapNotNull { it.boundingBox }
+                val box = if (boxes.isEmpty()) null else CropRect(
+                    boxes.minOf { it.left } / bitmap.width.toFloat(), boxes.minOf { it.top } / bitmap.height.toFloat(),
+                    boxes.maxOf { it.right } / bitmap.width.toFloat(), boxes.maxOf { it.bottom } / bitmap.height.toFloat(),
+                )
+                Log.i(TAG, "ocr: ${lines.size} lines, ${text.length} chars in ${System.currentTimeMillis() - started} ms" + (box?.let { " box %.2f,%.2f-%.2f,%.2f".format(it.left, it.top, it.right, it.bottom) } ?: ""))
+                executor.execute { onResult(text, box) }
             }
             .addOnFailureListener {
                 Log.w(TAG, "ocr failed", it)
-                executor.execute { onText("") }
+                executor.execute { onResult("", null) }
             }
             .addOnCompleteListener { busy = false }
         return true

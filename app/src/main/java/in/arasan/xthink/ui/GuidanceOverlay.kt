@@ -75,6 +75,7 @@ fun GuidanceOverlay(
     onToggleTune: () -> Unit = {},
     onGeniusWatch: () -> Unit = {},
     onGeniusZoom: (Float) -> Unit = {},
+    onGeniusAutoZoom: () -> Unit = {},
     onGeniusFocus: (Float, Float) -> Unit = { _, _ -> },
     onTap: (x: Float, y: Float) -> Unit,
     onReviewChooseEnhanced: (Boolean) -> Unit,
@@ -154,6 +155,7 @@ fun GuidanceOverlay(
             onHome = onHome,
             onWatch = onGeniusWatch,
             onZoom = onGeniusZoom,
+            onAutoZoom = onGeniusAutoZoom,
             onFocus = onGeniusFocus,
             model = state.model,
         )

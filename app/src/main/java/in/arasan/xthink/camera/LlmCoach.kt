@@ -338,6 +338,11 @@ class LlmCoach(private val context: Context) {
             {heard}
         """.trimIndent().replace("{facts}", facts).replace("{seen}", seen).replace("{heard}", heard)
 
+        /** Nothing readable for a while: where is the screen, and how should the phone move. */
+        val AIM_PROMPT = """
+            You are helping point a phone camera at a computer screen so its text can be read. In at most 10 words, say where the screen is in this picture and how to move the phone to fill the frame with it - left, right, up, down, closer, farther, tilt. If no screen is in view, say only: No screen in view.
+        """.trimIndent()
+
         /** Steve's eyes: the camera's reading of the Mac screen, narrated in one line. */
         fun watchPrompt(spoken: String, screen: String, typed: String?): String = """
             You are watching a Mac through a phone camera on behalf of the user${if (spoken.isNotBlank()) ", who asked: \"$spoken\"" else ""}.

@@ -699,3 +699,15 @@ piece device-verified on the iQOO 15 before it was committed.
   the two sides, since the other leg stands - under 115° up, over 160°
   down. `SidePick` on the exercise says which of the two sides counts;
   `JointAngles.pick` (pure, tested) applies it.
+- **Steve reads from a still, and the lens steers itself**: the screen
+  reader was working from the preview bitmap, the display's own pixels,
+  where a Mac's text at desk distance is a few pixels tall; it now reads
+  a still from the capture use case, the sensor's detail decoded to
+  about 2400 px and turned upright. `AutoZoom` (pure, tested) steers the
+  lens from the box the text filled: toward filling 80% of the frame,
+  no more than 1.6× a step, never past 6× or the phone's own ceiling,
+  backing out after three empty readings; the focus goes to the middle
+  of the text each time. A pill takes the lens by hand, *Auto* gives it
+  back. When nothing is readable for a while Gemma is asked, rationed,
+  where the screen is and how to move, and the line sits under the
+  window in amber.

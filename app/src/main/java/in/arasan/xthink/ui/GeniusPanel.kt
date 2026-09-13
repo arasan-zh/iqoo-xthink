@@ -53,6 +53,10 @@ data class GeniusState(
     val countdown: Int = 0,
     /** The lens: the zoom in Steve's window, for the pills. */
     val zoom: Float = 1f,
+    /** The lens steers itself at the text; a pill takes it by hand. */
+    val autoZoom: Boolean = true,
+    /** Gemma's word on where the screen is, when nothing could be read. */
+    val aim: String? = null,
     /** The camera's latest reading of the Mac screen (OCR), raw. */
     val screen: String = "",
     /** What Steve has said about the Mac, oldest first, timestamped. */
