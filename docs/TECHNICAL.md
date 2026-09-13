@@ -621,3 +621,15 @@ piece device-verified on the iQOO 15 before it was committed.
   name was not in the sentence as heard. A project
   or a CLAUDE step now opens the Terminal app in a new window, starts
   `claude`, and types the request - not VS Code's terminal.
+- **WATCH, quieter, and into Notes**: the recogniser is opened patiently
+  (thirty seconds minimum, ten seconds of silence before it gives up) and
+  reopened quickly after words but only after four seconds of nothing,
+  and the system's notification and system streams are muted for the
+  watch and restored after - every reopening is a chime the phone
+  insists on. When the file is written the report is also copied to the
+  clipboard and handed to the phone's Notes app (vivo Notes, Keep,
+  Samsung or Xiaomi Notes, else a chooser) as a new note with the text
+  filled in, which comes up over the camera; Android lets no app paste
+  into or close another, so the note is saved by hand and Back returns
+  to xThink. The manifest declares the text-share query Android 11+
+  needs to find the taker.

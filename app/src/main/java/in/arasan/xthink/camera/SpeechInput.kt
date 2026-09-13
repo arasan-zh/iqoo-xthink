@@ -34,7 +34,8 @@ class SpeechInput(private val context: Context) {
      * once with the final text (empty on error), [onDone] when the
      * microphone is released. All on the main thread.
      */
-    fun listen(onPartial: (String) -> Unit, onResult: (String) -> Unit, onDone: () -> Unit) {
+    /** [patient]: keep the microphone open through long pauses - for keeping watch, where every restart chimes. */
+    fun listen(onPartial: (String) -> Unit, onResult: (String) -> Unit, onDone: () -> Unit, patient: Boolean = false) {
         if (listening) return
         val r = recognizer ?: SpeechRecognizer.createSpeechRecognizer(context).also { recognizer = it }
         listening = true
@@ -69,6 +70,11 @@ class SpeechInput(private val context: Context) {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, language)
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, context.packageName)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+            if (patient) {
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, 30_000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000L)
+                putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 10_000L)
+            }
         }
         r.startListening(intent)
     }

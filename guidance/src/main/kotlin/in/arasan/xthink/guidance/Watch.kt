@@ -74,7 +74,7 @@ class WatchSession(val startMs: Long, private val limitMs: Long = LIMIT_MS) {
 
     /** The model's note on a frame. Blank, or a shrug, is not a note. */
     fun noteSeen(now: Long, text: String?) {
-        val t = text?.trim()?.trim('"')?.trimEnd('.') ?: return
+        val t = text?.let { latinOnly(it) }?.trim()?.trim('"')?.trimEnd('.') ?: return
         // A shrug anywhere in the answer - the model likes to repeat its
         // last note and then say so - and a note the same as the last are
         // not notes.
@@ -89,6 +89,15 @@ class WatchSession(val startMs: Long, private val limitMs: Long = LIMIT_MS) {
         if (t.isBlank()) return
         heardNotes += Note(now, t)
     }
+
+    /**
+     * The model sometimes finishes an English note with the same thing
+     * again in another script; the notes are English, so other scripts
+     * (CJK, Indic, Arabic, Cyrillic...) are dropped and the spaces closed.
+     */
+    fun latinOnly(text: String): String =
+        text.replace(Regex("""[\u0400-\u04FF\u0590-\u06FF\u0900-\u0DFF\u0E00-\u0E7F\u1100-\u11FF\u3040-\u30FF\u3400-\u4DBF\u4E00-\u9FFF\uAC00-\uD7AF\uFF00-\uFFEF\u3000-\u303F]+"""), " ")
+            .replace(Regex("""\s{2,}"""), " ").trim()
 
     /** The last thing written down about the picture, if any. */
     fun lastSeen(): String? = seenNotes.lastOrNull()?.text

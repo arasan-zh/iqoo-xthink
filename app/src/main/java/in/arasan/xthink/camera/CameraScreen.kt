@@ -3,6 +3,7 @@ package `in`.arasan.xthink.camera
 import android.Manifest
 import android.content.Context
 import android.content.ContentValues
+import android.media.AudioManager
 import android.content.pm.ActivityInfo
 import android.content.ContextWrapper
 import android.app.Activity
@@ -175,6 +176,8 @@ private const val WATCH_LOG_MAX = 10
 /** WATCH: how often the loop wakes; the gap before the microphone is reopened; the grid the scene is compared on. */
 private const val WATCH_TICK_MS = 2000L
 private const val WATCH_LISTEN_GAP_MS = 400L
+/** ...and after a phrase of nothing, this long: fewer restarts, fewer chimes. */
+private const val WATCH_LISTEN_GAP_QUIET_MS = 4000L
 private const val WATCH_GRID_W = 24
 private const val WATCH_GRID_H = 18
 private const val HEARTBEAT_MS = 1000L
@@ -1316,18 +1319,57 @@ private fun CameraAndGuidance(
         return "Lighting ${o.lighting.value.lowercase()}, focus ${o.focus.value.lowercase()}, stability ${o.stability.value.lowercase()}; $lens camera; phone ${thermalPlan[0].tier.name.lowercase()}."
     }
 
-    /** The microphone, kept open: one phrase at a time, reopened as each ends, for as long as the watch lasts. */
+    /**
+     * The microphone, kept open: one phrase at a time, patient through
+     * pauses, reopened as each ends - quickly after words, slowly after
+     * silence, since every reopening is a chime the system insists on.
+     */
     fun watchListen() {
         if (!watchMode || !speech.available) { watchListening = false; return }
         watchListening = true
+        var heard = false
         speech.listen(
             onPartial = {},
-            onResult = { text -> watchSession[0]?.noteHeard(SystemClock.uptimeMillis(), text); refreshWatch() },
+            onResult = { text -> heard = text.isNotBlank(); watchSession[0]?.noteHeard(SystemClock.uptimeMillis(), text); refreshWatch() },
             onDone = {
                 watchListening = false
-                if (watchMode) Handler(Looper.getMainLooper()).postDelayed({ watchListen() }, WATCH_LISTEN_GAP_MS)
+                if (watchMode) Handler(Looper.getMainLooper()).postDelayed({ watchListen() }, if (heard) WATCH_LISTEN_GAP_MS else WATCH_LISTEN_GAP_QUIET_MS)
             },
+            patient = true,
         )
+    }
+
+    /** The system's listening chimes, off for the watch and back after. */
+    fun watchChimes(on: Boolean) {
+        val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
+        val direction = if (on) AudioManager.ADJUST_UNMUTE else AudioManager.ADJUST_MUTE
+        for (stream in listOf(AudioManager.STREAM_SYSTEM, AudioManager.STREAM_NOTIFICATION)) {
+            runCatching { audio.adjustStreamVolume(stream, direction, 0) }.onFailure { Log.w(TAG, "watch: chimes stream $stream: ${it.message}") }
+        }
+    }
+
+    /**
+     * The report, into the phone's own notes: copied to the clipboard,
+     * then handed to the Notes app as a new note with the text filled in,
+     * which comes up over the camera. Android lets no app paste into or
+     * close another, so the note is saved by hand and Back returns here.
+     */
+    fun watchHandToNotes(title: String, body: String) {
+        runCatching {
+            (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(title, body))
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_SUBJECT, title)
+            putExtra(Intent.EXTRA_TEXT, body)
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        val takers = context.packageManager.queryIntentActivities(send, 0).map { it.activityInfo.packageName }
+        val notes = listOf("com.vivo.notes", "com.google.android.keep", "com.samsung.android.app.notes", "com.miui.notes").firstOrNull { it in takers }
+        val intent = if (notes != null) Intent(send).setPackage(notes) else Intent.createChooser(send, "Save the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onSuccess { Log.i(TAG, "watch: handed to ${notes ?: "a chooser"} (${takers.size} takers)") }
+            .onFailure { Log.w(TAG, "watch: could not open notes", it) }
     }
 
     /**
@@ -1347,6 +1389,7 @@ private fun CameraAndGuidance(
         videoMode = false
         overlayState = overlayState.copy(watchMode = false, watch = null, videoMode = false, recording = false)
         haptics.play(HapticCue.UNLOCK)
+        watchChimes(true)
         Log.i(TAG, "watch: ended ($why)")
         if (s == null) return
         s.end(now, why)
@@ -1357,6 +1400,7 @@ private fun CameraAndGuidance(
             val body = s.report(watchStarted[0], environment, video, summary)
             val uri = notebook.write(name, body)
             Log.i(TAG, "watch: file ${if (uri != null) "written -> $uri" else "NOT written"} (${s.seen.size} seen, ${s.heard.size} heard, ${s.looks} looks)")
+            watchHandToNotes("Watch · ${watchStarted[0]}", body)
         }
         if (coachState == LlmCoach.State.READY && !coach.isBusy && (s.seen.isNotEmpty() || s.heard.isNotEmpty())) {
             val asked = coach.askText(LlmCoach.Kind.WATCH_REPORT, LlmCoach.watchReportPrompt(s.facts(environment), s.seenText(), s.heardText()), ContextCompat.getMainExecutor(context)) { text, done ->
@@ -1389,6 +1433,7 @@ private fun CameraAndGuidance(
         )
         refreshWatch()
         haptics.play(HapticCue.LOCK)
+        watchChimes(false)
         Log.i(TAG, "mode -> WATCH")
         ensureCoach()
         watchListen()

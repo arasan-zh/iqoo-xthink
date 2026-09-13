@@ -46,6 +46,8 @@ class WatchTest {
         s.noteSeen(9_500L, "A man in a blue shirt sits down at the desk. NOTHING NEW")
         s.noteSeen(9_600L, "A man in a blue shirt sits down at the desk.")
         assertEquals(1, s.seen.size)
+        s.noteSeen(9_700L, "A woman reads at the window. \u0928\u094b\u091f\u094d\u0938 \u6b63\u5728\u7b14\u8bb0\u672c\u4e0a\u6253\u5b57\u3002")
+        assertEquals("A woman reads at the window", s.lastSeen())
         s.noteHeard(10_000L, " the build is green ")
         assertEquals("the build is green", s.heard.single().text)
     }
