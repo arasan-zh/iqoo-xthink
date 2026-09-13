@@ -49,6 +49,24 @@ class Notebook(private val context: Context) {
         }.onFailure { Log.e(TAG, "notebook: save failed", it) }.getOrDefault(false)
     }
 
+    /** A file of its own under Documents/xThink, [name] as given (a new file each time). The Uri, or null. */
+    fun write(name: String, body: String): Uri? {
+        val resolver = context.contentResolver
+        val uri = resolver.insert(
+            MediaStore.Files.getContentUri("external"),
+            ContentValues().apply {
+                put(MediaStore.Files.FileColumns.DISPLAY_NAME, name)
+                put(MediaStore.Files.FileColumns.MIME_TYPE, "text/markdown")
+                put(MediaStore.Files.FileColumns.RELATIVE_PATH, "Documents/xThink")
+            },
+        ) ?: return null
+        return runCatching {
+            resolver.openOutputStream(uri, "w")!!.use { it.write(body.toByteArray()) }
+            Log.i(TAG, "notebook: wrote ${body.length} chars -> $uri")
+            uri
+        }.onFailure { Log.e(TAG, "notebook: write failed", it) }.getOrNull()
+    }
+
     private companion object {
         const val TAG = "xThink"
         const val FILE = "xthink-notes.md"

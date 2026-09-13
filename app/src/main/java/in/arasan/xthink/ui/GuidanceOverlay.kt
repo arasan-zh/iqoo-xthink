@@ -97,8 +97,8 @@ fun GuidanceOverlay(
     onFitMode: () -> Unit,
     onFitPick: (String) -> Unit,
     onFitReset: () -> Unit,
-    onWalkMode: () -> Unit = {},
-    onWalkFinish: () -> Unit = {},
+    onWatchMode: () -> Unit = {},
+    onWatchFinish: () -> Unit = {},
     onAskMode: () -> Unit,
     onScanMode: () -> Unit,
     onAskScan: () -> Unit,
@@ -236,14 +236,14 @@ fun GuidanceOverlay(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     ) {
-                        if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode && !state.walkMode) {
+                        if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode && !state.watchMode) {
                             ShotChip(style = state.shotStyle, open = state.showShots, onClick = onToggleShots)
                         }
                         if (state.assisted) EasyShotToggle(on = state.easyShot, onToggle = onToggleEasyShot)
                         if (state.assisted && state.guideMuted) GuideMutedChip()
                         else if (state.assisted) GuideToggle(on = state.showGuide, onToggle = onToggleGuide)
                         LookChip(name = Looks.ALL[state.look].name, open = state.showLooks, onClick = onToggleLooks)
-                        if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode && !state.walkMode) {
+                        if (state.mode == CoachMode.PORTRAIT && !state.typeMode && !state.askMode && !state.fitMode && !state.watchMode) {
                             RetouchToggle(on = state.retouch, onToggle = onToggleRetouch)
                         }
                     }
@@ -280,9 +280,9 @@ fun GuidanceOverlay(
                 val genius = state.genius
                 val ask = state.ask
                 val fit = state.fit
-                val walk = state.walk
-                if (state.walkMode && walk != null) {
-                    WalkPanel(state = walk, onFinish = onWalkFinish)
+                val watch = state.watch
+                if (state.watchMode && watch != null) {
+                    WatchPanel(state = watch, onFinish = onWatchFinish)
                 } else if (state.fitMode && fit != null) {
                     FitPanel(state = fit, onMode = onFitPick, onReset = onFitReset)
                 } else if (state.askMode && ask != null) {
@@ -319,9 +319,9 @@ fun GuidanceOverlay(
                         mode = state.mode,
                         onModeSelected = onModeSelected,
                         portraitOnly = state.mirrored,
-                        walk = state.walkMode,
-                        onWalk = onWalkMode,
-                        photo = !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode && !state.walkMode,
+                        watch = state.watchMode,
+                        onWatch = onWatchMode,
+                        photo = !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode && !state.watchMode,
                     )
                     BottomBar(
                         locked = state.isLocked,

@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, FINISH, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, WATCH, WALK }
+    enum class Kind { LIVE, FINISH, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, WATCH, WATCH_FRAME, WATCH_REPORT }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -280,14 +280,25 @@ class LlmCoach(private val context: Context) {
             WHY <three to eight words>
         """.trimIndent()
 
-        /** The walk's journal, written from the log of what happened. One ask, at the end. */
-        fun walkPrompt(facts: String, log: String): String = """
-            You walked with a blind user, watching the way ahead through the phone camera. The numbers, already worked out - use these exactly, do not recount:
-            {facts}
-            What happened, in order (minutes:seconds from the start):
-            {log}
-            Write the journal entry: three to five short lines, plain words, no preamble. Say how long the walk was and how many steps, when they had to stop or steer, how the time split between walking and standing, and one thing worth remembering for next time. Only what is in the numbers and the list - never invent a stop, a steer or a step.
-        """.trimIndent().replace("{facts}", facts).replace("{log}", log)
+        /**
+         * Keeping watch: one look at a frame, one or two lines on what
+         * would matter to someone reading the notes later. Told the last
+         * note so a still scene answers NOTHING NEW, which is not written.
+         */
+        fun watchFramePrompt(previous: String?): String = """
+            You are keeping watch through a phone camera for someone who will read your notes later. In one or two short lines, say what is happening in this frame that would matter: who is there and what they are doing, things that arrived or left, text or screens, anything unusual. Plain words, no preamble.
+            {prev}
+        """.trimIndent().replace("{prev}", if (previous.isNullOrBlank()) "" else "Your last note was: \"$previous\". If nothing worth noting has changed since, answer exactly: NOTHING NEW").trim()
+
+        /** The watch's summary, from the notes and the transcript. One ask, at the end. */
+        fun watchReportPrompt(facts: String, seen: String, heard: String): String = """
+            You kept watch through a phone camera. Write the summary for the file: three to six short lines of what mattered, in order, plain words, no preamble. Only what is in the notes and the transcript - invent nothing; if little happened, say so in one line.
+            Facts: {facts}
+            Notes on what was seen, in order (minutes:seconds from the start):
+            {seen}
+            What was heard, in order:
+            {heard}
+        """.trimIndent().replace("{facts}", facts).replace("{seen}", seen).replace("{heard}", heard)
 
         /** Steve's eyes: the camera's reading of the Mac screen, narrated in one line. */
         fun watchPrompt(spoken: String, screen: String, typed: String?): String = """

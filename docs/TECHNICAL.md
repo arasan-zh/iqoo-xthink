@@ -512,7 +512,7 @@ piece device-verified on the iQOO 15 before it was committed.
   when the retouch lands; the RETOUCHED chip toggles both the holes and
   the painted strips, and the save repeats the same job at full size.
 
-### WALK, and Steve in landscape (build-40 → 41)
+### WATCH, and Steve in landscape (build-40 → 41)
 
 - **Steve's room turns the phone**: the Mac's screen is wide, so the room
   is landscape - the activity asks for sensor-landscape on entering and
@@ -522,29 +522,30 @@ piece device-verified on the iQOO 15 before it was committed.
   the plan and the buttons down the right; portrait stacks them as
   before. The live preview underneath follows the display rotation on
   its own.
-- **WALK**: the last tab in the carousel. The camera points ahead (the
-  back lens, whatever was up) and the phone says what is in the way -
-  *Stop, obstacle ahead* / *Slow down* / *Obstacle on your left, keep
-  right* / *Path clear* - spoken, and felt: a thud for stop, the left or
-  right motor for a side, a rise for clear. `WalkGuide` (pure Kotlin,
-  tested) decides from ML Kit's stream object detector (several boxes,
-  no labels): a box counts as an obstacle by geometry - its bottom below
-  55% of the frame (walking height, near) and at least 2% of the frame -
-  and the middle third is "ahead"; areas are smoothed with the camera's
-  own alpha, one instruction at a time, held 600 ms, hysteresis 1.6 on
-  the way out. Walking versus standing comes from the accelerometer
-  through `StepDetector` (pure, tested): gravity averaged out, a stride
-  is a swing past 1.6 m/s² after settling, no sooner than 280 ms after
-  the last - no activity-recognition permission needed. STOP is said
-  again every 2.5 s while the walker keeps stepping into it; standing
-  five seconds with the way clear earns *Path is clear, you can walk*.
-- **Five minutes, then a journal**: the walk ends itself at five
-  minutes (or on the Finish pill, or on a mode change). The log of what
-  happened - stops, steers, walking and standing spells, in m:ss - and
-  the numbers worked out in code (duration, steps, seconds walking and
-  standing, how many stops and where) go to Gemma once, at the end, for
-  a short journal entry; the entry, the numbers and the log are appended
-  to `Documents/xThink/xthink-notes.md`. The first desk run showed why
-  the numbers are computed and not counted by the model: given the log
-  alone, E2B called a 37-second walk "37 minutes" and invented a steer.
-  The dev hook `--es walk 1` starts straight into WALK.
+- **WATCH**: the last tab in the carousel. Keeping watch for up to five
+  minutes: the camera records (no audio track - Android gives the
+  microphone to one client, and the microphone is the transcript's),
+  now and then Gemma looks at a frame and writes one or two lines on
+  what would matter to someone reading later, the speech recogniser is
+  kept open one phrase at a time and everything heard is written down,
+  and at the end it all goes into a file of its own -
+  `Documents/xThink/xthink-watch-YYYYMMDD-HHMM.md`: when and how long,
+  the video's name, the environment (lighting, focus, stability, lens,
+  the phone's heat), Gemma's summary of what mattered (one ask, at the
+  end), then everything seen and everything heard with m:ss stamps.
+  `WatchSession` (pure Kotlin, tested) rations the looks - the model is
+  the expensive part: a frame is compared to the last one looked at on a
+  24×18 luma grid (`FrameDiff`), and a look is booked when it changed by
+  6% or more and fifteen seconds have passed, or once a minute
+  regardless; a still scene answers NOTHING NEW, which is not written.
+  Five minutes is at most ~20 looks. The session ends itself at five
+  minutes, on the Finish pill, or on a mode change; the recording is
+  started from the watch's own two-second clock once the recorder is
+  bound, and retried if it is not yet. The dev hook `--es watch 1`
+  starts straight into WATCH.
+- **The rule this bends**: CLAUDE.md says the model runs only on a tap,
+  never in a loop. WATCH is started by a tap and lasts five minutes at
+  most, but inside it the model does run on a clock - rationed by change
+  and time, at most one look every fifteen seconds. That is a deliberate
+  exception for this mode and no other; the camera's own guidance, the
+  retouch and Steve keep the rule.

@@ -89,12 +89,12 @@ import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
 import `in`.arasan.xthink.guidance.Finishing
 import `in`.arasan.xthink.guidance.MacWatch
-import `in`.arasan.xthink.guidance.WalkGuide
+import `in`.arasan.xthink.guidance.WatchSession
 import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.Exercise
 import `in`.arasan.xthink.guidance.RepCounter
 import `in`.arasan.xthink.ui.FitState
-import `in`.arasan.xthink.ui.WalkState
+import `in`.arasan.xthink.ui.WatchState
 import `in`.arasan.xthink.ui.zoomCapFor
 import `in`.arasan.xthink.guidance.HapticCue
 import `in`.arasan.xthink.guidance.LockHaptics
@@ -167,8 +167,11 @@ private const val WATCH_PERIOD_MS = 2_000L
 /** The model narrates a changed screen at most this often. A run or a tap narrates at once. */
 private const val WATCH_NARRATE_MIN_MS = 20_000L
 private const val WATCH_LOG_MAX = 10
-/** After a haptic pulse the accelerometer is ignored this long: the motor is not a stride. */
-private const val WALK_HAPTIC_QUIET_MS = 500L
+/** WATCH: how often the loop wakes; the gap before the microphone is reopened; the grid the scene is compared on. */
+private const val WATCH_TICK_MS = 2000L
+private const val WATCH_LISTEN_GAP_MS = 400L
+private const val WATCH_GRID_W = 24
+private const val WATCH_GRID_H = 18
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -308,7 +311,8 @@ private fun CameraAndGuidance(
         activeRecording = null
     }
 
-    fun startRecording() {
+    val lastVideoName = remember { arrayOf("") }
+    fun startRecording(withAudio: Boolean = true) {
         if (activeRecording != null) return
         val name = "xthink_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date()) + ".mp4"
         val values = ContentValues().apply {
@@ -320,15 +324,16 @@ private fun CameraAndGuidance(
             .Builder(context.contentResolver, MediaStore.Video.Media.EXTERNAL_CONTENT_URI)
             .setContentValues(values)
             .build()
-        val withAudio = ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
+        lastVideoName[0] = name
+        val audio = withAudio && ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) ==
             android.content.pm.PackageManager.PERMISSION_GRANTED
-        val pending = recorder.prepareRecording(context, output).apply { if (withAudio) withAudioEnabled() }
+        val pending = recorder.prepareRecording(context, output).apply { if (audio) withAudioEnabled() }
         activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
             when (event) {
                 is VideoRecordEvent.Start -> {
                     shutterSound.play(MediaActionSound.START_VIDEO_RECORDING)
                     overlayState = overlayState.copy(recording = true, recordingMs = 0L)
-                    Log.i(TAG, "video: recording (audio=$withAudio)")
+                    Log.i(TAG, "video: recording (audio=$audio)")
                 }
                 is VideoRecordEvent.Status -> {
                     overlayState = overlayState.copy(recordingMs = event.recordingStats.recordedDurationNanos / 1_000_000L)
@@ -532,13 +537,13 @@ private fun CameraAndGuidance(
     // tap. Nothing runs unattended, and nothing retries by itself.
     var typeMode by remember { mutableStateOf(false) }
     var fitMode by remember { mutableStateOf(false) }
-    // WALK: the guide, and the steps under it.
-    var walkMode by remember { mutableStateOf(false) }
-    val walkGuide = remember { arrayOfNulls<WalkGuide>(1) }
-    val motion = remember { MotionSensor(context) }
-    DisposableEffect(motion) { onDispose { motion.stop() } }
-    // A pulse shakes the phone like a stride; steps are not counted until it has passed.
-    val walkQuietUntil = remember { longArrayOf(0L) }
+    // WATCH: the session, and what the panel shows of it.
+    var watchMode by remember { mutableStateOf(false) }
+    val watchSession = remember { arrayOfNulls<WatchSession>(1) }
+    var watchLooking by remember { mutableStateOf(false) }
+    var watchListening by remember { mutableStateOf(false) }
+    val watchStarted = remember { arrayOf("") }
+    val watchVideo = remember { arrayOfNulls<String>(1) }
     var signsMode by remember { mutableStateOf(false) }
     val keyboard = remember { MacKeyboard(context) }
     val reader = remember { ScreenReader() }
@@ -1233,110 +1238,150 @@ private fun CameraAndGuidance(
         refreshFit()
     }
 
-    // ---- WALK: the camera pointed ahead, the phone saying what is in the way ----
+    // ---- WATCH: the camera records, the model looks now and then, the microphone is written down ----
 
-    fun refreshWalk() {
-        val g = walkGuide[0]
+    fun refreshWatch() {
+        val s = watchSession[0]
         val now = SystemClock.uptimeMillis()
         overlayState = overlayState.copy(
-            walkMode = walkMode,
-            walk = if (walkMode && g != null) WalkState(verb = g.verb.name, walking = g.walking(now), steps = g.steps, remainingMs = g.remainingMs(now)) else null,
+            watchMode = watchMode,
+            watch = if (watchMode && s != null) WatchState(
+                recording = activeRecording != null,
+                remainingMs = s.remainingMs(now),
+                lastSeen = s.lastSeen(),
+                lastHeard = s.heard.lastOrNull()?.text,
+                seenCount = s.seen.size,
+                heardCount = s.heard.size,
+                looking = watchLooking,
+                listening = watchListening,
+            ) else null,
         )
     }
 
-    /** Say it, and make it felt. */
-    fun walkSay(words: String, cue: HapticCue) {
-        runCatching { tts?.speak(words, TextToSpeech.QUEUE_FLUSH, null, "walk") }
-        walkQuietUntil[0] = SystemClock.uptimeMillis() + WALK_HAPTIC_QUIET_MS
-        haptics.play(cue, 0.7f)
+    /** The circumstances, for the file: the light, the focus, the hand, the lens, the phone's heat. */
+    fun watchEnvironment(): String {
+        val o = overlayState
+        val lens = if (lensFacing == CameraSelector.LENS_FACING_BACK) "back" else "front"
+        return "Lighting ${o.lighting.value.lowercase()}, focus ${o.focus.value.lowercase()}, stability ${o.stability.value.lowercase()}; $lens camera; phone ${thermalPlan[0].tier.name.lowercase()}."
+    }
+
+    /** The microphone, kept open: one phrase at a time, reopened as each ends, for as long as the watch lasts. */
+    fun watchListen() {
+        if (!watchMode || !speech.available) { watchListening = false; return }
+        watchListening = true
+        speech.listen(
+            onPartial = {},
+            onResult = { text -> watchSession[0]?.noteHeard(SystemClock.uptimeMillis(), text); refreshWatch() },
+            onDone = {
+                watchListening = false
+                if (watchMode) Handler(Looper.getMainLooper()).postDelayed({ watchListen() }, WATCH_LISTEN_GAP_MS)
+            },
+        )
     }
 
     /**
-     * The walk is over - the time, a mode change, or the Finish pill. The
-     * journal goes to the notebook: Gemma writes it from the log when it
-     * is there and free (one ask, at the end - never in the loop), else
-     * the log itself is the entry.
+     * The watch is over - the time, the Finish pill, or a mode change.
+     * The recording stops, the microphone closes, and the file is
+     * written: the model's summary (one ask, when it is there and free)
+     * on top of everything seen and heard.
      */
-    fun leaveWalk(why: String) {
-        if (!walkMode) return
+    fun leaveWatch(why: String) {
+        if (!watchMode) return
         val now = SystemClock.uptimeMillis()
-        val g = walkGuide[0]
-        walkMode = false
-        analyzerRef[0]?.let { it.walk = false }
-        motion.stop()
-        overlayState = overlayState.copy(walkMode = false, walk = null)
-        walkSay(if (why == "time") "Five minutes are up. Walk assist is off." else "Walk assist is off.", HapticCue.UNLOCK)
-        Log.i(TAG, "walk: ended ($why)")
-        if (g == null) return
-        g.end(now, why)
-        val facts = g.facts()
-        val log = g.journal()
-        // The numbers and the list go in the file whatever the model writes; its lines go on top.
-        val record = facts + "\n\n```\n" + log + "\n```"
-        fun save(body: String) {
-            val ok = notebook.append("Walk", "", body)
-            Log.i(TAG, "walk: journal ${if (ok) "saved" else "NOT saved"}:\n$body")
+        val s = watchSession[0]
+        watchMode = false
+        watchListening = false
+        speech.stop()
+        stopRecording()
+        videoMode = false
+        overlayState = overlayState.copy(watchMode = false, watch = null, videoMode = false, recording = false)
+        haptics.play(HapticCue.UNLOCK)
+        Log.i(TAG, "watch: ended ($why)")
+        if (s == null) return
+        s.end(now, why)
+        val environment = watchEnvironment()
+        val video = watchVideo[0]
+        val name = "xthink-watch-" + SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(Date()) + ".md"
+        fun write(summary: String?) {
+            val body = s.report(watchStarted[0], environment, video, summary)
+            val uri = notebook.write(name, body)
+            Log.i(TAG, "watch: file ${if (uri != null) "written -> $uri" else "NOT written"} (${s.seen.size} seen, ${s.heard.size} heard, ${s.looks} looks)")
         }
-        if (coachState == LlmCoach.State.READY && !coach.isBusy) {
-            val asked = coach.askText(LlmCoach.Kind.WALK, LlmCoach.walkPrompt(facts, log), ContextCompat.getMainExecutor(context)) { text, done ->
-                if (done) save(if (text.isBlank()) record else text.trim() + "\n\n" + record)
+        if (coachState == LlmCoach.State.READY && !coach.isBusy && (s.seen.isNotEmpty() || s.heard.isNotEmpty())) {
+            val asked = coach.askText(LlmCoach.Kind.WATCH_REPORT, LlmCoach.watchReportPrompt(s.facts(environment), s.seenText(), s.heardText()), ContextCompat.getMainExecutor(context)) { text, done ->
+                if (done) write(text.trim().ifBlank { null })
             }
-            if (!asked) save(record)
+            if (!asked) write(null)
         } else {
-            save(record)
+            write(null)
         }
     }
 
-    fun onWalkFrame(boxes: List<SubjectBox>) {
-        val g = walkGuide[0] ?: return
-        val now = SystemClock.uptimeMillis()
-        g.onObjects(boxes, now)
-        g.announcement(now)?.let { walkSay(it.words, it.cue); Log.i(TAG, "walk: ${it.words}") }
-        if (g.over(now)) { leaveWalk("time"); return }
-        refreshWalk()
-    }
-
-    fun enterWalk() {
-        if (walkMode) return
-        if (videoMode) { stopRecording(); videoMode = false }
+    fun enterWatch() {
+        if (watchMode) return
+        if (videoMode) stopRecording()
         if (typeMode) { keyboard.cancelled = true; typeMode = false }
         if (fitMode || signsMode) { fitMode = false; signsMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false } }
         askMode = false
         scanMode = false
-        // The camera points out: the back lens, whatever was up.
-        if (lensFacing != CameraSelector.LENS_FACING_BACK) lensFacing = CameraSelector.LENS_FACING_BACK
-        walkMode = true
-        val g = WalkGuide(SystemClock.uptimeMillis())
-        walkGuide[0] = g
-        analyzerRef[0]?.let { it.walk = true }
-        val felt = motion.start { val now = SystemClock.uptimeMillis(); if (now > walkQuietUntil[0]) g.onStep(now) }
+        watchMode = true
+        videoMode = true
+        val s = WatchSession(SystemClock.uptimeMillis())
+        watchSession[0] = s
+        watchStarted[0] = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.US).format(Date())
+        watchVideo[0] = null
+        watchLooking = false
         overlayState = overlayState.copy(
-            videoMode = false, recording = false, review = null, showLooks = false, showShots = false,
+            videoMode = true, recording = false, review = null, showLooks = false, showShots = false,
             typeMode = false, genius = null, askMode = false, ask = null, scanMode = false,
             fitMode = false, fit = null, signsMode = false, sign = null,
         )
-        refreshWalk()
-        walkSay("Walk assist on. Five minutes. Point the camera ahead.", HapticCue.LOCK)
-        Log.i(TAG, "mode -> WALK (steps ${if (felt) "felt" else "not available"})")
+        refreshWatch()
+        haptics.play(HapticCue.LOCK)
+        Log.i(TAG, "mode -> WATCH")
         ensureCoach()
+        watchListen()
     }
 
-    // The clock: the countdown, and the words that depend on time alone
-    // (standing with the way clear), once a second while the walk is on.
-    LaunchedEffect(walkMode) {
-        while (walkMode) {
-            delay(1000)
-            if (!walkMode) break
-            val g = walkGuide[0] ?: break
+    // The watch's clock, every two seconds: start the recording once the
+    // recorder is bound (no audio track - the microphone is the
+    // transcript's), look at the frame when the session says it is time
+    // (a changed frame no sooner than fifteen seconds after the last look,
+    // a still one once a minute), and end at five minutes.
+    LaunchedEffect(watchMode) {
+        var lastTry = 0L
+        while (watchMode) {
+            delay(WATCH_TICK_MS)
+            if (!watchMode) break
+            val s = watchSession[0] ?: break
             val now = SystemClock.uptimeMillis()
-            g.announcement(now)?.let { walkSay(it.words, it.cue); Log.i(TAG, "walk: ${it.words}") }
-            if (g.over(now)) { leaveWalk("time"); break }
-            refreshWalk()
+            if (s.over(now)) { leaveWatch("time"); break }
+            if (activeRecording == null && now - lastTry >= 3000L) {
+                lastTry = now
+                startRecording(withAudio = false)
+                watchVideo[0] = lastVideoName[0]
+            }
+            if (!watchLooking && coachState == LlmCoach.State.READY && !coach.isBusy) {
+                val snap = previewSnapshot()
+                if (snap != null && s.look(now, lumaGrid(snap))) {
+                    watchLooking = true
+                    val at = now
+                    val asked = coach.ask(LlmCoach.Kind.WATCH_FRAME, snap, LlmCoach.watchFramePrompt(s.lastSeen()), ContextCompat.getMainExecutor(context)) { text, done ->
+                        if (!done) return@ask
+                        watchLooking = false
+                        s.noteSeen(at, text)
+                        Log.i(TAG, "watch: look ${s.looks} -> '${text.trim().replace('\n', ' ').take(120)}'")
+                        refreshWatch()
+                    }
+                    if (!asked) watchLooking = false
+                }
+            }
+            refreshWatch()
         }
     }
 
     fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
-        if (walkMode && leaveVideo) leaveWalk("mode")
+        if (watchMode && leaveVideo) leaveWatch("mode")
         if ((fitMode || signsMode) && leaveVideo) {
             fitMode = false
             signsMode = false
@@ -1454,8 +1499,8 @@ private fun CameraAndGuidance(
                 fitMode = overlayState.fitMode,
                 fit = overlayState.fit,
                 signsMode = overlayState.signsMode,
-                walkMode = overlayState.walkMode,
-                walk = overlayState.walk,
+                watchMode = overlayState.watchMode,
+                watch = overlayState.watch,
                 sign = overlayState.sign,
             )
 
@@ -1548,8 +1593,6 @@ private fun CameraAndGuidance(
 
         analyzerRef[0] = analyzer
         analyzer.onFit = { angle, gesture, dt -> mainHandler.post { if (fitMode || signsMode) onFitFrame(angle, gesture, dt) } }
-        analyzer.walk = walkMode
-        analyzer.onWalk = { boxes, _ -> mainHandler.post { if (walkMode) onWalkFrame(boxes) } }
         if (fitMode || signsMode) applyFitPick()
         analyzer.mode = shotTypes.mode
         analyzer.mirrored = isFront
@@ -1674,7 +1717,7 @@ private fun CameraAndGuidance(
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
     // Ways in, shared by the tabs and the home page's cards.
     fun enterSteve() {
-        if (walkMode) leaveWalk("mode")
+        if (watchMode) leaveWatch("mode")
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (askMode) { askMode = false; overlayState = overlayState.copy(askMode = false, ask = null) }
@@ -1707,7 +1750,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterScan() {
-        if (walkMode) leaveWalk("mode")
+        if (watchMode) leaveWatch("mode")
                 if (!askMode || !scanMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
@@ -1723,7 +1766,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterTranslate() {
-        if (walkMode) leaveWalk("mode")
+        if (watchMode) leaveWatch("mode")
                 if (!askMode || scanMode) {
                     scanMode = false
                     overlayState = overlayState.copy(scanMode = false)
@@ -1742,7 +1785,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterFit() {
-        if (walkMode) leaveWalk("mode")
+        if (watchMode) leaveWatch("mode")
                 if (!fitMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
@@ -1763,7 +1806,7 @@ private fun CameraAndGuidance(
             "TRANSLATE" -> enterTranslate()
             "SCAN" -> enterScan()
             "FIT" -> enterFit()
-            "WALK" -> enterWalk()
+            "WATCH" -> enterWatch()
         }
     }
 
@@ -1788,8 +1831,8 @@ private fun CameraAndGuidance(
                 }
             },
             onFitMode = { enterFit() },
-            onWalkMode = { enterWalk() },
-            onWalkFinish = { leaveWalk("finish") },
+            onWatchMode = { enterWatch() },
+            onWatchFinish = { leaveWatch("finish") },
             onFitPick = { pick ->
                 fitPick = pick
                 repCounter = RepCounter(if (pick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
@@ -2005,8 +2048,8 @@ private fun buildOverlayState(
     fitMode: Boolean,
     fit: FitState?,
     signsMode: Boolean,
-    walkMode: Boolean,
-    walk: WalkState?,
+    watchMode: Boolean,
+    watch: WatchState?,
     sign: String?,
 ): OverlayState {
     val focus = when {
@@ -2068,8 +2111,8 @@ private fun buildOverlayState(
         fitMode = fitMode,
         fit = fit,
         signsMode = signsMode,
-        walkMode = walkMode,
-        walk = walk,
+        watchMode = watchMode,
+        watch = watch,
         sign = sign,
     )
 }
@@ -2088,4 +2131,15 @@ private fun loadProfiles(context: Context): Map<ShotType, CompositionProfile> {
         .bufferedReader()
         .use { it.readText() }
     return CompositionProfile.parseAll(json)
+}
+
+/** A frame as a small luma grid, for telling whether the scene has changed enough to be worth a look. */
+private fun lumaGrid(src: Bitmap): IntArray {
+    val small = Bitmap.createScaledBitmap(src, WATCH_GRID_W, WATCH_GRID_H, true)
+    val px = IntArray(WATCH_GRID_W * WATCH_GRID_H)
+    small.getPixels(px, 0, WATCH_GRID_W, 0, 0, WATCH_GRID_W, WATCH_GRID_H)
+    return IntArray(px.size) { i ->
+        val c = px[i]
+        (((c shr 16) and 0xFF) * 77 + ((c shr 8) and 0xFF) * 150 + (c and 0xFF) * 29) shr 8
+    }
 }

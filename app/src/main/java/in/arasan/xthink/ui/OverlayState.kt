@@ -43,9 +43,9 @@ data class OverlayState(
     /** SIGNS tab: a hand sign, as an English word. */
     val signsMode: Boolean = false,
     val sign: String? = null,
-    /** WALK: the camera pointed ahead, the phone saying what is in the way. */
-    val walkMode: Boolean = false,
-    val walk: WalkState? = null,
+    /** WATCH: recording, the model looking now and then, the microphone written down. */
+    val watchMode: Boolean = false,
+    val watch: WatchState? = null,
     /** TRANSLATE / SCAN tabs: read what the camera sees, into English or into clean text. */
     val askMode: Boolean = false,
     val ask: AskState? = null,
@@ -98,7 +98,7 @@ data class OverlayState(
 ) {
     val verb: Verb? get() = instruction?.verb
     /** False in CREATIVE: nothing coaches, only the camera controls draw. */
-    val assisted: Boolean get() = mode != CoachMode.CREATIVE && !typeMode && !askMode && !fitMode && !signsMode && !walkMode
+    val assisted: Boolean get() = mode != CoachMode.CREATIVE && !typeMode && !askMode && !fitMode && !signsMode && !watchMode
 
     /** A chosen Shot style takes the words of guidance off; the frame brackets remain. */
     val guideMuted: Boolean get() = shotStyle != null
