@@ -79,6 +79,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.Lifecycle
 import `in`.arasan.xthink.guidance.AlignmentState
 import `in`.arasan.xthink.guidance.AutoCapturePolicy
 import `in`.arasan.xthink.guidance.CoachMode
@@ -328,6 +330,10 @@ private fun CameraAndGuidance(
         activeRecording = null
     }
 
+    // The footage of a finished watch, waiting to be handed on once the
+    // report has gone and the app is back in front; and whether one is due.
+    val watchFootage = remember { arrayOfNulls<Uri>(1) }
+    val watchFootageDue = remember { booleanArrayOf(false) }
     val lastVideoName = remember { arrayOf("") }
     fun startRecording(withAudio: Boolean = true) {
         if (activeRecording != null) return
@@ -363,6 +369,7 @@ private fun CameraAndGuidance(
                         Log.e(TAG, "video: finalize error ${event.error}", event.cause)
                     } else {
                         lastCaptureUri = uri
+                        if (watchFootageDue[0]) { watchFootage[0] = uri; watchFootageDue[0] = false }
                         Log.i(TAG, "video: saved ${event.recordingStats.recordedDurationNanos / 1_000_000L} ms -> $uri")
                     }
                     val thumb = runCatching { context.contentResolver.loadThumbnail(uri, Size(160, 160), null) }.getOrNull()
@@ -1384,6 +1391,40 @@ private fun CameraAndGuidance(
         )
     }
 
+    /**
+     * The footage, after the report: the recording is offered to WhatsApp
+     * (its contact picker, the video attached) or the share sheet, the
+     * moment the app is back in front - so the two go out one after the
+     * other, the words first, then the film.
+     */
+    fun watchShareFootage(uri: Uri) {
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "video/mp4"
+            putExtra(Intent.EXTRA_STREAM, uri)
+            putExtra(Intent.EXTRA_SUBJECT, "Watch · ${watchStarted[0]}")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        val takers = context.packageManager.queryIntentActivities(send, 0).map { it.activityInfo.packageName }
+        val messenger = WATCH_MESSENGERS.firstOrNull { it in takers }
+        val intent = if (messenger != null) Intent(send).setPackage(messenger).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        else Intent.createChooser(send, "Send the footage to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onSuccess { Log.i(TAG, "watch: footage offered to ${messenger ?: "the share sheet"} ($uri)") }
+            .onFailure { Log.w(TAG, "watch: could not offer the footage", it) }
+    }
+
+    // Back in front after the report went out: the footage follows.
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                val uri = watchFootage[0]
+                if (uri != null) { watchFootage[0] = null; watchShareFootage(uri) }
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+
     /** The system's listening chimes, off for the watch and back after. */
     fun watchChimes(on: Boolean) {
         val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager ?: return
@@ -1434,6 +1475,7 @@ private fun CameraAndGuidance(
         watchMode = false
         watchListening = false
         speech.stop()
+        watchFootageDue[0] = activeRecording != null
         stopRecording()
         videoMode = false
         overlayState = overlayState.copy(watchMode = false, watch = null, videoMode = false, recording = false)
@@ -2020,6 +2062,9 @@ private fun CameraAndGuidance(
                     if (scanMode) askScan() else askTranslate()
                 } else if (typeMode) {
                     geniusSpeak()
+                } else if (watchMode) {
+                    // The watch owns the recording: the shutter finishes the watch.
+                    leaveWatch("shutter")
                 } else if (videoMode) {
                     if (activeRecording == null) startRecording() else stopRecording()
                 } else {

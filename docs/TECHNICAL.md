@@ -667,3 +667,12 @@ piece device-verified on the iQOO 15 before it was committed.
   guide's words used to be, with a tick when the line changes. "That's
   the shot" when it is. The arrows and the reticle keep doing the
   geometry underneath; Gemma adds what geometry cannot see.
+- **WATCH: the shutter ends it, and the footage follows the report**: in
+  video mode the shutter toggles recording, so a tap during a watch
+  stopped the watch's own recording and the loop restarted it seconds
+  later - now the shutter finishes the watch. When a watch ends, the
+  recording's Uri is kept aside as the file finalises; the report goes
+  out first (the WhatsApp chat, or the sheet), and the moment the app is
+  back in front the footage is offered - to WhatsApp's contact picker
+  with the video attached, or the sheet - so the two go one after the
+  other, the words then the film.

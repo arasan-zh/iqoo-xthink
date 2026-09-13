@@ -16,6 +16,10 @@
             <action android:name="android.intent.action.SEND" />
             <data android:mimeType="text/plain" />
         </intent>
+        <intent>
+            <action android:name="android.intent.action.SEND" />
+            <data android:mimeType="video/mp4" />
+        </intent>
     </queries>
 
     <application
