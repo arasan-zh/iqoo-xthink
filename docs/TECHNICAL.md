@@ -627,8 +627,9 @@ piece device-verified on the iQOO 15 before it was committed.
   and the system's notification and system streams are muted for the
   watch and restored after - every reopening is a chime the phone
   insists on. When the file is written the report is also copied to the
-  clipboard and sent straight to WhatsApp when it is on the phone (its
-  contact picker opens with the report as the message), else offered
+  clipboard and, when WhatsApp is on the phone, opened straight in the
+  chat with +91 94428 51409 with the report already in the message box
+  (WhatsApp lets no app press Send, so that tap stays), else offered
   through the system's share sheet - Notes, mail, anything that takes
   text - over the camera. Saving into
   Notes would need a tap in there anyway (Android lets no app paste into

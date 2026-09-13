@@ -175,6 +175,10 @@ private const val WATCH_NARRATE_MIN_MS = 20_000L
 private const val WATCH_LOG_MAX = 10
 /** Where a finished watch goes first, when installed: WhatsApp, then WhatsApp Business; else the share sheet. */
 private val WATCH_MESSENGERS = listOf("com.whatsapp", "com.whatsapp.w4b")
+/** The WhatsApp number a finished watch is written to, country code first, no plus. */
+private const val WATCH_WHATSAPP_NUMBER = "919442851409"
+/** WhatsApp takes a prefilled message of about this much through its link. */
+private const val WATCH_WHATSAPP_MAX_CHARS = 4000
 /** WATCH: how often the loop wakes; the gap before the microphone is reopened; the grid the scene is compared on. */
 private const val WATCH_TICK_MS = 2000L
 private const val WATCH_LISTEN_GAP_MS = 400L
@@ -1351,11 +1355,12 @@ private fun CameraAndGuidance(
     }
 
     /**
-     * The report, sent: copied to the clipboard, then straight to
-     * WhatsApp when it is on the phone - its contact picker opens with
-     * the report as the message, so the one tap is choosing who gets it -
-     * else the system's share sheet, for Notes, mail, anything that
-     * takes text. Over the camera; Back returns here.
+     * The report, sent: copied to the clipboard, then straight into the
+     * WhatsApp chat with [WATCH_WHATSAPP_NUMBER] when WhatsApp is on the
+     * phone, the report already in the message box - WhatsApp lets no app
+     * press Send, so that tap stays - else the system's share sheet, for
+     * Notes, mail, anything that takes text. Over the camera; Back
+     * returns here.
      */
     fun watchShare(title: String, body: String) {
         runCatching {
@@ -1368,10 +1373,12 @@ private fun CameraAndGuidance(
         }
         val takers = context.packageManager.queryIntentActivities(send, 0).map { it.activityInfo.packageName }
         val messenger = WATCH_MESSENGERS.firstOrNull { it in takers }
-        val intent = if (messenger != null) Intent(send).setPackage(messenger).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        else Intent.createChooser(send, "Send the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = if (messenger != null) {
+            val text = if (body.length > WATCH_WHATSAPP_MAX_CHARS) body.take(WATCH_WHATSAPP_MAX_CHARS) + "\n…" else body
+            Intent(Intent.ACTION_VIEW, Uri.parse("https://wa.me/$WATCH_WHATSAPP_NUMBER?text=" + Uri.encode(text))).setPackage(messenger).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        } else Intent.createChooser(send, "Send the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         runCatching { context.startActivity(intent) }
-            .onSuccess { Log.i(TAG, "watch: sent to ${messenger ?: "the share sheet"} (${body.length} chars)") }
+            .onSuccess { Log.i(TAG, "watch: sent to ${messenger?.let { "$it chat +$WATCH_WHATSAPP_NUMBER" } ?: "the share sheet"} (${body.length} chars)") }
             .onFailure { Log.w(TAG, "watch: could not open ${messenger ?: "the share sheet"}", it) }
     }
 
