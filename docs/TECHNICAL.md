@@ -627,8 +627,10 @@ piece device-verified on the iQOO 15 before it was committed.
   and the system's notification and system streams are muted for the
   watch and restored after - every reopening is a chime the phone
   insists on. When the file is written the report is also copied to the
-  clipboard and offered through the system's share sheet - WhatsApp,
-  Notes, mail, anything that takes text - over the camera. Saving into
+  clipboard and sent straight to WhatsApp when it is on the phone (its
+  contact picker opens with the report as the message), else offered
+  through the system's share sheet - Notes, mail, anything that takes
+  text - over the camera. Saving into
   Notes would need a tap in there anyway (Android lets no app paste into
   or close another), so the one tap picks the app instead. Back returns
   to xThink.

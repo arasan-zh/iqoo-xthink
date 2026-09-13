@@ -173,6 +173,8 @@ private const val WATCH_PERIOD_MS = 2_000L
 /** The model narrates a changed screen at most this often. A run or a tap narrates at once. */
 private const val WATCH_NARRATE_MIN_MS = 20_000L
 private const val WATCH_LOG_MAX = 10
+/** Where a finished watch goes first, when installed: WhatsApp, then WhatsApp Business; else the share sheet. */
+private val WATCH_MESSENGERS = listOf("com.whatsapp", "com.whatsapp.w4b")
 /** WATCH: how often the loop wakes; the gap before the microphone is reopened; the grid the scene is compared on. */
 private const val WATCH_TICK_MS = 2000L
 private const val WATCH_LISTEN_GAP_MS = 400L
@@ -1349,10 +1351,11 @@ private fun CameraAndGuidance(
     }
 
     /**
-     * The report, sent wherever the user likes: copied to the clipboard,
-     * then offered through the system's share sheet - WhatsApp, Notes,
-     * mail, anything that takes text - over the camera. Saving it into
-     * Notes would need a tap in there anyway, so the tap picks the app.
+     * The report, sent: copied to the clipboard, then straight to
+     * WhatsApp when it is on the phone - its contact picker opens with
+     * the report as the message, so the one tap is choosing who gets it -
+     * else the system's share sheet, for Notes, mail, anything that
+     * takes text. Over the camera; Back returns here.
      */
     fun watchShare(title: String, body: String) {
         runCatching {
@@ -1363,10 +1366,13 @@ private fun CameraAndGuidance(
             putExtra(Intent.EXTRA_SUBJECT, title)
             putExtra(Intent.EXTRA_TEXT, body)
         }
-        val chooser = Intent.createChooser(send, "Send the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(chooser) }
-            .onSuccess { Log.i(TAG, "watch: offered to share (${body.length} chars)") }
-            .onFailure { Log.w(TAG, "watch: could not open the share sheet", it) }
+        val takers = context.packageManager.queryIntentActivities(send, 0).map { it.activityInfo.packageName }
+        val messenger = WATCH_MESSENGERS.firstOrNull { it in takers }
+        val intent = if (messenger != null) Intent(send).setPackage(messenger).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        else Intent.createChooser(send, "Send the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onSuccess { Log.i(TAG, "watch: sent to ${messenger ?: "the share sheet"} (${body.length} chars)") }
+            .onFailure { Log.w(TAG, "watch: could not open ${messenger ?: "the share sheet"}", it) }
     }
 
     /**
