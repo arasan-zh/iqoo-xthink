@@ -1349,12 +1349,12 @@ private fun CameraAndGuidance(
     }
 
     /**
-     * The report, into the phone's own notes: copied to the clipboard,
-     * then handed to the Notes app as a new note with the text filled in,
-     * which comes up over the camera. Android lets no app paste into or
-     * close another, so the note is saved by hand and Back returns here.
+     * The report, sent wherever the user likes: copied to the clipboard,
+     * then offered through the system's share sheet - WhatsApp, Notes,
+     * mail, anything that takes text - over the camera. Saving it into
+     * Notes would need a tap in there anyway, so the tap picks the app.
      */
-    fun watchHandToNotes(title: String, body: String) {
+    fun watchShare(title: String, body: String) {
         runCatching {
             (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText(title, body))
         }
@@ -1362,14 +1362,11 @@ private fun CameraAndGuidance(
             type = "text/plain"
             putExtra(Intent.EXTRA_SUBJECT, title)
             putExtra(Intent.EXTRA_TEXT, body)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
-        val takers = context.packageManager.queryIntentActivities(send, 0).map { it.activityInfo.packageName }
-        val notes = listOf("com.vivo.notes", "com.google.android.keep", "com.samsung.android.app.notes", "com.miui.notes").firstOrNull { it in takers }
-        val intent = if (notes != null) Intent(send).setPackage(notes) else Intent.createChooser(send, "Save the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        runCatching { context.startActivity(intent) }
-            .onSuccess { Log.i(TAG, "watch: handed to ${notes ?: "a chooser"} (${takers.size} takers)") }
-            .onFailure { Log.w(TAG, "watch: could not open notes", it) }
+        val chooser = Intent.createChooser(send, "Send the watch to").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(chooser) }
+            .onSuccess { Log.i(TAG, "watch: offered to share (${body.length} chars)") }
+            .onFailure { Log.w(TAG, "watch: could not open the share sheet", it) }
     }
 
     /**
@@ -1400,7 +1397,7 @@ private fun CameraAndGuidance(
             val body = s.report(watchStarted[0], environment, video, summary)
             val uri = notebook.write(name, body)
             Log.i(TAG, "watch: file ${if (uri != null) "written -> $uri" else "NOT written"} (${s.seen.size} seen, ${s.heard.size} heard, ${s.looks} looks)")
-            watchHandToNotes("Watch · ${watchStarted[0]}", body)
+            watchShare("Watch · ${watchStarted[0]}", body)
         }
         if (coachState == LlmCoach.State.READY && !coach.isBusy && (s.seen.isNotEmpty() || s.heard.isNotEmpty())) {
             val asked = coach.askText(LlmCoach.Kind.WATCH_REPORT, LlmCoach.watchReportPrompt(s.facts(environment), s.seenText(), s.heardText()), ContextCompat.getMainExecutor(context)) { text, done ->

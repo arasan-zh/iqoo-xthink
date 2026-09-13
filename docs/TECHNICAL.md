@@ -627,9 +627,8 @@ piece device-verified on the iQOO 15 before it was committed.
   and the system's notification and system streams are muted for the
   watch and restored after - every reopening is a chime the phone
   insists on. When the file is written the report is also copied to the
-  clipboard and handed to the phone's Notes app (vivo Notes, Keep,
-  Samsung or Xiaomi Notes, else a chooser) as a new note with the text
-  filled in, which comes up over the camera; Android lets no app paste
-  into or close another, so the note is saved by hand and Back returns
-  to xThink. The manifest declares the text-share query Android 11+
-  needs to find the taker.
+  clipboard and offered through the system's share sheet - WhatsApp,
+  Notes, mail, anything that takes text - over the camera. Saving into
+  Notes would need a tap in there anyway (Android lets no app paste into
+  or close another), so the one tap picks the app instead. Back returns
+  to xThink.
