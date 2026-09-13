@@ -151,4 +151,14 @@ class GeniusRouterTest {
         assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("write a letter to my landlord")))
         assertTrue(!GeniusRouter.isCertain(GeniusRouter.route("do something useful")))
     }
+
+    @Test
+    fun `a portfolio is the Mac's own skill, with the details as its arguments`() {
+        val r = GeniusRouter.route("create a portfolio website for arasan") as Route.Project
+        assertEquals("/portfolio", r.skill)
+        assertEquals("/portfolio personal, arasan", GeniusRouter.steps(r).last().line.removePrefix("ASK "))
+        assertEquals("reelzo, video editing studio", GeniusRouter.portfolioArgs("build the reelzo portfolio site, video editing studio"))
+        assertEquals("personal", GeniusRouter.portfolioArgs("make me a portfolio"))
+        assertEquals(null, (GeniusRouter.route("build a todo app") as Route.Project).skill)
+    }
 }

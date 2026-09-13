@@ -30,7 +30,8 @@ sealed class Route {
     data class Write(val request: String) : Route()
 
     /** A project: VS Code, a new window, Claude Code, a single-HTML-file brief. */
-    data class Project(val request: String) : Route()
+    /** Code for Claude Code. [skill] names a slash command on the Mac that holds the structure - `/portfolio` - or null for the router's brief. */
+    data class Project(val request: String, val skill: String? = null) : Route()
 
     /** WhatsApp: a message to a number or a contact's name. */
     data class WhatsApp(val number: String, val message: String) : Route() {
@@ -135,7 +136,7 @@ object GeniusRouter {
         if (CLAUDE.containsMatchIn(s) && Regex("""\b(?:build|make|create|write|generate|code|website|app|project|portfolio|page|bill me|design)\b""").containsMatchIn(s)) {
             val brief = Regex("""(?:and|to)\s+(?:build|make|create|write|generate|design|bill me)\s+(?:me\s+)?(.+)$""").find(s)?.groupValues?.get(1)
                 ?: s.replace(CLAUDE, " ").replace(Regex("""\b(?:open|launch|start|and|then|please)\b"""), " ").replace(Regex("""\s+"""), " ").trim()
-            return Route.Project(brief.ifBlank { spoken.trim() })
+            return project(brief.ifBlank { spoken.trim() })
         }
 
         // WhatsApp: a message to a number, or to a name. A plain "open
@@ -212,10 +213,10 @@ object GeniusRouter {
         val code = hasWord(listOf("code", "html", "website", "web site", "web page", "landing page", "app", "portfolio", "project", "implement", "refactor", "fix the"))
         return when {
             write && !terminal && !code -> Route.Write(spoken.trim())
-            project && !write -> Route.Project(spoken.trim())
-            write && !terminal -> if (code) Route.Project(spoken.trim()) else Route.Write(spoken.trim())
+            project && !write -> project(spoken.trim())
+            write && !terminal -> if (code) project(spoken.trim()) else Route.Write(spoken.trim())
             terminal -> Route.Terminal(spoken.trim())
-            project -> Route.Project(spoken.trim())
+            project -> project(spoken.trim())
             else -> Route.Plan(spoken.trim())
         }
     }
@@ -251,6 +252,29 @@ object GeniusRouter {
         .replace("&", "%26").replace("#", "%23").replace("?", "%3F").replace("'", "%27").replace("\"", "%22")
 
     /** The single-file brief Claude Code is handed for a project. */
+    /**
+     * A project, and the skill on the Mac that knows its shape when there
+     * is one: a portfolio goes to `/portfolio`, whose rules (one file, the
+     * sections, the repo wrapper) live in ~/.claude/commands on the Mac.
+     */
+    fun project(request: String): Route.Project =
+        Route.Project(request, if (Regex("""\bportfolio\b""").containsMatchIn(request.lowercase())) "/portfolio" else null)
+
+    /**
+     * What follows `/portfolio`: the words minus the asking - "create a
+     * portfolio website for arasan" -> "personal, arasan". The skill wants a
+     * destination first (reelzo, client, venture, personal); when the words
+     * name none, it is personal.
+     */
+    fun portfolioArgs(request: String): String {
+        var s = request.trim().lowercase()
+        s = s.replace(Regex("""^(?:please\s+)?(?:can you\s+|could you\s+)?(?:create|make|build|generate|design|write|start|set up)\s+(?:me\s+)?(?:a|an|my|the)?\s*(?:new\s+)?"""), "")
+        s = s.replace(Regex("""\bportfolio\s*(?:website|web site|site|page)?\b"""), "").replace(Regex("""^\s*(?:for|about|of)\s+"""), "")
+        s = s.replace(Regex("""\s+"""), " ").replace(Regex("""\s+,"""), ",").trim(' ', ',', '.')
+        val destination = Regex("""\b(reelzo|client|venture|personal)\b""").containsMatchIn(s)
+        return if (s.isBlank()) "personal" else if (destination) s else "personal, $s"
+    }
+
     fun projectBrief(request: String): String =
         "Create a single self-contained index.html for: $request. Put all HTML, CSS and JavaScript in that one file, " +
             "no build step, no external assets except Google Fonts. Make it polished, responsive and finished - " +
@@ -325,7 +349,10 @@ object GeniusRouter {
             PlanStep("NEW window", listOf(GeniusPlan.chord("cmd+shift+n")!!, MacOp.Wait(2000))),
             PlanStep("OPEN terminal", listOf(GeniusPlan.chord("ctrl+`")!!, MacOp.Wait(1500))),
             PlanStep("RUN claude", listOf(MacOp.Type("claude"), GeniusPlan.chord("enter")!!, MacOp.Wait(7000))),
-            PlanStep("ASK ${route.request}", listOf(MacOp.Type(projectBrief(route.request)), MacOp.Wait(400), GeniusPlan.chord("enter")!!)),
+            route.skill?.let { skill ->
+                val ask = "$skill ${portfolioArgs(route.request)}"
+                PlanStep("ASK $ask", listOf(MacOp.Type(ask), MacOp.Wait(400), GeniusPlan.chord("enter")!!))
+            } ?: PlanStep("ASK ${route.request}", listOf(MacOp.Type(projectBrief(route.request)), MacOp.Wait(400), GeniusPlan.chord("enter")!!)),
         )
         is Route.WhatsApp -> listOf(
             PlanStep("OPEN WhatsApp", GeniusPlan.open("WhatsApp")),

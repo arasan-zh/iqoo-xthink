@@ -74,7 +74,7 @@ object GeniusIntent {
             }
             "TERMINAL", "SHELL", "COMMAND" -> if (arg.isBlank()) null else Route.Terminal(arg, command = arg)
             "WRITE" -> if (arg.isBlank()) null else Route.Write(arg)
-            "PROJECT", "CLAUDE", "CODE" -> if (arg.isBlank()) null else Route.Project(arg)
+            "PROJECT", "CLAUDE", "CODE" -> if (arg.isBlank()) null else GeniusRouter.project(arg)
             "WHATSAPP" -> {
                 val number = Regex("""\+?\d[\d ]{7,}\d""").find(arg)?.value?.replace(" ", "") ?: return null
                 val message = arg.substringAfter(';', "").trim().ifBlank { arg.replace(number, "").trim(' ', ';', ',', '-') }

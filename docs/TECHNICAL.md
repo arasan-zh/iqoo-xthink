@@ -598,3 +598,13 @@ piece device-verified on the iQOO 15 before it was committed.
   router's fixed brief (a new folder, a single self-contained page, open
   it, summarise) - the agent structures the work itself, so the Gemma
   brief from the build before is gone.
+- **The Mac's own skills hold the structure**: a portfolio request no
+  longer gets a brief from the phone at all. The router marks it with
+  the skill (`/portfolio`, a slash command in `~/.claude/commands` on
+  the Mac whose rules - one file, the sections, the repo wrapper, the
+  Makefile - are the structured prompt), and the CLAUDE step types
+  `/portfolio personal, arasan`: the words minus the asking, with the
+  destination the skill wants first (reelzo, client, venture, personal -
+  personal when the words name none). Other projects still get the
+  router's brief. The skill confirms its destination in the terminal
+  before writing; the camera's check after the run is what answers it.
