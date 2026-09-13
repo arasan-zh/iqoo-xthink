@@ -154,6 +154,8 @@ private const val TRACK_LOST_MS = 1_500L
 
 /** Genius stops proposing after this many plan-and-check rounds. */
 private const val GENIUS_MAX_ATTEMPTS = 3
+/** A job the user asked to repeat may go round this many times before Steve gives up. */
+private const val GENIUS_MAX_ATTEMPTS_REPEAT = 8
 
 /** A clean plan runs by itself after this many seconds unless cancelled. */
 private const val GENIUS_AUTORUN_S = 5
@@ -632,6 +634,8 @@ private fun CameraAndGuidance(
     var gStep by remember { mutableIntStateOf(-1) }
     var gAttempt by remember { mutableIntStateOf(0) }
     var gWaits by remember { mutableIntStateOf(0) }
+    // The request asked for a job to be repeated until it is done.
+    var gRepeat by remember { mutableStateOf(false) }
     var gNote by remember { mutableStateOf<String?>(null) }
     var gDraft by remember { mutableStateOf("") }
     var gCountdown by remember { mutableIntStateOf(0) }
@@ -680,6 +684,7 @@ private fun CameraAndGuidance(
                 refusals = CommandSafety.refusals(gPlan),
                 draft = gDraft,
                 countdown = gCountdown,
+                zoom = overlayState.zoomRatio,
                 screen = gScreen,
                 log = gLog,
                 inputSeen = gInputSeen,
@@ -727,7 +732,9 @@ private fun CameraAndGuidance(
         Log.i(TAG, "genius: $phase ${steps.size} steps: ${steps.joinToString(" | ") { it.line }} refused=${refusals.count { it != null }}")
         haptics.play(HapticCue.TICK, 0.5f)
         // A clean plan runs by itself after a short count - Cancel stops it.
-        gCountdown = if (phase == "PLANNED" && refusals.all { it == null }) GENIUS_AUTORUN_S else 0
+        // A clean plan runs by itself after a short count; so does a proposed
+        // next round of a job the user asked to repeat. Cancel stops either.
+        gCountdown = if ((phase == "PLANNED" || (phase == "PROPOSED" && gRepeat)) && refusals.all { it == null }) GENIUS_AUTORUN_S else 0
         gArm += 1
         refreshGenius()
     }
@@ -745,7 +752,7 @@ private fun CameraAndGuidance(
      * needs a next step, which is proposed, never performed unasked.
      */
     fun geniusCheck(delayMs: Long = GENIUS_SETTLE_MS) {
-        if (gAttempt >= GENIUS_MAX_ATTEMPTS) { geniusDone("did what was asked") ; return }
+        if (gAttempt >= (if (gRepeat) GENIUS_MAX_ATTEMPTS_REPEAT else GENIUS_MAX_ATTEMPTS)) { geniusDone(if (gRepeat) "went round ${gAttempt} times" else "did what was asked"); return }
         gPhase = "CHECKING"
         refreshGenius()
         Handler(Looper.getMainLooper()).postDelayed({
@@ -756,7 +763,7 @@ private fun CameraAndGuidance(
                 if (gPhase != "CHECKING") return@read
                 if (screen.isBlank()) { geniusDone("nothing readable on the screen"); return@read }
                 Log.i(TAG, "genius: screen reads ${screen.length} chars: ${screen.take(100).replace('\n', ' ')}")
-                val asked = coach.askText(LlmCoach.Kind.CHECK, LlmCoach.checkPrompt(gHeard, screen, gAttempt), ContextCompat.getMainExecutor(context)) { text, done ->
+                val asked = coach.askText(LlmCoach.Kind.CHECK, LlmCoach.checkPrompt(gHeard, screen, gAttempt, gRepeat), ContextCompat.getMainExecutor(context)) { text, done ->
                     if (!done || gPhase != "CHECKING") return@askText
                     if (GeniusPlan.isDone(text)) { geniusLog("Checked the screen: done"); geniusDone(null); return@askText }
                     if (GeniusPlan.isWait(text)) {
@@ -922,6 +929,7 @@ private fun CameraAndGuidance(
         gStep = -1
         gAttempt = 1
         gWaits = 0
+        gRepeat = GeniusRouter.isRepeating(heard)
         gNote = null
         if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
         gPhase = "THINKING"
@@ -967,9 +975,9 @@ private fun CameraAndGuidance(
 
     LaunchedEffect(gArm) {
         if (gCountdown <= 0) return@LaunchedEffect
-        while (gCountdown > 0 && gPhase == "PLANNED") {
+        while (gCountdown > 0 && (gPhase == "PLANNED" || gPhase == "PROPOSED")) {
             delay(1_000L)
-            if (gPhase != "PLANNED") break
+            if (gPhase != "PLANNED" && gPhase != "PROPOSED") break
             gCountdown -= 1
             refreshGenius()
             if (gCountdown == 0) { Log.i(TAG, "genius: countdown reached zero - running"); geniusRun() }
@@ -2001,6 +2009,26 @@ private fun CameraAndGuidance(
     }
 
 
+    /**
+     * Focus and meter at a point of the preview (fractions), and tell the
+     * coach that this is the thing to frame. The ring answers at once; the
+     * lens follows. The camera page's tap, and Steve's window's.
+     */
+    fun focusAt(x: Float, y: Float) {
+        val factory = previewView.meteringPointFactory
+        val point = factory.createPoint(x * previewView.width, y * previewView.height)
+        val action = FocusMeteringAction.Builder(point)
+            .setAutoCancelDuration(FOCUS_HOLD_S, TimeUnit.SECONDS)
+            .build()
+        cameraControl?.cameraControl?.startFocusAndMetering(action)
+        analyzerRef[0]?.let { it.focusX = x; it.focusY = y }
+        overlayState = overlayState.copy(
+            focusPoint = x to y,
+            focusNonce = overlayState.focusNonce + 1,
+        )
+        Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
+    }
+
         GuidanceOverlay(
             state = overlayState,
             onZoomSelected = { requested ->
@@ -2117,23 +2145,9 @@ private fun CameraAndGuidance(
             onReviewToggleCrop = {
                 overlayState.review?.let { r -> if (r.after != null) overlayState = overlayState.copy(review = r.copy(useCrop = !r.useCrop)) }
             },
-            onTap = { x, y ->
-                // Focus and meter where the finger landed, and tell the coach
-                // that this is the thing to frame. The ring answers the tap
-                // at once; the lens follows.
-                val factory = previewView.meteringPointFactory
-                val point = factory.createPoint(x * previewView.width, y * previewView.height)
-                val action = FocusMeteringAction.Builder(point)
-                    .setAutoCancelDuration(FOCUS_HOLD_S, TimeUnit.SECONDS)
-                    .build()
-                cameraControl?.cameraControl?.startFocusAndMetering(action)
-                analyzerRef[0]?.let { it.focusX = x; it.focusY = y }
-                overlayState = overlayState.copy(
-                    focusPoint = x to y,
-                    focusNonce = overlayState.focusNonce + 1,
-                )
-                Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
-            },
+            onTap = { x, y -> focusAt(x, y) },
+            onGeniusZoom = { z -> cameraControl?.cameraControl?.setZoomRatio(z); Log.i(TAG, "steve: zoom ${z}x") },
+            onGeniusFocus = { x, y -> focusAt(x, y) },
             onToggleShots = {
                 overlayState = overlayState.copy(showShots = !overlayState.showShots, showLooks = false)
             },

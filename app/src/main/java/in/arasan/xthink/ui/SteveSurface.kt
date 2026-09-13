@@ -9,6 +9,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -84,6 +87,9 @@ fun SteveSurface(
     onHome: () -> Unit,
     onWatch: () -> Unit = {},
     model: String? = null,
+    /** The lens for the window, and a tap in it: fractions of the preview to focus on. */
+    onZoom: (Float) -> Unit = {},
+    onFocus: (Float, Float) -> Unit = { _, _ -> },
 ) {
     val busy = state.phase in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
     val awaiting = state.phase in setOf("PLANNED", "PROPOSED")
@@ -92,6 +98,7 @@ fun SteveSurface(
     // The window: a hole in the room through which the camera preview
     // underneath shows. Its place is measured, then cleared out of the layer.
     var window by remember { mutableStateOf<Rect?>(null) }
+    var rootSize by remember { mutableStateOf(IntSize.Zero) }
 
     // The room in pieces, so portrait stacks them and landscape - the Mac
     // is wide, and so is the window onto it - puts the Mac on the left and
@@ -131,8 +138,31 @@ fun SteveSurface(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f)
-                    .onGloballyPositioned { window = it.boundsInRoot() },
+                    .onGloballyPositioned { window = it.boundsInRoot() }
+                    // A tap in the window focuses the lens there - on the terminal.
+                    .pointerInput(Unit) {
+                        detectTapGestures { off ->
+                            val w = window ?: return@detectTapGestures
+                            if (rootSize.width > 0 && rootSize.height > 0) onFocus((w.left + off.x) / rootSize.width, (w.top + off.y) / rootSize.height)
+                        }
+                    },
             )
+            Spacer(Modifier.height(6.dp))
+            // The lens: 1x for the whole desk, 2x or 3x to fill the window with the terminal.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+                for (z in listOf(1f, 2f, 3f)) {
+                    val on = kotlin.math.abs(state.zoom - z) < 0.25f
+                    Box(
+                        modifier = Modifier
+                            .clip(CircleShape)
+                            .background(if (on) Gold else Card)
+                            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { onZoom(z) }
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) { Text(text = "${z.toInt()}x", color = if (on) Night else Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold) }
+                }
+                Spacer(Modifier.width(4.dp))
+                Text(text = "tap the window to focus the terminal", color = GoldDim, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
             Spacer(Modifier.height(6.dp))
             val headline = MacWatch.headline(state.screen)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
@@ -245,6 +275,7 @@ fun SteveSurface(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            .onGloballyPositioned { rootSize = it.size }
             .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
                 drawContent()

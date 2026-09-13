@@ -305,6 +305,15 @@ object GeniusRouter {
         return Route.Terminal(spoken.trim(), if (tool != null) "ssh -t $host $tool" else "ssh $host")
     }
 
+    /**
+     * "run the tests until they pass", "keep checking the build": a job
+     * to repeat. The check after each run may then run it again, unasked,
+     * on the countdown, up to a higher cap - Gemma in the loop until the
+     * terminal says done.
+     */
+    fun isRepeating(spoken: String): Boolean =
+        Regex("""\b(?:until|repeat(?:edly)?|keep (?:running|checking|trying|going|doing|watching)|again and again|over and over|every time|in a loop|loop)\b""").containsMatchIn(spoken.lowercase())
+
     fun steps(route: Route, text: String? = null): List<PlanStep> = when (route) {
         is Route.Open -> if (!route.newWindow) listOf(PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app))) else listOf(
             PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app)),

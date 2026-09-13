@@ -51,6 +51,8 @@ data class GeniusState(
     val draft: String = "",
     /** Seconds until the plan runs by itself; 0 when not counting. Cancel stops it. */
     val countdown: Int = 0,
+    /** The lens: the zoom in Steve's window, for the pills. */
+    val zoom: Float = 1f,
     /** The camera's latest reading of the Mac screen (OCR), raw. */
     val screen: String = "",
     /** What Steve has said about the Mac, oldest first, timestamped. */

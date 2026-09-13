@@ -149,4 +149,13 @@ class GeniusRouterTest {
         assertEquals("personal", GeniusRouter.portfolioArgs("make me a portfolio"))
         assertEquals(null, (GeniusRouter.route("build a todo app") as Route.Project).skill)
     }
+
+    @Test
+    fun `a job to repeat is heard in the words`() {
+        assertTrue(GeniusRouter.isRepeating("run make test until it passes"))
+        assertTrue(GeniusRouter.isRepeating("keep checking the build and fix it"))
+        assertTrue(GeniusRouter.isRepeating("Run the tests repeatedly"))
+        assertTrue(!GeniusRouter.isRepeating("run make test"))
+        assertTrue(!GeniusRouter.isRepeating("open safari"))
+    }
 }

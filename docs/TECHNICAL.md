@@ -682,3 +682,12 @@ piece device-verified on the iQOO 15 before it was committed.
   from a propped-up phone, side or front, counts cleanly. FIT takes no
   pictures: the click on each rep is the lock haptic and the spoken
   count, not a shutter.
+- **Steve reads the terminal, and goes round until it is done**: the
+  window in Steve's room has the lens - 1x for the desk, 2x or 3x to
+  fill the window with the terminal - and a tap in it focuses there, so
+  the OCR reads the terminal and not the room. A request with "until",
+  "repeat", "keep checking" and the like is a job to repeat: after each
+  run the camera reads the screen, Gemma is told the job repeats until
+  it succeeds, and a proposed next round runs by itself on the countdown
+  (Cancel stops it) up to eight rounds instead of three - Gemma in the
+  loop until the terminal says done.

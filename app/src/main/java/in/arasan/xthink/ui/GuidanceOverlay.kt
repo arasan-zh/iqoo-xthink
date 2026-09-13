@@ -74,6 +74,8 @@ fun GuidanceOverlay(
     onOpenRoom: (String) -> Unit = {},
     onToggleTune: () -> Unit = {},
     onGeniusWatch: () -> Unit = {},
+    onGeniusZoom: (Float) -> Unit = {},
+    onGeniusFocus: (Float, Float) -> Unit = { _, _ -> },
     onTap: (x: Float, y: Float) -> Unit,
     onReviewChooseEnhanced: (Boolean) -> Unit,
     onReviewChooseLook: (Int) -> Unit,
@@ -151,6 +153,8 @@ fun GuidanceOverlay(
             onStop = onGeniusStop,
             onHome = onHome,
             onWatch = onGeniusWatch,
+            onZoom = onGeniusZoom,
+            onFocus = onGeniusFocus,
             model = state.model,
         )
         return

@@ -386,7 +386,7 @@ class LlmCoach(private val context: Context) {
         """.trimIndent()
 
         /** Did it work? The camera's reading of the Mac screen decides. */
-        fun checkPrompt(spoken: String, screen: String, attempt: Int): String = """
+        fun checkPrompt(spoken: String, screen: String, attempt: Int, repeating: Boolean = false): String = """
             You operate a Mac through its keyboard on behalf of the user. The user asked: "$spoken".
             Attempt $attempt was just performed. The camera now reads this on the Mac screen (OCR, may be noisy):
             ---
@@ -394,6 +394,7 @@ class LlmCoach(private val context: Context) {
             ---
             If the request appears done, reply exactly: DONE
             If the Mac is still working on it - Claude Code thinking or building, a command running, a spinner, a download - reply exactly: WAIT
+            ${if (repeating) "The user wants this repeated until it succeeds: if the terminal shows it has not succeeded yet (a failure, an error, tests not passing), reply the TERMINAL line that runs it again, then DONE. Only when it has succeeded, reply exactly: DONE." else ""}
             Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
         """.trimIndent()
 
