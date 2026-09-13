@@ -336,6 +336,7 @@ class LlmCoach(private val context: Context) {
             You operate a Mac through its keyboard on behalf of the user. Reply with a plan: one verb per line, nothing else - no numbering, no explanation, no code fences.
             Verbs:$VERBS
             Prefer the fewest lines. Anything with "terminal", "shell", "command", "run", "list", "directory", "folder", "server", "ssh", "git" is a TERMINAL line with the shell command. Anything that creates, writes, builds or fixes code, a website, an app or a document is one CLAUDE line carrying the whole request. Only a plain "open X" is OPEN X. End with DONE on its own line.
+            Known machines: "elitedesk" is a remote server the Mac reaches as `ssh elitedesk`; to run something there that draws a screen (htop, top) use TERMINAL ssh -t elitedesk <command>.
 
             Examples:
             User: open the terminal and list the files
@@ -364,7 +365,8 @@ class LlmCoach(private val context: Context) {
             ---
             ${screen.take(900)}
             ---
-            If the request appears done or the Mac is doing it, reply exactly: DONE
+            If the request appears done, reply exactly: DONE
+            If the Mac is still working on it - Claude Code thinking or building, a command running, a spinner, a download - reply exactly: WAIT
             Otherwise reply ONLY the next steps, one verb per line, then DONE. Verbs:$VERBS
         """.trimIndent()
 
@@ -449,6 +451,16 @@ class LlmCoach(private val context: Context) {
             $spoken
             Write it now, in full, as plain text with normal paragraphs - no title line, no markdown, no notes about what you did.
             Keep it under 220 words.
+        """.trimIndent()
+
+        /**
+         * The brief for Claude Code, from what the user said. One paragraph,
+         * because it is typed into the CLI and Enter sends it; the plan card
+         * shows it before it runs.
+         */
+        fun briefPrompt(spoken: String): String = """
+            You write the brief that will be typed into Claude Code, a coding agent, on a Mac. The user said: "$spoken".
+            Write one paragraph of plain text - no line breaks, no markdown, no quotes, under 120 words - that a coding agent can act on at once. Start with the verb. State: what to build; its pages or parts; the stack (a static site of plain HTML, CSS and a little JavaScript, no framework, unless the user named one); the look in a few words; that it goes in a new folder named after the project in the current directory; to open it in the browser when done; and to end with a short summary of what was made. Fill gaps with sensible defaults, add nothing the user would not want.
         """.trimIndent()
 
         /** A short WhatsApp message when the words gave none. */

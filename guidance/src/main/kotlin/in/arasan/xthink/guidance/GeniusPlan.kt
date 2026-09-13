@@ -129,4 +129,8 @@ object GeniusPlan {
     /** True when the answer says the goal is reached and nothing is left to do. */
     fun isDone(answer: String): Boolean =
         parse(answer).let { steps -> steps.isNotEmpty() && steps.all { it.line.uppercase().startsWith("DONE") } }
+
+    /** The check's "still working" - WAIT on its own, nothing to perform yet. */
+    fun isWait(answer: String): Boolean =
+        answer.lineSequence().map { it.trim().trim('`', '*', '"', '.') }.firstOrNull { it.isNotEmpty() }?.uppercase()?.let { it == "WAIT" || it.startsWith("WAIT ") && it.substringAfter(' ').trim().toLongOrNull() == null } ?: false
 }

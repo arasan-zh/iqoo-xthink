@@ -560,3 +560,31 @@ piece device-verified on the iQOO 15 before it was committed.
   Steve's header. The label comes from the coach's own state and busy
   flag and two flags on the inpainter, read once per analysis frame and
   on a 400 ms clock of its own, so a room or the review shows it too.
+
+### Steve closes the loop; FIT gets its tab (build-41 → 42)
+
+- **The camera was never in the loop**: `geniusCheck` - read the Mac
+  screen after a run, let Gemma say done or propose the next step - was
+  written and never called; a run went straight to DONE and a one-line
+  narration. Now every run ends in a check: the Mac gets a moment (2.5 s,
+  or 20 s after a CLAUDE step, since Claude Code starts slowly), the
+  camera reads the screen, and Gemma answers DONE, WAIT (still working -
+  look again in 12 s, up to ten times) or the next steps, which are
+  proposed and never run unasked. Each verdict is a stamped line in the
+  room's log. `GeniusPlan.isWait` is the new word; "WAIT 2000" is still
+  the pause verb.
+- **A brief for Claude Code, not the sentence**: a project request
+  ("create a portfolio website") goes to Gemma first, which writes one
+  paragraph a coding agent can act on - what to build, its parts, the
+  stack (plain HTML/CSS/JS unless named), the look, a new folder named
+  after the project, open it when done, end with a summary. The card
+  shows the brief before the countdown runs it; the CLAUDE step opens VS
+  Code, its terminal, `claude`, and types the brief.
+- **A machine by its nickname**: "elitedesk" is a known ssh host.
+  `GeniusRouter.remote` turns "connect to elitedesk and open htop" into
+  `ssh -t elitedesk htop` (a tty for anything that draws a screen) and
+  "ssh into the elite desk" into `ssh elitedesk`; a remote command read
+  from the words beats the model's reading, and the plan prompt knows
+  the machine too. The Mac's `~/.ssh/config` must know `elitedesk`.
+- **FIT is a tab again**, between CREATIVE and WATCH, with its squats
+  and push-ups; the deep link still works.

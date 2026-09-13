@@ -44,6 +44,8 @@ object GeniusIntent {
     fun decide(answer: String, spoken: String): Pair<Route, Boolean> {
         val fromModel = parse(answer)
         val fromWords = GeniusRouter.route(spoken)
+        // A named machine is exact in the words; the model's reading of it is not.
+        if (fromWords is Route.Terminal && fromWords.command != null) return fromWords to false
         if (fromModel == null || !plausible(fromModel, spoken)) return fromWords to false
         // A concrete reading of the words beats the model's vaguer one.
         if (fromWords !is Route.Plan && fromModel::class != fromWords::class && fromWords !is Route.Website) return fromWords to false

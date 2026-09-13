@@ -128,6 +128,9 @@ object GeniusRouter {
             s == "help"
         ) return Route.Help
 
+        // A machine named by its nickname: the shell work happens there, over ssh.
+        remote(s, spoken)?.let { return it }
+
         // Claude Code named outright: a project, with whatever follows as the brief.
         if (CLAUDE.containsMatchIn(s) && Regex("""\b(?:build|make|create|write|generate|code|website|app|project|portfolio|page|bill me|design)\b""").containsMatchIn(s)) {
             val brief = Regex("""(?:and|to)\s+(?:build|make|create|write|generate|design|bill me)\s+(?:me\s+)?(.+)$""").find(s)?.groupValues?.get(1)
@@ -258,6 +261,23 @@ object GeniusRouter {
      * Write route, or the command for a Terminal route; null when the
      * route needs none.
      */
+    /** Machines the user names by nickname, each an ssh host the Mac knows. */
+    val REMOTE_HOSTS: Map<String, String> = mapOf("elitedesk" to "elitedesk", "elite desk" to "elitedesk", "elite-desk" to "elitedesk")
+
+    /** Tools that run on the remote machine's own terminal, so the ssh needs a tty. */
+    private val REMOTE_TOOLS = Regex("""\b(htop|top|nvidia-smi|df -h|uptime|free -h|docker ps|ls -la|ls)\b""")
+
+    /**
+     * "connect to elitedesk and open htop" -> `ssh -t elitedesk htop`;
+     * "ssh into the elite desk" -> `ssh elitedesk`. Null when no known
+     * machine is named.
+     */
+    fun remote(s: String, spoken: String): Route.Terminal? {
+        val host = REMOTE_HOSTS.entries.firstOrNull { Regex("\\b${it.key}\\b").containsMatchIn(s) }?.value ?: return null
+        val tool = REMOTE_TOOLS.find(s)?.value
+        return Route.Terminal(spoken.trim(), if (tool != null) "ssh -t $host $tool" else "ssh $host")
+    }
+
     fun steps(route: Route, text: String? = null): List<PlanStep> = when (route) {
         is Route.Open -> if (!route.newWindow) listOf(PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app))) else listOf(
             PlanStep("OPEN ${route.app}", GeniusPlan.open(route.app)),

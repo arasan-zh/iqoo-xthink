@@ -162,6 +162,11 @@ private const val COACH_DEFERRED_LOAD_MS = 60_000L
 
 /** After a plan runs, the Mac gets this long to settle before the camera reads it. */
 private const val GENIUS_SETTLE_MS = 2_500L
+/** After a CLAUDE step the Mac is given this long before the first look: Claude Code starts slowly. */
+private const val GENIUS_CLAUDE_SETTLE_MS = 20_000L
+/** When the check says WAIT, look again this much later, this many times at most. */
+private const val GENIUS_RECHECK_MS = 12_000L
+private const val GENIUS_MAX_WAITS = 10
 /** How often the camera reads the Mac screen while Steve's room is open. Cheap: ML Kit, no model. */
 private const val WATCH_PERIOD_MS = 2_000L
 /** The model narrates a changed screen at most this often. A run or a tap narrates at once. */
@@ -571,6 +576,7 @@ private fun CameraAndGuidance(
     var gPlan by remember { mutableStateOf<List<PlanStep>>(emptyList()) }
     var gStep by remember { mutableIntStateOf(-1) }
     var gAttempt by remember { mutableIntStateOf(0) }
+    var gWaits by remember { mutableIntStateOf(0) }
     var gNote by remember { mutableStateOf<String?>(null) }
     var gDraft by remember { mutableStateOf("") }
     var gCountdown by remember { mutableIntStateOf(0) }
@@ -671,8 +677,19 @@ private fun CameraAndGuidance(
         refreshGenius()
     }
 
-    /** After a run: read the Mac screen and let Gemma propose - never perform - a next step. */
-    fun geniusCheck() {
+    /** One line in the room's log, stamped. */
+    fun geniusLog(line: String) {
+        val clock = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date())
+        gLog = (gLog + "$clock  $line").takeLast(WATCH_LOG_MAX)
+    }
+
+    /**
+     * After a run, the camera is in the loop: the Mac gets a moment
+     * ([delayMs]), the camera reads its screen, and Gemma says whether the
+     * request is done, still being worked on (WAIT - look again later), or
+     * needs a next step, which is proposed, never performed unasked.
+     */
+    fun geniusCheck(delayMs: Long = GENIUS_SETTLE_MS) {
         if (gAttempt >= GENIUS_MAX_ATTEMPTS) { geniusDone("did what was asked") ; return }
         gPhase = "CHECKING"
         refreshGenius()
@@ -686,9 +703,18 @@ private fun CameraAndGuidance(
                 Log.i(TAG, "genius: screen reads ${screen.length} chars: ${screen.take(100).replace('\n', ' ')}")
                 val asked = coach.askText(LlmCoach.Kind.CHECK, LlmCoach.checkPrompt(gHeard, screen, gAttempt), ContextCompat.getMainExecutor(context)) { text, done ->
                     if (!done || gPhase != "CHECKING") return@askText
-                    if (GeniusPlan.isDone(text)) { geniusDone(null); return@askText }
+                    if (GeniusPlan.isDone(text)) { geniusLog("Checked the screen: done"); geniusDone(null); return@askText }
+                    if (GeniusPlan.isWait(text)) {
+                        if (gWaits < GENIUS_MAX_WAITS) {
+                            gWaits += 1
+                            gNote = "The Mac is still working - looking again in ${GENIUS_RECHECK_MS / 1000} s"
+                            geniusLog("Checked the screen: still working (${gWaits})")
+                            geniusCheck(GENIUS_RECHECK_MS)
+                        } else geniusDone("the Mac was still working; not verified")
+                        return@askText
+                    }
                     val next = GeniusPlan.parse(text).filter { !it.line.uppercase().startsWith("DONE") }
-                    if (next.isEmpty()) geniusDone(null) else { gAttempt += 1; geniusPropose(next, "PROPOSED") }
+                    if (next.isEmpty()) { geniusLog("Checked the screen: done"); geniusDone(null) } else { geniusLog("Checked the screen: ${next.size} more step(s) proposed"); gAttempt += 1; geniusPropose(next, "PROPOSED") }
                 }
                 if (!asked) geniusDone("coach busy; not verified")
             }
@@ -768,11 +794,13 @@ private fun CameraAndGuidance(
             onProgress = { i -> if (i < stepOfOp.size && stepOfOp[i] != gStep) { gStep = stepOfOp[i]; refreshGenius() } },
             onDone = { ok ->
                 if (!ok) { geniusFail("the keyboard link dropped or Stop was pressed"); return@perform }
-                geniusDone(null)
                 gTyped = MacWatch.typed(steps)
                 gInputSeen = null
-                // The Mac needs a moment; then one line on what it shows and whether the typing landed.
-                Handler(Looper.getMainLooper()).postDelayed({ if (typeMode) geniusNarrate("after run", gTyped) }, GENIUS_SETTLE_MS + WATCH_PERIOD_MS)
+                // The camera is in the loop: the Mac gets a moment (longer
+                // after a CLAUDE step, which starts slowly), then the screen
+                // is read and Gemma says done, wait, or what comes next.
+                val claude = steps.any { it.line.uppercase().startsWith("CLAUDE") }
+                geniusCheck(if (claude) GENIUS_CLAUDE_SETTLE_MS else GENIUS_SETTLE_MS)
             },
         )
     }
@@ -789,7 +817,19 @@ private fun CameraAndGuidance(
                 refreshGenius()
                 true
             }
-            is Route.Open, is Route.Website, is Route.Project, is Route.Search, is Route.Type, is Route.Key -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
+            is Route.Open, is Route.Website, is Route.Search, is Route.Type, is Route.Key -> { geniusPropose(GeniusRouter.steps(route), "PLANNED"); true }
+            is Route.Project -> {
+                // Claude Code gets a brief, not the sentence: the model writes
+                // it from what was said, and the card shows it before it runs.
+                gPhase = "WRITING"
+                refreshGenius()
+                // From the whole sentence: the model's one-line reading of it drops the details.
+                coach.askText(LlmCoach.Kind.WRITE, LlmCoach.briefPrompt(heard), main) { text, done ->
+                    if (!done || gPhase != "WRITING") return@askText
+                    val brief = text.trim().trim('"').replace(Regex("\\s*\\n+\\s*"), " ").take(700)
+                    geniusPropose(GeniusRouter.steps(Route.Project(brief.ifBlank { route.request })), "PLANNED")
+                }
+            }
             is Route.Terminal -> if (route.command != null) {
                 geniusPropose(GeniusRouter.steps(route, route.command), "PLANNED"); true
             } else coach.askText(LlmCoach.Kind.COMMAND, LlmCoach.shellPrompt(heard), main) { text, done ->
@@ -834,6 +874,7 @@ private fun CameraAndGuidance(
         gPlan = emptyList()
         gStep = -1
         gAttempt = 1
+        gWaits = 0
         gNote = null
         if (coachState != LlmCoach.State.READY) { geniusFail("the coach model is not on this phone"); return }
         gPhase = "THINKING"

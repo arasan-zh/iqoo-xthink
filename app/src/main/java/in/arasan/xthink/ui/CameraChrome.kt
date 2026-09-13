@@ -188,20 +188,28 @@ fun ModeTabs(
     modifier: Modifier = Modifier,
     portraitOnly: Boolean = false,
     photo: Boolean = true,
+    fit: Boolean = false,
+    onFit: () -> Unit = {},
     watch: Boolean = false,
     onWatch: () -> Unit = {},
 ) {
     // A carousel: the chosen mode sits in the middle of the screen and the
     // others fall away to either side. Tap one to bring it to the centre.
-    // WATCH is the last tab and not a photo mode: null stands for it.
-    val items: List<Pair<String, CoachMode?>> = if (portraitOnly) listOf("PORTRAIT" to CoachMode.PORTRAIT) else listOf(
-        "PORTRAIT" to CoachMode.PORTRAIT,
-        "SCENE" to CoachMode.WIDE,
-        "OBJECT" to CoachMode.OBJECT,
-        "CREATIVE" to CoachMode.CREATIVE,
-        "WATCH" to null,
+    // FIT and WATCH are tabs but not photo modes: the third value names them.
+    val items: List<Triple<String, CoachMode?, String>> = if (portraitOnly) listOf(Triple("PORTRAIT", CoachMode.PORTRAIT, "")) else listOf(
+        Triple("PORTRAIT", CoachMode.PORTRAIT, ""),
+        Triple("SCENE", CoachMode.WIDE, ""),
+        Triple("OBJECT", CoachMode.OBJECT, ""),
+        Triple("CREATIVE", CoachMode.CREATIVE, ""),
+        Triple("FIT", null, "FIT"),
+        Triple("WATCH", null, "WATCH"),
     )
-    val selected = if (watch) items.indexOfFirst { it.second == null } else if (photo) items.indexOfFirst { it.second == mode } else -1
+    val selected = when {
+        fit -> items.indexOfFirst { it.third == "FIT" }
+        watch -> items.indexOfFirst { it.third == "WATCH" }
+        photo -> items.indexOfFirst { it.second == mode }
+        else -> -1
+    }
     val scroll = rememberScrollState()
     val centres = remember { mutableStateMapOf<Int, Float>() }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -217,13 +225,13 @@ fun ModeTabs(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Spacer(Modifier.width(half))
-            items.forEachIndexed { i, (label, m) ->
+            items.forEachIndexed { i, (label, m, id) ->
                 Box(
                     modifier = Modifier.onGloballyPositioned { c ->
                         // Centre within the scrolling row: the row's own offset plus the scroll already applied.
                         centres[i] = c.positionInParent().x + c.size.width / 2f
                     },
-                ) { ModeTab(label, i == selected) { if (m == null) onWatch() else onModeSelected(m) } }
+                ) { ModeTab(label, i == selected) { when (id) { "FIT" -> onFit(); "WATCH" -> onWatch(); else -> m?.let(onModeSelected) } } }
             }
             Spacer(Modifier.width(half))
         }

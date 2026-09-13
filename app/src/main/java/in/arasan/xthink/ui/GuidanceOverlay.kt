@@ -321,6 +321,8 @@ fun GuidanceOverlay(
                         mode = state.mode,
                         onModeSelected = onModeSelected,
                         portraitOnly = state.mirrored,
+                        fit = state.fitMode,
+                        onFit = onFitMode,
                         watch = state.watchMode,
                         onWatch = onWatchMode,
                         photo = !state.videoMode && !state.typeMode && !state.askMode && !state.fitMode && !state.watchMode,

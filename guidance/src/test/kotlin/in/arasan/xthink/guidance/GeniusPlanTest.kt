@@ -73,4 +73,13 @@ class GeniusPlanTest {
         assertEquals(2, steps.size)
         assertEquals(15_000L, (steps[0].ops[0] as MacOp.Wait).ms)
     }
+
+    @Test
+    fun `the check may say wait, which is neither done nor a step`() {
+        assertTrue(GeniusPlan.isWait("WAIT"))
+        assertTrue(GeniusPlan.isWait("wait.\nClaude is still building"))
+        assertTrue(!GeniusPlan.isWait("WAIT 2000\nDONE"))
+        assertTrue(!GeniusPlan.isWait("DONE"))
+        assertTrue(!GeniusPlan.isDone("WAIT"))
+    }
 }

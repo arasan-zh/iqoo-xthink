@@ -131,4 +131,12 @@ class GeniusRouterTest {
     fun `the unknown falls back to the model's plan`() {
         assertTrue(GeniusRouter.route("what time is it in tokyo") is Route.Plan)
     }
+
+    @Test
+    fun `a named remote machine is shell work over ssh, with a tty for a screen tool`() {
+        assertEquals(Route.Terminal("connect to elitedesk and open htop", "ssh -t elitedesk htop"), GeniusRouter.route("connect to elitedesk and open htop"))
+        assertEquals(Route.Terminal("ssh into the elite desk", "ssh elitedesk"), GeniusRouter.route("ssh into the elite desk"))
+        assertEquals(Route.Terminal("show me top on elitedesk", "ssh -t elitedesk top"), GeniusRouter.route("show me top on elitedesk"))
+        assertTrue(GeniusRouter.route("open htop") !is Route.Terminal || (GeniusRouter.route("open htop") as Route.Terminal).command == null)
+    }
 }
