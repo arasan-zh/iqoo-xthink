@@ -117,8 +117,16 @@ class MainActivity : ComponentActivity() {
                 var chatBusy by remember { mutableStateOf(false) }
                 var chatListening by remember { mutableStateOf(false) }
                 var chatImage by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
-                // Hold the camera button: the system camera takes one, and it lands in the composer.
-                val chatCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp -> if (bmp != null) chatImage = bmp }
+                // What a pill asked for before the camera was opened for it: TRANSLATE, SCAN, or null.
+                var chatPending by remember { mutableStateOf<String?>(null) }
+                var chatAfterCapture: (String?) -> Unit = {}
+                // The camera button: the system camera takes one, and it lands in the composer.
+                val chatCamera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bmp ->
+                    if (bmp != null) chatImage = bmp
+                    val pending = chatPending
+                    chatPending = null
+                    if (bmp != null && pending != null) chatAfterCapture(pending)
+                }
                 val chatReader = remember { ScreenReader() }
                 DisposableEffect(chatReader) { onDispose { chatReader.close() } }
                 val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
@@ -189,6 +197,9 @@ class MainActivity : ComponentActivity() {
                     }
                     if (!started) { chat[idx] = ChatTurn(false, "The reader is busy - try again in a moment."); chatBusy = false }
                 }
+                // A pill pressed with no photo: the camera came first, and the shot goes to the pill's work.
+                chatAfterCapture = { pending -> if (pending == "TRANSLATE") chatTranslate() else chatScan() }
+
                 fun chatMic() {
                     if (chatListening) { speech.stop(); return }
                     if (ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
@@ -220,9 +231,9 @@ class MainActivity : ComponentActivity() {
                                 attachment = chatImage?.let { it.asImageBitmap() },
                                 onAttach = { photoPicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                                 onClearAttach = { chatImage = null },
-                                onCapture = { runCatching { chatCamera.launch(null) }.onFailure { android.util.Log.w("xThink", "chat: no camera app", it) } },
-                                onTranslate = { chatTranslate() },
-                                onScan = { chatScan() },
+                                onCapture = { chatPending = null; runCatching { chatCamera.launch(null) }.onFailure { android.util.Log.w("xThink", "chat: no camera app", it) } },
+                                onTranslate = { if (chatImage != null) chatTranslate() else { chatPending = "TRANSLATE"; runCatching { chatCamera.launch(null) } } },
+                                onScan = { if (chatImage != null) chatScan() else { chatPending = "SCAN"; runCatching { chatCamera.launch(null) } } },
                                 modelLine = when (coachState) {
                                     LlmCoach.State.READY -> "Gemma 3n · on the phone"
                                     LlmCoach.State.LOADING -> "loading the model\u2026"

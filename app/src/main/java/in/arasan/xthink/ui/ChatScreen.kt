@@ -60,9 +60,9 @@ fun ChatScreen(
     onAttach: () -> Unit,
     onClearAttach: () -> Unit,
     onHome: () -> Unit,
-    /** Hold the camera button: take a picture now. */
+    /** The camera button: take a picture now. */
     onCapture: () -> Unit = {},
-    /** With a photo attached: the text in it, in English; the text in it, read and cleaned. */
+    /** Always on offer: the text in a photo, in English; the text in a photo, read and cleaned. Without a photo attached, the camera is opened first. */
     onTranslate: () -> Unit = {},
     onScan: () -> Unit = {},
 ) {
@@ -147,28 +147,20 @@ fun ChatScreen(
                 }
             }
             // The composer: a photo, words, the mic, send.
-            if (attachment == null && turns.isEmpty()) {
-                Text(text = "Tap the camera for a photo, hold it to shoot one", color = Palette.NightMuted, fontSize = 11.sp, modifier = Modifier.padding(bottom = 8.dp))
-            }
-            if (attachment != null) {
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(bottom = 8.dp)) {
+            // What can be done with a photo, always on offer: with one
+            // attached they act on it; without, the camera opens first.
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                if (attachment != null) {
                     androidx.compose.foundation.Image(
                         bitmap = attachment, contentDescription = "attached",
                         contentScale = androidx.compose.ui.layout.ContentScale.Crop,
-                        modifier = Modifier.size(56.dp).clip(RoundedCornerShape(12.dp)),
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)),
                     )
-                    Spacer(Modifier.size(10.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(text = "Photo attached", color = Palette.NightMuted, fontSize = 12.sp)
-                        Spacer(Modifier.size(6.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            NightPill(text = "Translate", onClick = { if (!busy) onTranslate() })
-                            NightPill(text = "Scan text", onClick = { if (!busy) onScan() })
-                        }
-                    }
-                    Spacer(Modifier.size(10.dp))
-                    NightRound(onClick = onClearAttach, size = 32.dp) { Text("✕", color = Palette.NightInk, fontSize = 13.sp) }
                 }
+                NightPill(text = "Translate", onClick = { if (!busy) onTranslate() })
+                NightPill(text = "Scan text", onClick = { if (!busy) onScan() })
+                Spacer(Modifier.weight(1f))
+                if (attachment != null) NightRound(onClick = onClearAttach, size = 32.dp) { Text("✕", color = Palette.NightInk, fontSize = 13.sp) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Row(
@@ -180,8 +172,9 @@ fun ChatScreen(
                         .background(Palette.NightCard)
                         .padding(start = 8.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
                 ) {
-                    // Tap: a photo from the gallery. Hold: take one now.
-                    NightRound(onClick = onAttach, onLongClick = onCapture, size = 40.dp) { Glyph("camera", Palette.NightInk, 18.dp) }
+                    // The camera takes one now; the gallery brings one in.
+                    NightRound(onClick = onCapture, size = 40.dp) { Glyph("camera", Palette.NightInk, 18.dp) }
+                    NightRound(onClick = onAttach, size = 40.dp) { Glyph("gallery", Palette.NightInk, 18.dp) }
                     Box(modifier = Modifier.weight(1f)) {
                         if (draft.isBlank()) Text(text = if (listening) "Listening…" else if (attachment == null) "Message…" else "Ask about the photo…", color = Palette.NightMuted, fontSize = 16.sp, maxLines = 1)
                         BasicTextField(

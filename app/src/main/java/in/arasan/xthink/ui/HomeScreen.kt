@@ -203,6 +203,14 @@ fun Glyph(name: String, color: Color, size: androidx.compose.ui.unit.Dp) {
                     drawCircle(color, w * 0.09f, Offset(kx, y))
                 }
             }
+            "gallery" -> {
+                drawRoundRect(color, Offset(w * 0.1f, h * 0.14f), Size(w * 0.8f, h * 0.72f), androidx.compose.ui.geometry.CornerRadius(w * 0.1f), style = Stroke(st))
+                drawCircle(color, w * 0.08f, Offset(w * 0.34f, h * 0.38f))
+                drawLine(color, Offset(w * 0.16f, h * 0.78f), Offset(w * 0.42f, h * 0.52f), st, StrokeCap.Round)
+                drawLine(color, Offset(w * 0.42f, h * 0.52f), Offset(w * 0.6f, h * 0.7f), st, StrokeCap.Round)
+                drawLine(color, Offset(w * 0.6f, h * 0.7f), Offset(w * 0.72f, h * 0.58f), st, StrokeCap.Round)
+                drawLine(color, Offset(w * 0.72f, h * 0.58f), Offset(w * 0.86f, h * 0.78f), st, StrokeCap.Round)
+            }
             "home" -> {
                 drawLine(color, Offset(w * 0.1f, h * 0.5f), Offset(w * 0.5f, h * 0.14f), st, StrokeCap.Round)
                 drawLine(color, Offset(w * 0.5f, h * 0.14f), Offset(w * 0.9f, h * 0.5f), st, StrokeCap.Round)
