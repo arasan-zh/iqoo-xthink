@@ -711,3 +711,15 @@ piece device-verified on the iQOO 15 before it was committed.
   back. When nothing is readable for a while Gemma is asked, rationed,
   where the screen is and how to move, and the line sits under the
   window in amber.
+- **Babysitting Claude**: "monitor claude and press enter when it asks"
+  (or "keep an eye on it", "answer its prompts") is its own route. The
+  reading loop watches the terminal from then on; `ClaudePrompt` (pure,
+  tested) knows the common questions - trust this folder, proceed?,
+  allow this tool, a numbered menu, y/n - and answers each once on the
+  keyboard the moment it is read (Enter, or y then Enter), the prompt's
+  own line as the fingerprint so the screen still showing it a reading
+  later does not press twice. What the patterns do not know goes to
+  Gemma on a rationed clock (twenty seconds, or a minute): WAIT while it
+  works, keys for a question, DONE when the job is finished - the room
+  says so and stops. Ten minutes at most; Stop ends it. Every press is a
+  stamped line in the room's log.

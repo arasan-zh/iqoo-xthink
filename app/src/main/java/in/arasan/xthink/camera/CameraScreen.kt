@@ -95,6 +95,7 @@ import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
 import `in`.arasan.xthink.guidance.Finishing
 import `in`.arasan.xthink.guidance.AutoZoom
+import `in`.arasan.xthink.guidance.ClaudePrompt
 import `in`.arasan.xthink.guidance.LookRation
 import `in`.arasan.xthink.guidance.MacWatch
 import `in`.arasan.xthink.guidance.WatchSession
@@ -160,6 +161,9 @@ private const val TRACK_LOST_MS = 1_500L
 private const val GENIUS_MAX_ATTEMPTS = 3
 /** A job the user asked to repeat may go round this many times before Steve gives up. */
 private const val GENIUS_MAX_ATTEMPTS_REPEAT = 8
+/** Babysitting Claude: the same prompt is answered once in this long; the watch ends after this many minutes. */
+private const val MONITOR_REANSWER_MS = 15_000L
+private const val MONITOR_MAX_MS = 10L * 60L * 1000L
 
 /** A clean plan runs by itself after this many seconds unless cancelled. */
 private const val GENIUS_AUTORUN_S = 5
@@ -642,6 +646,12 @@ private fun CameraAndGuidance(
     var gWaits by remember { mutableIntStateOf(0) }
     // The request asked for a job to be repeated until it is done.
     var gRepeat by remember { mutableStateOf(false) }
+    // Babysitting Claude: on, since when, what was answered when, the model's rationed turns, a press in flight.
+    var gMonitor by remember { mutableStateOf(false) }
+    val gMonitorSince = remember { longArrayOf(0L) }
+    val gAnswered = remember { mutableMapOf<String, Long>() }
+    val gMonitorRation = remember { arrayOf(LookRation(20_000L, 60_000L)) }
+    val gPressing = remember { booleanArrayOf(false) }
     var gNote by remember { mutableStateOf<String?>(null) }
     var gDraft by remember { mutableStateOf("") }
     var gCountdown by remember { mutableIntStateOf(0) }
@@ -767,6 +777,8 @@ private fun CameraAndGuidance(
      * needs a next step, which is proposed, never performed unasked.
      */
     fun geniusCheck(delayMs: Long = GENIUS_SETTLE_MS) {
+        // While babysitting, a run's end goes back to watching; the reading loop is the check.
+        if (gMonitor) { gPhase = "MONITORING"; gStep = -1; refreshGenius(); return }
         if (gAttempt >= (if (gRepeat) GENIUS_MAX_ATTEMPTS_REPEAT else GENIUS_MAX_ATTEMPTS)) { geniusDone(if (gRepeat) "went round ${gAttempt} times" else "did what was asked"); return }
         gPhase = "CHECKING"
         refreshGenius()
@@ -861,6 +873,20 @@ private fun CameraAndGuidance(
     fun geniusAct(route: Route, heard: String) {
         val main = ContextCompat.getMainExecutor(context)
         val asked = when (route) {
+            is Route.Monitor -> {
+                // Babysitting Claude: the reading loop watches the terminal from
+                // here on, answers its prompts, and asks Gemma about the rest.
+                gMonitor = true
+                gRepeat = true
+                gMonitorSince[0] = SystemClock.uptimeMillis()
+                gAnswered.clear()
+                gMonitorRation[0] = LookRation(20_000L, 60_000L)
+                gPhase = "MONITORING"
+                gNote = "Point the window at the terminal; Enter is pressed when Claude asks."
+                geniusLog("Watching Claude in the terminal")
+                refreshGenius()
+                true
+            }
             is Route.Help -> {
                 gPlan = GeniusRouter.steps(route)
                 gStep = -1
@@ -976,6 +1002,7 @@ private fun CameraAndGuidance(
 
     fun geniusStop() {
         Log.i(TAG, "genius: stop pressed")
+        if (gMonitor) { gMonitor = false; geniusLog("Stopped watching Claude") }
         keyboard.cancelled = true
         speech.stop()
         gPhase = "READY"
@@ -2026,6 +2053,56 @@ private fun CameraAndGuidance(
         Log.i(TAG, "tap focus at (${"%.2f".format(x)}, ${"%.2f".format(y)})")
     }
 
+    /** The keys that answer Claude, pressed now, and written in the log. */
+    fun geniusAnswer(lines: List<String>, why: String) {
+        if (gPressing[0]) return
+        val steps = GeniusPlan.parse(lines.joinToString("\n") + "\nDONE").filter { !it.line.uppercase().startsWith("DONE") }
+        val ops = steps.flatMap { it.ops }
+        if (ops.isEmpty()) return
+        gPressing[0] = true
+        keyboard.perform(ops, onProgress = {}) { ok ->
+            gPressing[0] = false
+            geniusLog(if (ok) "Pressed ${lines.joinToString(", ")} - $why" else "Could not press ${lines.joinToString(", ")} - the keyboard link")
+            Log.i(TAG, "monitor: ${if (ok) "pressed" else "FAILED"} ${lines.joinToString(", ")} ($why)")
+            refreshGenius()
+        }
+    }
+
+    /**
+     * One reading of the terminal while babysitting Claude: a prompt the
+     * patterns know is answered at once (each once, so the screen still
+     * showing it a moment later does not press twice); otherwise, on a
+     * rationed clock, Gemma says wait, done, or the keys - keys are
+     * pressed, anything else is proposed and runs on the countdown.
+     */
+    fun monitorTick(screen: String, still: Bitmap) {
+        val now = SystemClock.uptimeMillis()
+        if (now - gMonitorSince[0] > MONITOR_MAX_MS) { gMonitor = false; geniusLog("Stopped watching Claude - ten minutes"); geniusDone("watched for ten minutes"); return }
+        val answer = ClaudePrompt.answer(screen)
+        if (answer != null) {
+            val key = ClaudePrompt.key(screen)
+            if (now - (gAnswered[key] ?: 0L) >= MONITOR_REANSWER_MS) {
+                gAnswered[key] = now
+                geniusAnswer(answer, "Claude asked: ${ClaudePrompt.line(screen).take(60)}")
+            }
+            return
+        }
+        if (coachState != LlmCoach.State.READY || coach.isBusy || !gMonitorRation[0].look(now, lumaGrid(still))) return
+        coach.askText(LlmCoach.Kind.CHECK, LlmCoach.monitorPrompt(screen), ContextCompat.getMainExecutor(context)) { text, done ->
+            if (!done || !gMonitor) return@askText
+            when {
+                GeniusPlan.isDone(text) -> { gMonitor = false; geniusLog("Claude finished the job"); geniusDone("Claude finished") }
+                GeniusPlan.isWait(text) -> Log.i(TAG, "monitor: still working")
+                else -> {
+                    val steps = GeniusPlan.parse(text).filter { !it.line.uppercase().startsWith("DONE") }
+                    if (steps.isEmpty()) return@askText
+                    val keysOnly = steps.all { it.line.uppercase().let { l -> l.startsWith("KEY ") || l.startsWith("TYPE ") } }
+                    if (keysOnly) geniusAnswer(steps.map { it.line }, "Gemma read a question") else geniusPropose(steps, "PROPOSED")
+                }
+            }
+        }
+    }
+
     /**
      * A still from the capture use case, for reading: the full sensor's
      * detail rather than the preview's, decoded to a modest size and
@@ -2072,9 +2149,10 @@ private fun CameraAndGuidance(
                     gInputSeen = MacWatch.inputSeen(gTyped, text)
                     gMisses = if (text.isBlank()) gMisses + 1 else 0
                     if (text.isNotBlank()) gAim = null
-                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING")
+                    val quiet = gPhase !in setOf("LISTENING", "THINKING", "WRITING", "RUNNING", "CHECKING", "MONITORING")
                     val due = SystemClock.uptimeMillis() - gNarratedAt[0] > WATCH_NARRATE_MIN_MS
                     if (quiet && due && text.isNotBlank() && MacWatch.changed(previous, text)) geniusNarrate("changed", null)
+                    if (gMonitor && gPhase == "MONITORING") monitorTick(text, still)
                     if (gAutoZoom) {
                         val zoom = overlayState.zoomRatio
                         AutoZoom.next(zoom, box, gMisses, cameraControl?.cameraInfo?.zoomState?.value?.maxZoomRatio ?: 1f)?.let { z ->

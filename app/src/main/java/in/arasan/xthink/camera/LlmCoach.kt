@@ -338,6 +338,22 @@ class LlmCoach(private val context: Context) {
             {heard}
         """.trimIndent().replace("{facts}", facts).replace("{seen}", seen).replace("{heard}", heard)
 
+        /**
+         * Babysitting Claude Code: the terminal as the camera read it, and
+         * what to do - the keys that answer a question, WAIT while it works,
+         * DONE when the job is finished. The common prompts are answered
+         * without the model; this is for the rest.
+         */
+        fun monitorPrompt(screen: String): String = """
+            You are watching a terminal where Claude Code, a coding agent, is running, through a phone camera (OCR, may be noisy):
+            ---
+            ${screen.take(900)}
+            ---
+            If it is asking for a confirmation or a choice - proceed?, allow?, trust this folder?, a numbered menu, y/n - reply ONLY the keys that say yes, one per line: KEY enter, or TYPE y then KEY enter, or KEY <number> then KEY enter for a menu - then DONE.
+            If it is still working - thinking, building, a spinner, reading files - reply exactly: WAIT
+            If the job is finished - a summary of what it did, or a bare shell prompt with nothing asked - reply exactly: DONE
+        """.trimIndent()
+
         /** Nothing readable for a while: where is the screen, and how should the phone move. */
         val AIM_PROMPT = """
             You are helping point a phone camera at a computer screen so its text can be read. In at most 10 words, say where the screen is in this picture and how to move the phone to fill the frame with it - left, right, up, down, closer, farther, tilt. If no screen is in view, say only: No screen in view.
@@ -466,6 +482,7 @@ class LlmCoach(private val context: Context) {
             PORTFOLIO - a portfolio website; ARG is the destination (reelzo, client <name>, venture <name>, or personal), then the person, their role and the details given, comma separated
             PROJECT - create or build any other code, site or app; ARG is the brief for Claude Code: one paragraph starting with the verb - what to build, its parts, the stack (plain HTML, CSS and JavaScript unless another was named), the look - only what was asked, filled in with sensible defaults
             WHATSAPP - message someone on WhatsApp; ARG is the number ; the message
+            MONITOR - watch Claude Code running in the terminal and press Enter or answer whenever it asks, until it is done; ARG is claude
             HELP - the user asks what you can do
             OTHER - anything else
             Examples:
@@ -477,6 +494,7 @@ class LlmCoach(private val context: Context) {
             build me a to do app -> PROJECT | Build a small to-do app on one page: add, tick off and delete items, saved in the browser; plain HTML, CSS and JavaScript; clean and minimal
             connect to elite desk and open htop -> TERMINAL | ssh -t elitedesk htop
             text 9442851409 on whatsapp saying hello -> WHATSAPP | 9442851409 ; hello
+            monitor claude and press enter when it asks -> MONITOR | claude
             what can you do -> HELP |
             Request: $spoken
         """.trimIndent()

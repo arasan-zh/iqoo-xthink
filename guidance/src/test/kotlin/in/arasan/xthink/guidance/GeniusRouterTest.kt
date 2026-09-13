@@ -158,4 +158,12 @@ class GeniusRouterTest {
         assertTrue(!GeniusRouter.isRepeating("run make test"))
         assertTrue(!GeniusRouter.isRepeating("open safari"))
     }
+
+    @Test
+    fun `babysitting claude is its own route`() {
+        assertEquals(Route.Monitor, GeniusRouter.route("monitor claude in the terminal and press enter when it asks"))
+        assertEquals(Route.Monitor, GeniusRouter.route("keep an eye on cloud and answer its prompts"))
+        assertEquals(Route.Monitor, GeniusRouter.route("press enter whenever it asks"))
+        assertTrue(GeniusRouter.route("open the terminal") !is Route.Monitor)
+    }
 }

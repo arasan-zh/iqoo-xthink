@@ -37,6 +37,7 @@ object GeniusIntent {
             is Route.Search, is Route.Type, is Route.Key -> true
             is Route.Plan -> true
             is Route.Help -> true
+            is Route.Monitor -> true
         }
     }
 
@@ -91,6 +92,7 @@ object GeniusIntent {
                 Route.WhatsApp(number, message)
             }
             "HELP" -> Route.Help
+            "MONITOR" -> Route.Monitor
             "OTHER", "PLAN" -> null
             else -> null
         }

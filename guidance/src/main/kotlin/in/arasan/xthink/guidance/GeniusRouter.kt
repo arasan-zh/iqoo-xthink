@@ -43,6 +43,9 @@ sealed class Route {
 
     /** "What can you do?" - the list, nothing performed. */
     object Help : Route()
+
+    /** Watch Claude Code running in the terminal and answer its prompts - Enter, y - until it is done. */
+    object Monitor : Route()
 }
 
 object GeniusRouter {
@@ -131,6 +134,9 @@ object GeniusRouter {
         if (Regex("""\b(what can you do|what do you do|what are you able|help me|show me what you can|your abilities|what all can you)\b""").containsMatchIn(s) ||
             s == "help"
         ) return Route.Help
+
+        // Babysitting Claude: watch the terminal and press Enter when it asks.
+        if (Regex("""\b(?:monitor|babysit|keep an eye on|watch over|supervise|look after)\b.*\b(?:claude|cloud|terminal|cli|it)\b|\bpress enter\b.*\b(?:when|if|whenever|as)\b|\banswer (?:claude|the prompts|its prompts)\b""").containsMatchIn(s)) return Route.Monitor
 
         // A machine named by its nickname: the shell work happens there, over ssh.
         remote(s, spoken)?.let { return it }
@@ -364,6 +370,7 @@ object GeniusRouter {
         )
         is Route.Plan -> emptyList()
         is Route.Help -> HELP.map { PlanStep(it, emptyList()) }
+        is Route.Monitor -> emptyList()
     }
 
     /** What Steve can do, in the words to say. */
