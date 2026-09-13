@@ -187,16 +187,20 @@ fun ModeTabs(
     modifier: Modifier = Modifier,
     portraitOnly: Boolean = false,
     photo: Boolean = true,
+    walk: Boolean = false,
+    onWalk: () -> Unit = {},
 ) {
     // A carousel: the chosen mode sits in the middle of the screen and the
     // others fall away to either side. Tap one to bring it to the centre.
-    val items: List<Pair<String, CoachMode>> = if (portraitOnly) listOf("PORTRAIT" to CoachMode.PORTRAIT) else listOf(
+    // WALK is the last tab and not a photo mode: null stands for it.
+    val items: List<Pair<String, CoachMode?>> = if (portraitOnly) listOf("PORTRAIT" to CoachMode.PORTRAIT) else listOf(
         "PORTRAIT" to CoachMode.PORTRAIT,
         "SCENE" to CoachMode.WIDE,
         "OBJECT" to CoachMode.OBJECT,
         "CREATIVE" to CoachMode.CREATIVE,
+        "WALK" to null,
     )
-    val selected = if (photo) items.indexOfFirst { it.second == mode } else -1
+    val selected = if (walk) items.indexOfFirst { it.second == null } else if (photo) items.indexOfFirst { it.second == mode } else -1
     val scroll = rememberScrollState()
     val centres = remember { mutableStateMapOf<Int, Float>() }
     BoxWithConstraints(modifier = modifier.fillMaxWidth()) {
@@ -218,7 +222,7 @@ fun ModeTabs(
                         // Centre within the scrolling row: the row's own offset plus the scroll already applied.
                         centres[i] = c.positionInParent().x + c.size.width / 2f
                     },
-                ) { ModeTab(label, i == selected) { onModeSelected(m) } }
+                ) { ModeTab(label, i == selected) { if (m == null) onWalk() else onModeSelected(m) } }
             }
             Spacer(Modifier.width(half))
         }

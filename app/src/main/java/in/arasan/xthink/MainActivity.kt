@@ -44,9 +44,9 @@ class MainActivity : ComponentActivity() {
                 val context = this
                 val coach = remember { LlmCoach(context) }
                 DisposableEffect(coach) { onDispose { coach.close() } }
-                val hooked = intent.getStringExtra("enhance") != null || intent.getStringExtra("genius") != null || intent.getStringExtra("ask") != null
+                val hooked = intent.getStringExtra("enhance") != null || intent.getStringExtra("genius") != null || intent.getStringExtra("ask") != null || intent.getStringExtra("walk") != null
                 var screen by remember { mutableStateOf("CAMERA") }
-                var startIn by remember { mutableStateOf<String?>(null) }
+                var startIn by remember { mutableStateOf<String?>(if (intent.getStringExtra("walk") != null) "WALK" else null) }
                 var splash by remember { mutableStateOf(true) }
                 val conversation = remember { Conversation() }
 

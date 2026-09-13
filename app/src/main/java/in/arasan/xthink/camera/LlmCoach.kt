@@ -36,7 +36,7 @@ class LlmCoach(private val context: Context) {
         private set
 
     /** Which prompt a stream belongs to; the panel labels it. */
-    enum class Kind { LIVE, FINISH, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, WATCH }
+    enum class Kind { LIVE, FINISH, REFERENCE, COMMAND, PLAN, CHECK, WRITE, UNDERSTAND, ASK, TRANSLATE, TIDY, VOICE, CHAT, WATCH, WALK }
 
     private var llm: LlmInference? = null
     private val worker: Executor = Executors.newSingleThreadExecutor()
@@ -279,6 +279,15 @@ class LlmCoach(private val context: Context) {
             LOOK <name>
             WHY <three to eight words>
         """.trimIndent()
+
+        /** The walk's journal, written from the log of what happened. One ask, at the end. */
+        fun walkPrompt(facts: String, log: String): String = """
+            You walked with a blind user, watching the way ahead through the phone camera. The numbers, already worked out - use these exactly, do not recount:
+            {facts}
+            What happened, in order (minutes:seconds from the start):
+            {log}
+            Write the journal entry: three to five short lines, plain words, no preamble. Say how long the walk was and how many steps, when they had to stop or steer, how the time split between walking and standing, and one thing worth remembering for next time. Only what is in the numbers and the list - never invent a stop, a steer or a step.
+        """.trimIndent().replace("{facts}", facts).replace("{log}", log)
 
         /** Steve's eyes: the camera's reading of the Mac screen, narrated in one line. */
         fun watchPrompt(spoken: String, screen: String, typed: String?): String = """

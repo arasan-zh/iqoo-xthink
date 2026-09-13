@@ -3,6 +3,9 @@ package `in`.arasan.xthink.camera
 import android.Manifest
 import android.content.Context
 import android.content.ContentValues
+import android.content.pm.ActivityInfo
+import android.content.ContextWrapper
+import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
@@ -86,10 +89,12 @@ import `in`.arasan.xthink.guidance.GeniusIntent
 import `in`.arasan.xthink.guidance.GeniusRouter
 import `in`.arasan.xthink.guidance.Finishing
 import `in`.arasan.xthink.guidance.MacWatch
+import `in`.arasan.xthink.guidance.WalkGuide
 import `in`.arasan.xthink.guidance.Route
 import `in`.arasan.xthink.guidance.Exercise
 import `in`.arasan.xthink.guidance.RepCounter
 import `in`.arasan.xthink.ui.FitState
+import `in`.arasan.xthink.ui.WalkState
 import `in`.arasan.xthink.ui.zoomCapFor
 import `in`.arasan.xthink.guidance.HapticCue
 import `in`.arasan.xthink.guidance.LockHaptics
@@ -162,6 +167,8 @@ private const val WATCH_PERIOD_MS = 2_000L
 /** The model narrates a changed screen at most this often. A run or a tap narrates at once. */
 private const val WATCH_NARRATE_MIN_MS = 20_000L
 private const val WATCH_LOG_MAX = 10
+/** After a haptic pulse the accelerometer is ignored this long: the motor is not a stride. */
+private const val WALK_HAPTIC_QUIET_MS = 500L
 private const val HEARTBEAT_MS = 1000L
 private const val ANALYSIS_WIDTH = 480
 private const val ANALYSIS_HEIGHT = 360
@@ -525,6 +532,13 @@ private fun CameraAndGuidance(
     // tap. Nothing runs unattended, and nothing retries by itself.
     var typeMode by remember { mutableStateOf(false) }
     var fitMode by remember { mutableStateOf(false) }
+    // WALK: the guide, and the steps under it.
+    var walkMode by remember { mutableStateOf(false) }
+    val walkGuide = remember { arrayOfNulls<WalkGuide>(1) }
+    val motion = remember { MotionSensor(context) }
+    DisposableEffect(motion) { onDispose { motion.stop() } }
+    // A pulse shakes the phone like a stride; steps are not counted until it has passed.
+    val walkQuietUntil = remember { longArrayOf(0L) }
     var signsMode by remember { mutableStateOf(false) }
     val keyboard = remember { MacKeyboard(context) }
     val reader = remember { ScreenReader() }
@@ -548,6 +562,14 @@ private fun CameraAndGuidance(
     var gWatching by remember { mutableStateOf(false) }
     val gNarratedAt = remember { longArrayOf(0L) }
     DisposableEffect(keyboard) { onDispose { keyboard.stop(); reader.close(); speech.close() } }
+
+    // Steve's room is landscape: the Mac's screen is wide, and so is the
+    // window onto it. The manifest keeps the activity alive across the
+    // turn, so nothing here is lost.
+    LaunchedEffect(typeMode) {
+        val activity = generateSequence(context as android.content.Context) { (it as? ContextWrapper)?.baseContext }.firstOrNull { it is Activity } as? Activity
+        activity?.requestedOrientation = if (typeMode) ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+    }
 
     fun keyboardLine(): String = when (keyboardState) {
         MacKeyboard.State.NO_BLUETOOTH -> "No Bluetooth on this phone"
@@ -1211,7 +1233,110 @@ private fun CameraAndGuidance(
         refreshFit()
     }
 
+    // ---- WALK: the camera pointed ahead, the phone saying what is in the way ----
+
+    fun refreshWalk() {
+        val g = walkGuide[0]
+        val now = SystemClock.uptimeMillis()
+        overlayState = overlayState.copy(
+            walkMode = walkMode,
+            walk = if (walkMode && g != null) WalkState(verb = g.verb.name, walking = g.walking(now), steps = g.steps, remainingMs = g.remainingMs(now)) else null,
+        )
+    }
+
+    /** Say it, and make it felt. */
+    fun walkSay(words: String, cue: HapticCue) {
+        runCatching { tts?.speak(words, TextToSpeech.QUEUE_FLUSH, null, "walk") }
+        walkQuietUntil[0] = SystemClock.uptimeMillis() + WALK_HAPTIC_QUIET_MS
+        haptics.play(cue, 0.7f)
+    }
+
+    /**
+     * The walk is over - the time, a mode change, or the Finish pill. The
+     * journal goes to the notebook: Gemma writes it from the log when it
+     * is there and free (one ask, at the end - never in the loop), else
+     * the log itself is the entry.
+     */
+    fun leaveWalk(why: String) {
+        if (!walkMode) return
+        val now = SystemClock.uptimeMillis()
+        val g = walkGuide[0]
+        walkMode = false
+        analyzerRef[0]?.let { it.walk = false }
+        motion.stop()
+        overlayState = overlayState.copy(walkMode = false, walk = null)
+        walkSay(if (why == "time") "Five minutes are up. Walk assist is off." else "Walk assist is off.", HapticCue.UNLOCK)
+        Log.i(TAG, "walk: ended ($why)")
+        if (g == null) return
+        g.end(now, why)
+        val facts = g.facts()
+        val log = g.journal()
+        // The numbers and the list go in the file whatever the model writes; its lines go on top.
+        val record = facts + "\n\n```\n" + log + "\n```"
+        fun save(body: String) {
+            val ok = notebook.append("Walk", "", body)
+            Log.i(TAG, "walk: journal ${if (ok) "saved" else "NOT saved"}:\n$body")
+        }
+        if (coachState == LlmCoach.State.READY && !coach.isBusy) {
+            val asked = coach.askText(LlmCoach.Kind.WALK, LlmCoach.walkPrompt(facts, log), ContextCompat.getMainExecutor(context)) { text, done ->
+                if (done) save(if (text.isBlank()) record else text.trim() + "\n\n" + record)
+            }
+            if (!asked) save(record)
+        } else {
+            save(record)
+        }
+    }
+
+    fun onWalkFrame(boxes: List<SubjectBox>) {
+        val g = walkGuide[0] ?: return
+        val now = SystemClock.uptimeMillis()
+        g.onObjects(boxes, now)
+        g.announcement(now)?.let { walkSay(it.words, it.cue); Log.i(TAG, "walk: ${it.words}") }
+        if (g.over(now)) { leaveWalk("time"); return }
+        refreshWalk()
+    }
+
+    fun enterWalk() {
+        if (walkMode) return
+        if (videoMode) { stopRecording(); videoMode = false }
+        if (typeMode) { keyboard.cancelled = true; typeMode = false }
+        if (fitMode || signsMode) { fitMode = false; signsMode = false; analyzerRef[0]?.let { it.fitExercise = null; it.fitGestures = false } }
+        askMode = false
+        scanMode = false
+        // The camera points out: the back lens, whatever was up.
+        if (lensFacing != CameraSelector.LENS_FACING_BACK) lensFacing = CameraSelector.LENS_FACING_BACK
+        walkMode = true
+        val g = WalkGuide(SystemClock.uptimeMillis())
+        walkGuide[0] = g
+        analyzerRef[0]?.let { it.walk = true }
+        val felt = motion.start { val now = SystemClock.uptimeMillis(); if (now > walkQuietUntil[0]) g.onStep(now) }
+        overlayState = overlayState.copy(
+            videoMode = false, recording = false, review = null, showLooks = false, showShots = false,
+            typeMode = false, genius = null, askMode = false, ask = null, scanMode = false,
+            fitMode = false, fit = null, signsMode = false, sign = null,
+        )
+        refreshWalk()
+        walkSay("Walk assist on. Five minutes. Point the camera ahead.", HapticCue.LOCK)
+        Log.i(TAG, "mode -> WALK (steps ${if (felt) "felt" else "not available"})")
+        ensureCoach()
+    }
+
+    // The clock: the countdown, and the words that depend on time alone
+    // (standing with the way clear), once a second while the walk is on.
+    LaunchedEffect(walkMode) {
+        while (walkMode) {
+            delay(1000)
+            if (!walkMode) break
+            val g = walkGuide[0] ?: break
+            val now = SystemClock.uptimeMillis()
+            g.announcement(now)?.let { walkSay(it.words, it.cue); Log.i(TAG, "walk: ${it.words}") }
+            if (g.over(now)) { leaveWalk("time"); break }
+            refreshWalk()
+        }
+    }
+
     fun selectMode(mode: CoachMode, leaveVideo: Boolean = true) {
+        if (walkMode && leaveVideo) leaveWalk("mode")
         if ((fitMode || signsMode) && leaveVideo) {
             fitMode = false
             signsMode = false
@@ -1329,6 +1454,8 @@ private fun CameraAndGuidance(
                 fitMode = overlayState.fitMode,
                 fit = overlayState.fit,
                 signsMode = overlayState.signsMode,
+                walkMode = overlayState.walkMode,
+                walk = overlayState.walk,
                 sign = overlayState.sign,
             )
 
@@ -1421,6 +1548,8 @@ private fun CameraAndGuidance(
 
         analyzerRef[0] = analyzer
         analyzer.onFit = { angle, gesture, dt -> mainHandler.post { if (fitMode || signsMode) onFitFrame(angle, gesture, dt) } }
+        analyzer.walk = walkMode
+        analyzer.onWalk = { boxes, _ -> mainHandler.post { if (walkMode) onWalkFrame(boxes) } }
         if (fitMode || signsMode) applyFitPick()
         analyzer.mode = shotTypes.mode
         analyzer.mirrored = isFront
@@ -1545,6 +1674,7 @@ private fun CameraAndGuidance(
         AndroidView(factory = { previewView }, modifier = Modifier.fillMaxSize())
     // Ways in, shared by the tabs and the home page's cards.
     fun enterSteve() {
+        if (walkMode) leaveWalk("mode")
                 if (!typeMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (askMode) { askMode = false; overlayState = overlayState.copy(askMode = false, ask = null) }
@@ -1577,6 +1707,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterScan() {
+        if (walkMode) leaveWalk("mode")
                 if (!askMode || !scanMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
@@ -1592,6 +1723,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterTranslate() {
+        if (walkMode) leaveWalk("mode")
                 if (!askMode || scanMode) {
                     scanMode = false
                     overlayState = overlayState.copy(scanMode = false)
@@ -1610,6 +1742,7 @@ private fun CameraAndGuidance(
     }
 
     fun enterFit() {
+        if (walkMode) leaveWalk("mode")
                 if (!fitMode) {
                     if (videoMode) { stopRecording(); videoMode = false }
                     if (typeMode) { keyboard.cancelled = true; typeMode = false }
@@ -1630,6 +1763,7 @@ private fun CameraAndGuidance(
             "TRANSLATE" -> enterTranslate()
             "SCAN" -> enterScan()
             "FIT" -> enterFit()
+            "WALK" -> enterWalk()
         }
     }
 
@@ -1654,6 +1788,8 @@ private fun CameraAndGuidance(
                 }
             },
             onFitMode = { enterFit() },
+            onWalkMode = { enterWalk() },
+            onWalkFinish = { leaveWalk("finish") },
             onFitPick = { pick ->
                 fitPick = pick
                 repCounter = RepCounter(if (pick == "PUSHUP") Exercise.PUSHUP else Exercise.SQUAT)
@@ -1869,6 +2005,8 @@ private fun buildOverlayState(
     fitMode: Boolean,
     fit: FitState?,
     signsMode: Boolean,
+    walkMode: Boolean,
+    walk: WalkState?,
     sign: String?,
 ): OverlayState {
     val focus = when {
@@ -1930,6 +2068,8 @@ private fun buildOverlayState(
         fitMode = fitMode,
         fit = fit,
         signsMode = signsMode,
+        walkMode = walkMode,
+        walk = walk,
         sign = sign,
     )
 }

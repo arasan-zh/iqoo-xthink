@@ -511,3 +511,40 @@ piece device-verified on the iQOO 15 before it was committed.
   ENHANCED card shows the reflected guess at once and swaps to LaMa's
   when the retouch lands; the RETOUCHED chip toggles both the holes and
   the painted strips, and the save repeats the same job at full size.
+
+### WALK, and Steve in landscape (build-40 → 41)
+
+- **Steve's room turns the phone**: the Mac's screen is wide, so the room
+  is landscape - the activity asks for sensor-landscape on entering and
+  portrait on leaving, and the manifest keeps it alive across the turn
+  (`configChanges`), so nothing in the room or the camera is lost. The
+  layout splits: the Mac and its window on the left, the conversation,
+  the plan and the buttons down the right; portrait stacks them as
+  before. The live preview underneath follows the display rotation on
+  its own.
+- **WALK**: the last tab in the carousel. The camera points ahead (the
+  back lens, whatever was up) and the phone says what is in the way -
+  *Stop, obstacle ahead* / *Slow down* / *Obstacle on your left, keep
+  right* / *Path clear* - spoken, and felt: a thud for stop, the left or
+  right motor for a side, a rise for clear. `WalkGuide` (pure Kotlin,
+  tested) decides from ML Kit's stream object detector (several boxes,
+  no labels): a box counts as an obstacle by geometry - its bottom below
+  55% of the frame (walking height, near) and at least 2% of the frame -
+  and the middle third is "ahead"; areas are smoothed with the camera's
+  own alpha, one instruction at a time, held 600 ms, hysteresis 1.6 on
+  the way out. Walking versus standing comes from the accelerometer
+  through `StepDetector` (pure, tested): gravity averaged out, a stride
+  is a swing past 1.6 m/s² after settling, no sooner than 280 ms after
+  the last - no activity-recognition permission needed. STOP is said
+  again every 2.5 s while the walker keeps stepping into it; standing
+  five seconds with the way clear earns *Path is clear, you can walk*.
+- **Five minutes, then a journal**: the walk ends itself at five
+  minutes (or on the Finish pill, or on a mode change). The log of what
+  happened - stops, steers, walking and standing spells, in m:ss - and
+  the numbers worked out in code (duration, steps, seconds walking and
+  standing, how many stops and where) go to Gemma once, at the end, for
+  a short journal entry; the entry, the numbers and the log are appended
+  to `Documents/xThink/xthink-notes.md`. The first desk run showed why
+  the numbers are computed and not counted by the model: given the log
+  alone, E2B called a 37-second walk "37 minutes" and invented a steer.
+  The dev hook `--es walk 1` starts straight into WALK.

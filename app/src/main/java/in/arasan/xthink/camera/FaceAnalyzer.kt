@@ -162,6 +162,22 @@ class FaceAnalyzer(
     @Volatile
     var onFit: ((angleDeg: Float?, gesture: String?, dtMs: Long) -> Unit)? = null
 
+    // ---- WALK: everything in the way, from the same frames ----
+
+    /** Set while WALK is up: every object in the frame goes to [onWalk]. */
+    @Volatile
+    var walk: Boolean = false
+
+    /** Where WALK frames go: the boxes as fractions of the frame, and dt. */
+    @Volatile
+    var onWalk: ((boxes: List<SubjectBox>, dtMs: Long) -> Unit)? = null
+
+    /** Several things at once, no labels: what is in the way is geometry, not a name. */
+    private var walkDetector: com.google.mlkit.vision.objects.ObjectDetector? = null
+    private fun walkDetector() = walkDetector ?: ObjectDetection.getClient(
+        ObjectDetectorOptions.Builder().setDetectorMode(ObjectDetectorOptions.STREAM_MODE).enableMultipleObjects().build(),
+    ).also { walkDetector = it }
+
     private val poseStream by lazy {
         PoseDetection.getClient(
             PoseDetectorOptions.Builder().setDetectorMode(PoseDetectorOptions.STREAM_MODE).build(),
@@ -324,6 +340,19 @@ class FaceAnalyzer(
             rotation,
         )
 
+        if (walk) {
+            walkDetector().process(image)
+                .addOnSuccessListener { objects ->
+                    onWalk?.invoke(objects.map { FrameMapping.normalize(it.boundingBox.toFrameRect(), crop) }, dtMs)
+                }
+                .addOnFailureListener { Log.w(TAG, "walk detection failed", it) }
+                .addOnCompleteListener {
+                    busy = false
+                    imageProxy.close()
+                }
+            return
+        }
+
         val started = SystemClock.uptimeMillis()
         if (mode == CoachMode.OBJECT) {
             objectDetector.process(image)
@@ -475,6 +504,7 @@ class FaceAnalyzer(
         runCatching { gestureRecognizer?.close() }
         runCatching { detector.close() }
         runCatching { objectDetector.close() }
+        runCatching { walkDetector?.close() }
     }
 
     private fun android.graphics.Rect.toFrameRect() =

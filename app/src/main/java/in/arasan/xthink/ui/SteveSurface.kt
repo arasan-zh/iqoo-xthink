@@ -12,10 +12,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -89,55 +91,40 @@ fun SteveSurface(
     // The window: a hole in the room through which the camera preview
     // underneath shows. Its place is measured, then cleared out of the layer.
     var window by remember { mutableStateOf<Rect?>(null) }
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
-            .drawWithContent {
-                drawContent()
-                window?.let { w ->
-                    val radius = CornerRadius(20.dp.toPx())
-                    drawRoundRect(Color.Black, topLeft = w.topLeft, size = w.size, cornerRadius = radius, blendMode = BlendMode.Clear)
-                    drawRoundRect(Gold.copy(alpha = 0.55f), topLeft = w.topLeft, size = w.size, cornerRadius = radius, style = Stroke(1.dp.toPx()))
+
+    // The room in pieces, so portrait stacks them and landscape - the Mac
+    // is wide, and so is the window onto it - puts the Mac on the left and
+    // the conversation down the right.
+    val header: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            DarkRound(onClick = onHome) { Glyph("camera", Color.White, 20.dp) }
+            Spacer(Modifier.weight(1f))
+            Text(text = "STEVE", color = Gold, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 4.sp)
+            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.size(44.dp))
+        }
+    }
+    val link: @Composable () -> Unit = {
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            LinkRing(connected = state.connected, linking = linking, diameter = 92.dp)
+            Spacer(Modifier.width(14.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = state.keyboard,
+                    color = if (state.connected) Color.White else GoldDim,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp,
+                    letterSpacing = 0.3.sp,
+                )
+                if (!state.connected) {
+                    Spacer(Modifier.height(8.dp))
+                    Pill(text = "Pair Mac", gold = true, onClick = onPair)
                 }
             }
-            .background(Brush.verticalGradient(listOf(NightHigh, Night))),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .statusBarsPadding()
-                .navigationBarsPadding()
-                .padding(horizontal = Palette.Gutter)
-                .padding(top = 8.dp, bottom = 16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                DarkRound(onClick = onHome) { Glyph("camera", Color.White, 20.dp) }
-                Spacer(Modifier.weight(1f))
-                Text(text = "STEVE", color = Gold, fontSize = 13.sp, fontWeight = FontWeight.Medium, letterSpacing = 4.sp)
-                Spacer(Modifier.weight(1f))
-                Spacer(Modifier.size(44.dp))
-            }
-            Spacer(Modifier.height(10.dp))
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                LinkRing(connected = state.connected, linking = linking, diameter = 92.dp)
-                Spacer(Modifier.width(14.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = state.keyboard,
-                        color = if (state.connected) Color.White else GoldDim,
-                        fontSize = 13.sp,
-                        lineHeight = 18.sp,
-                        letterSpacing = 0.3.sp,
-                    )
-                    if (!state.connected) {
-                        Spacer(Modifier.height(8.dp))
-                        Pill(text = "Pair Mac", gold = true, onClick = onPair)
-                    }
-                }
-            }
-            Spacer(Modifier.height(12.dp))
+        }
+    }
+    val macWindow: @Composable (Modifier) -> Unit = { m ->
+        Column(modifier = m) {
             // --- the Mac, through the room ---
             Box(
                 modifier = Modifier
@@ -169,83 +156,144 @@ fun SteveSurface(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = when (state.phase) {
-                    "LISTENING" -> "Listening…"
-                    "THINKING" -> "Thinking…"
-                    "WRITING" -> "Writing…"
-                    "RUNNING" -> "On the Mac  ·  ${state.step + 1}/${state.plan.size}"
-                    "PLANNED" -> if (refused) "Refused" else if (state.countdown > 0) "Runs in ${state.countdown}" else "Ready to run"
-                    "PROPOSED" -> "Next step proposed"
-                    "DONE" -> "Done"
-                    "FAILED" -> "Could not"
-                    else -> "Say what the Mac should do."
-                },
-                color = Color.White,
-                fontFamily = FontFamily.Serif,
-                fontSize = 24.sp,
-                lineHeight = 30.sp,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(10.dp))
-            Column(
-                modifier = Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
-            ) {
-                if (state.heard.isNotBlank()) {
-                    Text(text = "“${state.heard}”", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp, lineHeight = 21.sp)
-                }
-                state.plan.forEachIndexed { i, line ->
-                    val why = state.refusals.getOrNull(i)
-                    val done = why == null && (i < state.step || state.phase == "DONE")
-                    val now = i == state.step && state.phase == "RUNNING"
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(if (now) Gold.copy(alpha = 0.16f) else Card)
-                            .padding(horizontal = 14.dp, vertical = 12.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier.size(8.dp).clip(CircleShape)
-                                .background(if (why != null) XT.Record else if (done) XT.Green else if (now) Gold else GoldDim),
-                        )
-                        Spacer(Modifier.width(12.dp))
-                        Column {
-                            Text(text = line, color = if (why != null) XT.Record else Color.White, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
-                            if (why != null) Text(text = why, color = XT.Record.copy(alpha = 0.8f), fontSize = 11.sp)
-                        }
-                    }
-                }
-                if (state.draft.isNotBlank()) Text(text = state.draft, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
-                if (state.note != null) Text(text = state.note, color = GoldDim, fontSize = 12.sp)
-                // --- what Steve has said about the Mac, oldest first ---
-                state.log.forEach { entry ->
-                    Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
-                        Text(text = entry.substringBefore("  "), color = GoldDim, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                        Spacer(Modifier.width(10.dp))
-                        Text(text = entry.substringAfter("  ").trim(), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
-                    }
-                }
-                if (state.watching) Text(text = "Looking at the Mac\u2026", color = GoldDim, fontSize = 12.sp)
+        }
+    }
+    val phaseLine: @Composable () -> Unit = {
+        Text(
+            text = when (state.phase) {
+                "LISTENING" -> "Listening…"
+                "THINKING" -> "Thinking…"
+                "WRITING" -> "Writing…"
+                "RUNNING" -> "On the Mac  ·  ${state.step + 1}/${state.plan.size}"
+                "PLANNED" -> if (refused) "Refused" else if (state.countdown > 0) "Runs in ${state.countdown}" else "Ready to run"
+                "PROPOSED" -> "Next step proposed"
+                "DONE" -> "Done"
+                "FAILED" -> "Could not"
+                else -> "Say what the Mac should do."
+            },
+            color = Color.White,
+            fontFamily = FontFamily.Serif,
+            fontSize = 24.sp,
+            lineHeight = 30.sp,
+            modifier = Modifier.fillMaxWidth(),
+        )
+    }
+    val body: @Composable (Modifier) -> Unit = { m ->
+        Column(
+            modifier = m.verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            if (state.heard.isNotBlank()) {
+                Text(text = "“${state.heard}”", color = Color.White.copy(alpha = 0.7f), fontSize = 15.sp, lineHeight = 21.sp)
             }
-            Spacer(Modifier.height(10.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                when {
-                    busy -> Pill(text = "Stop", gold = false, onClick = onStop, modifier = Modifier.weight(1f))
-                    awaiting -> {
-                        Pill(text = "Cancel", gold = false, onClick = onStop, modifier = Modifier.weight(1f))
-                        if (!refused) Pill(
-                            text = if (state.countdown > 0) "Run now  ·  ${state.countdown}" else "Run ${state.plan.size}",
-                            gold = true, onClick = onRun, modifier = Modifier.weight(1.4f),
-                        )
+            state.plan.forEachIndexed { i, line ->
+                val why = state.refusals.getOrNull(i)
+                val done = why == null && (i < state.step || state.phase == "DONE")
+                val now = i == state.step && state.phase == "RUNNING"
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(if (now) Gold.copy(alpha = 0.16f) else Card)
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                ) {
+                    Box(
+                        modifier = Modifier.size(8.dp).clip(CircleShape)
+                            .background(if (why != null) XT.Record else if (done) XT.Green else if (now) Gold else GoldDim),
+                    )
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(text = line, color = if (why != null) XT.Record else Color.White, fontSize = 14.sp, fontFamily = FontFamily.Monospace)
+                        if (why != null) Text(text = why, color = XT.Record.copy(alpha = 0.8f), fontSize = 11.sp)
                     }
-                    else -> {
-                        Pill(text = "Speak", gold = state.connected && state.speechAvailable, onClick = { if (state.speechAvailable) onSpeak() }, modifier = Modifier.weight(1.3f))
-                        Pill(text = if (state.watching) "Looking\u2026" else "What's on the Mac?", gold = false, onClick = { if (!state.watching) onWatch() }, modifier = Modifier.weight(1f))
+                }
+            }
+            if (state.draft.isNotBlank()) Text(text = state.draft, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
+            if (state.note != null) Text(text = state.note, color = GoldDim, fontSize = 12.sp)
+            // --- what Steve has said about the Mac, oldest first ---
+            state.log.forEach { entry ->
+                Row(verticalAlignment = Alignment.Top, modifier = Modifier.fillMaxWidth()) {
+                    Text(text = entry.substringBefore("  "), color = GoldDim, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                    Spacer(Modifier.width(10.dp))
+                    Text(text = entry.substringAfter("  ").trim(), color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, lineHeight = 18.sp)
+                }
+            }
+            if (state.watching) Text(text = "Looking at the Mac\u2026", color = GoldDim, fontSize = 12.sp)
+        }
+    }
+    val buttons: @Composable () -> Unit = {
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+            when {
+                busy -> Pill(text = "Stop", gold = false, onClick = onStop, modifier = Modifier.weight(1f))
+                awaiting -> {
+                    Pill(text = "Cancel", gold = false, onClick = onStop, modifier = Modifier.weight(1f))
+                    if (!refused) Pill(
+                        text = if (state.countdown > 0) "Run now  ·  ${state.countdown}" else "Run ${state.plan.size}",
+                        gold = true, onClick = onRun, modifier = Modifier.weight(1.4f),
+                    )
+                }
+                else -> {
+                    Pill(text = "Speak", gold = state.connected && state.speechAvailable, onClick = { if (state.speechAvailable) onSpeak() }, modifier = Modifier.weight(1.3f))
+                    Pill(text = if (state.watching) "Looking\u2026" else "What's on the Mac?", gold = false, onClick = { if (!state.watching) onWatch() }, modifier = Modifier.weight(1f))
+                }
+            }
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+            .drawWithContent {
+                drawContent()
+                window?.let { w ->
+                    val radius = CornerRadius(20.dp.toPx())
+                    drawRoundRect(Color.Black, topLeft = w.topLeft, size = w.size, cornerRadius = radius, blendMode = BlendMode.Clear)
+                    drawRoundRect(Gold.copy(alpha = 0.55f), topLeft = w.topLeft, size = w.size, cornerRadius = radius, style = Stroke(1.dp.toPx()))
+                }
+            }
+            .background(Brush.verticalGradient(listOf(NightHigh, Night))),
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .padding(horizontal = Palette.Gutter)
+                .padding(top = 8.dp, bottom = 16.dp),
+        ) {
+            if (maxWidth > maxHeight) {
+                Row(modifier = Modifier.fillMaxSize()) {
+                    Column(modifier = Modifier.weight(1.25f).fillMaxHeight()) {
+                        header()
+                        Spacer(Modifier.height(8.dp))
+                        macWindow(Modifier.fillMaxWidth())
+                        Spacer(Modifier.height(10.dp))
+                        link()
                     }
+                    Spacer(Modifier.width(18.dp))
+                    Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+                        phaseLine()
+                        Spacer(Modifier.height(8.dp))
+                        body(Modifier.weight(1f).fillMaxWidth())
+                        Spacer(Modifier.height(8.dp))
+                        buttons()
+                    }
+                }
+            } else {
+                Column(modifier = Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    header()
+                    Spacer(Modifier.height(10.dp))
+                    link()
+                    Spacer(Modifier.height(12.dp))
+                    macWindow(Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(12.dp))
+                    phaseLine()
+                    Spacer(Modifier.height(10.dp))
+                    body(Modifier.weight(1f).fillMaxWidth())
+                    Spacer(Modifier.height(10.dp))
+                    buttons()
                 }
             }
         }
