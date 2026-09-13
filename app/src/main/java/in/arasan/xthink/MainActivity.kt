@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.core.content.ContextCompat
 import `in`.arasan.xthink.camera.CameraScreen
 import `in`.arasan.xthink.camera.Conversation
+import `in`.arasan.xthink.camera.Inpainter
 import `in`.arasan.xthink.camera.LlmCoach
 import `in`.arasan.xthink.camera.ScreenReader
 import `in`.arasan.xthink.camera.SpeechInput
@@ -45,6 +46,8 @@ class MainActivity : ComponentActivity() {
                 val context = this
                 val coach = remember { LlmCoach(context) }
                 DisposableEffect(coach) { onDispose { coach.close() } }
+                val inpainter = remember { Inpainter(context) }
+                DisposableEffect(inpainter) { onDispose { inpainter.close() } }
                 val hooked = intent.getStringExtra("enhance") != null || intent.getStringExtra("genius") != null || intent.getStringExtra("ask") != null || intent.getStringExtra("watch") != null
                 var screen by remember { mutableStateOf("CAMERA") }
                 var startIn by remember { mutableStateOf<String?>(if (intent.getStringExtra("watch") != null) "WATCH" else null) }
@@ -268,6 +271,7 @@ class MainActivity : ComponentActivity() {
                         else -> {
                             CameraScreen(
                                 coach = coach,
+                                inpainter = inpainter,
                                 debugEnhanceUri = intent.getStringExtra("enhance"),
                                 debugRetouchOff = !intent.getBooleanExtra("retouch", true),
                                 debugGenius = intent.getStringExtra("genius"),

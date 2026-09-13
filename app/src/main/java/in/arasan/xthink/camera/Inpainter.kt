@@ -70,6 +70,15 @@ class Inpainter(private val context: Context) {
         val file = modelFile() ?: return null
         val started = SystemClock.uptimeMillis()
         loading = true
+        try {
+            return load(file, started)
+        } finally {
+            loading = false
+        }
+    }
+
+    /** The load itself; [ensureSession] holds the flag around it. */
+    private fun load(file: File, started: Long): OrtSession? {
         val env = OrtEnvironment.getEnvironment()
         // Optimising the graph is most of the first load (tens of seconds).
         // The optimised graph is written once to the cache and read back
@@ -97,12 +106,10 @@ class Inpainter(private val context: Context) {
             }
             env.createSession(file.absolutePath, opts).also {
                 session = it
-                loading = false
                 Log.i(TAG, "inpaint: loaded ${file.name} (${file.length() / 1_000_000} MB) in ${SystemClock.uptimeMillis() - started} ms; graph cached ${cache.length() / 1_000_000} MB")
             }
         }.onFailure {
             loadFailed = true
-            loading = false
             Log.e(TAG, "inpaint: could not load ${file.name}", it)
         }.getOrNull()
     }

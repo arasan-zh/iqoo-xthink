@@ -202,6 +202,7 @@ private const val ANALYSIS_HEIGHT = 360
 @Composable
 fun CameraScreen(
     coach: LlmCoach? = null,
+    inpainter: Inpainter? = null,
     debugEnhanceUri: String? = null,
     debugRetouchOff: Boolean = false,
     debugGenius: String? = null,
@@ -222,7 +223,7 @@ fun CameraScreen(
     }
 
     if (granted) {
-        CameraAndGuidance(coach, debugEnhanceUri, debugRetouchOff, debugGenius, debugAsk, startIn, onHome, onOpenRoom)
+        CameraAndGuidance(coach, inpainter, debugEnhanceUri, debugRetouchOff, debugGenius, debugAsk, startIn, onHome, onOpenRoom)
     } else {
         PermissionPrompt(onGrant = { launcher.launch(Manifest.permission.CAMERA) })
     }
@@ -247,6 +248,7 @@ private fun PermissionPrompt(onGrant: () -> Unit) {
 @Composable
 private fun CameraAndGuidance(
     sharedCoach: LlmCoach? = null,
+    sharedInpainter: Inpainter? = null,
     debugEnhanceUri: String? = null,
     debugRetouchOff: Boolean = false,
     debugGenius: String? = null,
@@ -378,8 +380,10 @@ private fun CameraAndGuidance(
     // After the shutter: the photographer's crop, offered, never imposed.
     val enhancer = remember { PhotoEnhancer(context) }
     // ...and the retouch: LaMa fills what the coach names, offered the same way.
-    val inpainter = remember { Inpainter(context) }
-    DisposableEffect(inpainter) { onDispose { inpainter.close() } }
+    // One LaMa for the whole app when the activity hands one in, so a
+    // trip to a room and back does not close and reload it.
+    val inpainter = sharedInpainter ?: remember { Inpainter(context) }
+    DisposableEffect(inpainter) { onDispose { if (sharedInpainter == null) inpainter.close() } }
     var pendingEnhance by remember { mutableStateOf<PhotoEnhancer.Proposal?>(null) }
     var reviewClean by remember { mutableStateOf<PhotoEnhancer.Clean?>(null) }
     var reviewSource by remember { mutableStateOf<Uri?>(null) }

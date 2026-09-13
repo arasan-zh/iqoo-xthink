@@ -651,3 +651,10 @@ piece device-verified on the iQOO 15 before it was committed.
   the shot goes straight to the pill's work. Both are turns in the
   conversation like any other, so a follow-up question knows what was
   read.
+- **"LaMa loading" forever, explained**: the loader's fast path - the
+  cached graph, taken on every launch after the first - returned without
+  clearing the flag the chip reads, so the chip said loading for as long
+  as the app ran. The flag is now held around the load with try/finally.
+  And the inpainter lives in the activity now, like the coach, so a trip
+  to Chat or Voice no longer closes and reloads it (two seconds each
+  time).
